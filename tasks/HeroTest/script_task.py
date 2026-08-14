@@ -4,6 +4,7 @@
 from datetime import datetime, timedelta, time
 import random  # type: ignore
 from module.atom.image import RuleImage
+from module.atom.click import RuleClick
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 
 from tasks.Component.GeneralBattle.general_battle import BattleAction, BattleContext, ExitMatcher, GeneralBattle
@@ -120,12 +121,13 @@ class ScriptTask(GameUi, GeneralBattle, HeroTestAssets, SwitchSoul):
         return False
 
     def hero1_skill_wait(self):
-        if self.appear_then_click(self.I_BCMJ_SKILL_ADD1, interval=1) or \
+        matched = self.appear_then_click(self.I_BCMJ_SKILL_ADD1, interval=1) or \
                 self.appear_then_click(self.I_BCMJ_SKILL_ADD2, interval=1) or \
                 self.appear_then_click(self.I_BCMJ_BLESS, interval=1) or \
                 self.appear_then_click(self.I_BCMJ_PROPERTY_ADD_CRITICAL, interval=1) or \
-                self.appear_then_click(self.I_BCMJ__DEFALUT_ATTRIBUTE, interval=1):
-            pass
+                self.appear_then_click(self.I_BCMJ__DEFALUT_ATTRIBUTE, interval=1)
+        if not matched:
+            self.click_random_buff()
         return self.appear_then_click(self.I_BCMJ_SKILL_ADD_CONFIRM, interval=1)
 
     def hero2_skill_wait(self):
@@ -151,9 +153,16 @@ class ScriptTask(GameUi, GeneralBattle, HeroTestAssets, SwitchSoul):
             SkillMode.PVP: pvp_skill,
         }
         target_skills = target_skill_dict[self.conf.herotest.skill_mode]
-        if any(self.appear_then_click(ts, interval=1) for ts in target_skills):
-            pass
+        if not any(self.appear_then_click(ts, interval=1) for ts in target_skills):
+            self.click_random_buff()
         return self.appear_then_click(self.I_BCMJ_SKILL_ADD_CONFIRM, interval=1.5)
+
+    def click_random_buff(self):
+        """兜底: 4个buff都未匹配到目标时, 随机点击一个槽位, 避免卡死"""
+        logger.warning('No target buff matched, click a random buff')
+        slot = random.choice([(60, 320, 200, 140), (380, 320, 200, 140),
+                              (700, 320, 200, 140), (1020, 320, 200, 140)])
+        self.click(RuleClick(roi_front=slot, roi_back=slot, name='buff_random'), interval=1)
 
     def switch_hero(self, layer: Layer):
         """切换英杰"""
