@@ -60,13 +60,6 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, MartialTournamentAssets):
         self._current_count = value
 
     @property
-    def pre_tickets_map(self) -> dict:
-        """上一次识别的票数量, 格式: {'pass_1': -1, 'pass_2': -1, 'ap': -1}"""
-        if not hasattr(self, '_pre_tickets_map'):
-            self._pre_tickets_map = {'pass_1': -1, 'pass_2': -1, 'ap': -1}
-        return self._pre_tickets_map
-
-    @property
     def last_soul_type(self) -> str:
         return getattr(self, '_last_soul_type', '')
 
@@ -191,12 +184,21 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, MartialTournamentAssets):
         if self.appear(self.I_NO_SEARCH) and self.appear_then_click(self.I_SEARCH_BOSS, interval=1.5):
             logger.info('Found existing boss, enter challenge directly')
         else:
-            # 没有已发现的boss, 检查门票后搜索
-            if not self.check_tickets_enough():
-                raise TicketsNotEnough
+            # 没有已发现的boss, 按需切换门票模式后搜索
+            if self.conf.general_climb.use_pass_2:
+                self.detect_ticket_type()
+                if self.ticket_type != 'pass_2':
+                    logger.info('Switch ticket mode to pass_2')
+                    self.switch_ticket_mode()
             if not self.search_boss():
                 raise TicketsNotEnough
         boss_type = self.detect_boss_type()
+        # 搜索时误触挑战按钮会直接进战斗准备/战斗, 此时浮窗已不在, 跳过切御魂和锁阵容直接打
+        if not self.appear(self.I_MT_CHALLENGE) and (self.is_in_prepare(False) or self.is_in_real_battle(False)):
+            logger.warning('Challenge float is gone and already in battle, skip switch soul and lock team')
+            self.current_battle_conf = self.conf.group_battle_conf
+            self.run_general_battle(self.current_battle_conf, battle_key='mt')
+            return
         self.switch_soul(self.I_MT_RECORDS, boss_type)
         if self.conf.general_climb.random_sleep:
             random_sleep(probability=0.2)
@@ -210,9 +212,7 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, MartialTournamentAssets):
             self.run_general_battle(self.current_battle_conf, battle_key=f'mt_{boss_type}')
 
     def _run_ap(self):
-        """体力爬塔界面处理: 检查体力 -> 切换御魂 -> 锁定阵容 -> 挑战 -> 战斗"""
-        if not self.check_tickets_enough():
-            raise TicketsNotEnough
+        """体力爬塔界面处理: 切换御魂 -> 锁定阵容 -> 挑战 -> 战斗"""
         self.switch_soul(self.I_MT_RECORDS, 'ap')
         if self.conf.general_climb.random_sleep:
             random_sleep(probability=0.2)
@@ -239,9 +239,21 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, MartialTournamentAssets):
         wait_timer = Timer(10).start()
         while True:
             self.screenshot()
-            if self.appear(self.I_MT_CHALLENGE):
-                logger.info('Search boss success')
+            # 搜索按钮和挑战按钮位置几乎重叠, 点击搜索时可能误触挑战直接进战斗准备
+            if self.is_in_prepare(False) or self.is_in_real_battle(False):
+                logger.warning('Challenge mis-clicked while searching, already in battle')
                 return True
+            if self.appear(self.I_MT_CHALLENGE):
+                # 再确认一次浮窗仍在, 过滤浮窗关闭动画/误匹配
+                time.sleep(1)
+                self.screenshot()
+                if self.appear(self.I_MT_CHALLENGE):
+                    logger.info('Search boss success')
+                    return True
+                if self.is_in_prepare(False) or self.is_in_real_battle(False):
+                    logger.warning('Challenge mis-clicked while searching, already in battle')
+                    return True
+                continue
             if wait_timer.reached():
                 logger.warning('Search boss timeout')
                 return False
@@ -336,7 +348,11 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, MartialTournamentAssets):
                 self.last_soul_type = boss_type
                 return
         logger.hr(f'Start switch soul ({boss_type})', 2)
-        self.ui_click(enter_button, stop=self.I_CHECK_RECORDS, interval=1)
+        if not self.ui_click_until_appear_or_timeout(enter_button, stop=self.I_CHECK_RECORDS, interval=1,
+                                                     timeout=10):
+            # 未进入式神录(如界面状态异常), 跳过本次切换, 不记录last_soul_type以便下轮重试
+            logger.warning('Cannot enter shikigami records in 10s, skip switch soul')
+            return
         if boss_type == 'single':
             if conf.enable_switch_single_by_name:
                 group, team = conf.single_group_team_name.split(",")
@@ -370,55 +386,14 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, MartialTournamentAssets):
         enable = battle_conf.lock_team_enable
         if enable:
             logger.info('Lock team')
-            self.ui_click(self.I_UNLOCK, stop=self.I_LOCK, interval=1.5)
+            if not self.ui_click_until_appear_or_timeout(self.I_UNLOCK, stop=self.I_LOCK, interval=1.5,
+                                                         timeout=10):
+                logger.warning('Lock team timeout, skip')
             return
         logger.info('Unlock team')
-        self.ui_click(self.I_LOCK, stop=self.I_UNLOCK, interval=1.5)
-
-    def check_tickets_enough(self) -> bool:
-        """统一检查门票/体力是否足够
-        pass1和pass2数量同时显示, 直接读两种券选有票的用"""
-        logger.hr('Check tickets')
-        self.screenshot()
-        # ap模式
-        if self.current_mode == 'ap':
-            remain_times = self.O_O_AP.ocr_digit(self.device.image)
-            logger.info(f'AP remain: {remain_times}')
-            if self.pre_tickets_map['ap'] - remain_times > 1:
-                self.pre_tickets_map['ap'] -= 1
-                return True
-            self.pre_tickets_map['ap'] = remain_times
-            return remain_times > 0
-        # pass模式: 同时读两种券数量
-        pass_1_remain = self.O_O_PASS.ocr_digit(self.device.image)
-        pass_2_remain = self.O_O_PASS2.ocr_digit(self.device.image)
-        logger.info(f'pass_1 remain: {pass_1_remain}, pass_2 remain: {pass_2_remain}')
-        # 容错: 差值大于1认为识别有误
-        if self.pre_tickets_map['pass_1'] - pass_1_remain > 1:
-            self.pre_tickets_map['pass_1'] -= 1
-            pass_1_remain = self.pre_tickets_map['pass_1']
-        else:
-            self.pre_tickets_map['pass_1'] = pass_1_remain
-        if self.pre_tickets_map['pass_2'] - pass_2_remain > 1:
-            self.pre_tickets_map['pass_2'] -= 1
-            pass_2_remain = self.pre_tickets_map['pass_2']
-        else:
-            self.pre_tickets_map['pass_2'] = pass_2_remain
-        # 决定使用哪种券
-        use_pass_2 = self.conf.general_climb.use_pass_2
-        if use_pass_2 and pass_2_remain > 0:
-            target_type = 'pass_2'
-        elif pass_1_remain > 0:
-            target_type = 'pass_1'
-        else:
-            logger.info('Both pass_1 and pass_2 tickets used up')
-            return False
-        # 确保在目标模式
-        self.detect_ticket_type()
-        if self.ticket_type != target_type:
-            logger.info(f'Switch ticket mode to {target_type}')
-            self.switch_ticket_mode()
-        return True
+        if not self.ui_click_until_appear_or_timeout(self.I_LOCK, stop=self.I_UNLOCK, interval=1.5,
+                                                     timeout=10):
+            logger.warning('Unlock team timeout, skip')
 
     def switch_ticket_mode(self):
         """点击切换门票模式按钮 (I_SWITCH_MODE), 自动检测切换结果"""
@@ -428,8 +403,6 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, MartialTournamentAssets):
             # 切换后截图检测当前模式
             self.screenshot()
             self.detect_ticket_type()
-            # 只重置切换后的当前门票记录, 保留另一种门票的状态
-            self.pre_tickets_map[self.ticket_type] = -1
             logger.info(f'Switched ticket mode to: {self.ticket_type}')
         else:
             logger.warning('I_SWITCH_MODE not found, cannot switch ticket mode')
