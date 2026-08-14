@@ -73,13 +73,13 @@ class ReplaceShikigami(BaseTask, ReplaceShikigamiAssets):
                 self.appear_then_click(self.I_RS_LEVEL_MAX, interval=0.5)
         logger.info('Unset all shikigami max lv')
 
-    def set_shikigami(self, shikigami_order: int = 7, stop_image: RuleImage = None):
+    def set_shikigami(self, shikigami_order: int = 7, stop_image: RuleImage = None) -> bool:
         """
         要求在式神育成的界面
         选择式神 1-7
         :param stop_image:  结束的图片，如果不出现就结束
         :param shikigami_order:
-        :return:
+        :return: True: 寄养成功(坑位已占用) False: 寄养连续失败(坑位被抢/已寄养其他式神)
         """
         # 选择式神
         _click_match = {1: self.C_SHIKIGAMI_LEFT_1,
@@ -94,6 +94,7 @@ class ReplaceShikigami(BaseTask, ReplaceShikigamiAssets):
         start_time = time.time()   # 记录起始时间
         click_interval_timer = Timer(1.5).start()  # 点击选择式神间隔
         clicked = False
+        confirm_count = 0  # 确认按钮点击次数, 成功寄养后坑位消失会跳出循环, 连续点击说明寄养一直失败
         while 1:
             # ——1. 先做超时检查——
             if time.time() - start_time > TIMEOUT_SEC:
@@ -105,6 +106,13 @@ class ReplaceShikigami(BaseTask, ReplaceShikigamiAssets):
             self.screenshot()
             if self.appear_then_click(self.I_U_CONFIRM_SMALL, interval=0.5):
                 clicked = False  # 点击了确认, 恢复选式神的操作
+                confirm_count += 1
+                if confirm_count >= 4:
+                    # 寄养成功坑位会消失并跳出循环, 连续点确认说明寄养一直失败
+                    # (如坑位同时被别人寄养/已寄养其他式神), 退出避免死循环
+                    logger.warning('寄养连续失败, 可能是坑位被抢或已寄养其他式神, 退出寄养')
+                    return False
+                time.sleep(1.5)  # 等待寄养结果, 避免成功动画期间重复点击
                 continue
             if not self.appear(stop_image):
                 break
@@ -121,6 +129,7 @@ class ReplaceShikigami(BaseTask, ReplaceShikigamiAssets):
                 self.appear_then_click(self.I_U_CONFIRM_ALTERNATE, interval=1.5)
                 continue
         logger.info('Set shikigami: %d' % shikigami_order)
+        return True
 
     def detect_no_shikigami(self) -> bool:
         self.screenshot()
