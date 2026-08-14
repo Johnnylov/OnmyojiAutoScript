@@ -498,7 +498,9 @@ class ScriptTask(GameUi, ReplaceShikigami, KekkaiUtilizeAssets):
         # 切换式神的类型
         self.switch_shikigami_class(shikigami_class)
         # 上式神
-        self.set_shikigami(shikigami_order, stop_image)
+        if not self.set_shikigami(shikigami_order, stop_image):
+            # 寄养连续失败(坑位被抢/已寄养其他式神), 退出等待下次任务再试
+            logger.warning('Foster failed, exit realm and wait next run')
         return True
 
     def _select_optimal_resource_card(self):
