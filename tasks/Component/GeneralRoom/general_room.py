@@ -3,6 +3,8 @@
 # github https://github.com/runhey
 import time
 import random
+import cv2
+import numpy as np
 
 from random import randint
 
@@ -16,14 +18,13 @@ from module.base.timer import Timer
 
 class GeneralRoom(BaseTask, GeneralRoomAssets):
 
-    def create_room(self, create_room_rule: RuleImage = None) -> bool:
+    def create_room(self) -> bool:
         """
         创建队伍  一般是下方的黄色按钮
         :return:
         """
         logger.info('Create room')
-        create_room_rule = self.I_CREATE_ROOM if create_room_rule is None else create_room_rule
-        if not self.appear(create_room_rule):
+        if not self.appear(self.I_CREATE_ROOM):
             logger.warning('No create room button')
             return False
         click_number = 0
@@ -33,14 +34,13 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
                 logger.warning('Create room button do not take effect')
                 logger.warning('The most possible reason is that there are not challenge tickets')
                 return False
-            if self.appear_then_click(create_room_rule, interval=2):
+            if self.appear_then_click(self.I_CREATE_ROOM, interval=2):
                 click_number += 1
                 continue
             if self.appear(self.I_CREATE_ENSURE):
                 return True
             if self.appear(self.I_CREATE_ENSURE_2):
                 return True
-        return False
 
     def ensure_private(self) -> bool:
         """
@@ -58,7 +58,6 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
                 continue
             if self.appear_then_click(self.I_ENSURE_PRIVATE_FALSE_2, interval=1):
                 continue
-        return False
 
     def ensure_public(self) -> bool:
         """
@@ -83,8 +82,8 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
         :return:
         """
         logger.info('Create ensure')
-        appear1 = self.I_CREATE_ENSURE.match(self.device.image, frame_id=self.device.image_frame_id)
-        appear2 = self.I_CREATE_ENSURE_2.match(self.device.image, frame_id=self.device.image_frame_id)
+        appear1 = self.I_CREATE_ENSURE.match(self.device.image)
+        appear2 = self.I_CREATE_ENSURE_2.match(self.device.image)
         target = None
         if appear1:
             target = self.I_CREATE_ENSURE
@@ -94,13 +93,12 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
             logger.warning('No create ensure button')
             return False
 
-        while True:
+        while 1:
             self.screenshot()
             if self.appear_then_click(target, interval=1.5):
                 continue
             if not self.appear(target):
                 return True
-        return False
 
     def exit_team(self) -> bool:
         """
@@ -115,7 +113,6 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
                     return True
                 if self.appear_then_click(self.I_GR_BACK_YELLOW, interval=0.5):
                     continue
-        return False
 
     def check_zones(self, name: str) -> bool:
         """
@@ -150,3 +147,4 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
                 self.device.click(x=pos[0] + randint(-5, 5), y=pos[1] + randint(-5, 5))
 
         return True
+

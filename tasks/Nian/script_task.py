@@ -4,8 +4,6 @@
 import re
 from datetime import timedelta, datetime, time
 from cached_property import cached_property
-from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
-from tasks.GameUi.default_pages import page_shikigami_records
 
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_team
@@ -21,7 +19,7 @@ from module.logger import logger
 from module.base.timer import Timer
 
 
-class ScriptTask(GameUi, GeneralBattle, SwitchSoul, GeneralRoom, GeneralInvite, NianAssets):
+class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, NianAssets):
 
     def run(self) -> None:
         def cd_exit(cd: timedelta=False):
@@ -33,21 +31,13 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, GeneralRoom, GeneralInvite, 
             self.set_next_run(task='Nian', success=False, finish=False, target=next_run)
             raise TaskEnd('Nian')
 
-        if self.config.nian.switch_soul.enable:
-            self.goto_page(page_shikigami_records)
-            self.run_switch_soul(self.config.nian.switch_soul.switch_group_team)
-
-        # 御魂切换方式二
-        if self.config.nian.switch_soul.enable_switch_by_name:
-            self.goto_page(page_shikigami_records)
-            self.run_switch_soul_by_name(self.config.nian.switch_soul.group_name,
-                                         self.config.nian.switch_soul.team_name)
-
-        self.goto_page(page_team)
+        self.ui_get_current_page()
+        self.ui_goto(page_team)
         con = self.config.nian.nian_config
 
         # 进入
-        self.goto_page(page_team)
+        self.ui_get_current_page()
+        self.ui_goto(page_team)
         self.check_zones('年兽')
         cd = self.check_cd()
         if cd:
@@ -169,6 +159,5 @@ if __name__ == '__main__':
     t.screenshot()
 
     t.run()
-
 
 

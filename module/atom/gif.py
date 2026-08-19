@@ -4,7 +4,6 @@
 import numpy as np
 
 from module.atom.image import RuleImage
-from module.image.rpc import get_image_client
 
 
 
@@ -24,7 +23,7 @@ class RuleGif:
         return image
 
 
-    def search(self, image, roi: list = None, threshold: float = None, frame_id: str = None) -> tuple:
+    def search(self, image, roi: list = None, threshold: float = None) -> tuple:
         """
 
         :param image:
@@ -33,30 +32,32 @@ class RuleGif:
         :return: bool
         第一项是否为出现, 第二项为匹配的RuleImage
         """
-        processed_image = self.pre_process(image)
+        image = self.pre_process(image)
         #
         threshold = self.targets[0].threshold if threshold is None else threshold
         roi = self.targets[0].roi_back if roi is None else roi
         for target in self.targets:
             target.roi_back = roi
-
-        payloads = [target.to_service_payload() for target in self.targets]
-        active_frame_id = frame_id if processed_image is image else None
-        results = get_image_client().match_many(
-            rules_data=payloads,
-            image=processed_image,
-            frame_id=active_frame_id,
-            threshold=threshold,
-        )
-        for target, result in zip(self.targets, results):
-            if target._apply_match_result(result):
+            if target.match(image, threshold):
                 self.roi_front = target.roi_front
                 self.appear_target = target
                 return True, target
         return False, None
 
-    def match(self, image, threshold: float = None, frame_id: str = None) -> bool:
-        return self.search(image, threshold=threshold, frame_id=frame_id)[0]
+    def search_with_multi_scale(self, image, roi=None, threshold=None, scale_range=(0.8, 1.1, 0.05)):
+        image = self.pre_process(image)
+        threshold = self.targets[0].threshold if threshold is None else threshold
+        roi = self.targets[0].roi_back if roi is None else roi
+        for target in self.targets:
+            target.roi_back = roi
+            if target.match_multi_scale(image, threshold=threshold, scale_range=scale_range):
+                self.roi_front = target.roi_front
+                self.appear_target = target
+                return True, target
+        return False, None
+
+    def match(self, image, threshold: float = None) -> bool:
+        return self.search(image, threshold=threshold)[0]
 
 
     def coord(self) -> tuple:

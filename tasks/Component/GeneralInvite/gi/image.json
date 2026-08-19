@@ -156,7 +156,7 @@
     "itemName": "invite_ensure",
     "imageName": "gi_invite_ensure.png",
     "roiFront": "710,544,132,60",
-    "roiBack": "486,532,373,84",
+    "roiBack": "710,544,132,60",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "点击邀请"
@@ -165,7 +165,7 @@
     "itemName": "selected",
     "imageName": "gi_selected.png",
     "roiFront": "895,373,33,32",
-    "roiBack": "347,174,589,369",
+    "roiBack": "895,373,33,32",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "判断是否点中好友了"
@@ -173,8 +173,8 @@
   {
     "itemName": "flag_1_on",
     "imageName": "gi_flag_1_on.png",
-    "roiFront": "355,131,43,15",
-    "roiBack": "354,128,62,19",
+    "roiFront": "354,126,62,21",
+    "roiBack": "354,126,62,21",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "用来判断当前的列表是哪儿的"
@@ -182,7 +182,7 @@
   {
     "itemName": "flag_1_off",
     "imageName": "gi_flag_1_off.png",
-    "roiFront": "353,128,58,20",
+    "roiFront": "353,126,58,22",
     "roiBack": "353,126,58,22",
     "method": "Template matching",
     "threshold": 0.8,
@@ -200,7 +200,7 @@
   {
     "itemName": "flag_2_off",
     "imageName": "gi_flag_2_off.png",
-    "roiFront": "469,131,58,17",
+    "roiFront": "469,127,58,21",
     "roiBack": "469,127,58,21",
     "method": "Template matching",
     "threshold": 0.8,
@@ -209,7 +209,7 @@
   {
     "itemName": "flag_3_on",
     "imageName": "gi_flag_3_on.png",
-    "roiFront": "588,131,48,17",
+    "roiFront": "588,126,48,22",
     "roiBack": "588,126,48,22",
     "method": "Template matching",
     "threshold": 0.8,
@@ -218,7 +218,7 @@
   {
     "itemName": "flag_3_off",
     "imageName": "gi_flag_3_off.png",
-    "roiFront": "590,129,41,19",
+    "roiFront": "590,126,41,22",
     "roiBack": "590,126,41,22",
     "method": "Template matching",
     "threshold": 0.8,
@@ -376,14 +376,5 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "识别到寄养邀请"
-  },
-  {
-    "itemName": "i_accept_apprentice",
-    "imageName": "gi_i_accept_apprentice.png",
-    "roiFront": "115,229,55,45",
-    "roiBack": "107,209,69,296",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "师徒邀请图标"
   }
 ]

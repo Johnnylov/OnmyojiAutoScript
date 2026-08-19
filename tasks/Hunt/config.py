@@ -2,7 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 from datetime import timedelta
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 
 from tasks.Component.config_scheduler import Scheduler
@@ -21,16 +21,7 @@ class HuntConfig(BaseModel):
 
 
 class HuntGeneralBattleConfig(GeneralBattleConfig):
-    hunt_hide_fields = dynamic_hide('lock_team_enable')
-
-
-class NetherWorldBattleConfig(HuntGeneralBattleConfig):
-    continuous_battle: bool = True
-
-    @field_validator('continuous_battle', mode='after')
-    @classmethod
-    def validate_continuous_battle(cls, v):
-        return True
+    hide_fields = dynamic_hide('lock_team_enable', 'green_enable', 'green_mark')
 
 
 class Hunt(ConfigBase):
@@ -38,4 +29,4 @@ class Hunt(ConfigBase):
     hunt_time: HuntTime = Field(default_factory=HuntTime)
     hunt_config: HuntConfig = Field(default_factory=HuntConfig)
     kirin_battle_config: HuntGeneralBattleConfig = Field(default_factory=HuntGeneralBattleConfig)
-    netherworld_battle_config: NetherWorldBattleConfig = Field(default_factory=NetherWorldBattleConfig)
+    netherworld_battle_config: HuntGeneralBattleConfig = Field(default_factory=HuntGeneralBattleConfig)

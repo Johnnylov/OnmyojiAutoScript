@@ -1,9 +1,7 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
-from tasks.GuguArtStudio.config import GuguArtStudio
 from tasks.GuildActivityMonitor.config import GuildActivityMonitor
-from tasks.OtherWorldTwilight.config import OtherWorldTwilight
 from typing import Dict, Any
 
 import re
@@ -56,13 +54,13 @@ from tasks.GuildActivityMonitor.config import GuildActivityMonitor
 
 # 这一部分是活动的配置-----------------------------------------------------------------------------------------------------
 from tasks.ActivityShikigami.config import ActivityShikigami
-from tasks.MartialTournament.config import MartialTournament
 from tasks.MetaDemon.config import MetaDemon
 from tasks.FrogBoss.config import FrogBoss
 from tasks.FloatParade.config import FloatParade
 from tasks.Quiz.config import Quiz
 from tasks.KittyShop.config import KittyShop
 from tasks.DyeTrials.config import DyeTrials
+from tasks.BudokaiTournament.config import BudokaiTournament
 # ----------------------------------------------------------------------------------------------------------------------
 
 # 肝帝专属---------------------------------------------------------------------------------------------------------------
@@ -118,18 +116,15 @@ class ConfigModel(ConfigBase):
     fallen_sun: FallenSun = Field(default_factory=FallenSun)
     eternity_sea: EternitySea = Field(default_factory=EternitySea)
     six_realms: SixRealms = Field(default_factory=SixRealms)
-    other_world_twilight : OtherWorldTwilight = Field(default_factory=OtherWorldTwilight)
 
     # 这些是活动的
     activity_shikigami: ActivityShikigami = Field(default_factory=ActivityShikigami)
-    martial_tournament: MartialTournament = Field(default_factory=MartialTournament)
     meta_demon: MetaDemon = Field(default_factory=MetaDemon)
     frog_boss: FrogBoss = Field(default_factory=FrogBoss)
     float_parade: FloatParade = Field(default_factory=FloatParade)
     quiz: Quiz = Field(default_factory=Quiz)
     kitty_shop: KittyShop = Field(default_factory=KittyShop)
     dye_trials: DyeTrials = Field(default_factory=DyeTrials)
-    gugu_art_studio: GuguArtStudio = Field(default_factory=GuguArtStudio)
 
     # 这些是肝帝专属
     bondling_fairyland: BondlingFairyland = Field(default_factory=BondlingFairyland)
@@ -156,17 +151,13 @@ class ConfigModel(ConfigBase):
     guild_banquet: GuildBanquet = Field(default_factory=GuildBanquet)
     demon_retreat: DemonRetreat = Field(default_factory=DemonRetreat)
     guild_activity_monitor: GuildActivityMonitor = Field(default_factory=GuildActivityMonitor)
+    budokai_tournament: BudokaiTournament = Field(default_factory=BudokaiTournament)
 
-    def __init__(self, config_name: str=None, **data) -> None:
+    def __init__(self, config_name: str=None) -> None:
         """
 
         :param config_name:
         """
-        if data:
-            if config_name:
-                data["config_name"] = config_name
-            super().__init__(**data)
-            return
         if not config_name:
             super().__init__()
             return
@@ -357,8 +348,6 @@ class ConfigModel(ConfigBase):
 
         result: dict[str, list] = {}
         for key, value in task.model_dump(context={'hide': True}).items():
-            if value == 0xABCDEF:
-                continue
             if key not in groups:
                 for group_name in groups.keys():
                     if group_name in key:
@@ -494,3 +483,4 @@ if __name__ == "__main__":
         c = ConfigModel()
 
     print(c.script_task('GuildBanquet'))
+

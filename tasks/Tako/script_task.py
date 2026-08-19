@@ -9,9 +9,8 @@ from module.exception import TaskEnd
 from module.base.timer import Timer
 
 from tasks.GameUi.game_ui import GameUi
-from tasks.GameUi.matcher import any_of
 from tasks.GameUi.page import page_main, page_team, page_shikigami_records
-from tasks.Component.GeneralBattle.general_battle import GeneralBattle, ExitMatcher
+from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
 from tasks.Component.GeneralInvite.general_invite import GeneralInvite
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
@@ -22,17 +21,20 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul):
     def run(self):
         conf = self.config.tako
         if conf.switch_soul.enable:
-            self.goto_page(page_shikigami_records)
+            self.ui_get_current_page()
+            self.ui_goto(page_shikigami_records)
             self.run_switch_soul(conf.switch_soul.switch_group_team)
 
         if conf.switch_soul.enable_switch_by_name:
-            self.goto_page(page_shikigami_records)
+            self.ui_get_current_page()
+            self.ui_goto(page_shikigami_records)
             self.run_switch_soul_by_name(conf.switch_soul.group_name,
                                          conf.switch_soul.team_name)
         # 加成
         conf_buff = conf.tako_config
         if conf_buff.enable:
-            self.goto_page(page_main)
+            self.ui_get_current_page()
+            self.ui_goto(page_main)
             self.open_buff()
             if conf_buff.buff_gold_50_click:
                 self.gold_50()
@@ -45,7 +47,8 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul):
             self.close_buff()
 
         # 进入
-        self.goto_page(page_team)
+        self.ui_get_current_page()
+        self.ui_goto(page_team)
         if 5 <= self.start_time.weekday() <= 6:
             # 周末
             self.check_zones('喷怒的石距')
@@ -81,9 +84,11 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul):
         :return:
         """
         conf_buff = self.config.tako.tako_config
-        self.goto_page(page_main)
+        self.ui_get_current_page()
+        self.ui_goto(page_main)
         if conf_buff.enable:
-            self.goto_page(page_main)
+            self.ui_get_current_page()
+            self.ui_goto(page_main)
             self.open_buff()
             if conf_buff.buff_gold_50_click:
                 self.gold_50(False)
@@ -98,9 +103,29 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul):
         self.set_next_run(task='Tako', success=True, finish=False)
         raise TaskEnd('Tako')
 
-    def _exit_matcher(self) -> ExitMatcher | None:
-        return any_of(self.I_CHECK_MAIN, self.I_CHECK_TEAM)
+    def battle_wait(self, random_click_swipt_enable: bool) -> bool:
+        # 重写
+        self.device.stuck_record_add('BATTLE_STATUS_S')
+        self.device.click_record_clear()
+        # 战斗过程 随机点击和滑动 防封
+        logger.info("Start battle process")
+        while 1:
+            self.screenshot()
+            if self.appear(self.I_WIN) or self.appear(self.I_REWARD):
+                logger.info('Win battle')
+                self.ui_click_until_disappear(self.I_WIN)
+                while 1:
+                    self.screenshot()
+                    if self.appear(self.I_CHECK_MAIN) or self.appear(self.I_CHECK_TEAM):
+                        break
+                    if self.click(self.C_REWARD_2, interval=2):
+                        continue
+                return True
 
+            if self.appear(self.I_FALSE):
+                logger.warning('False battle')
+                self.ui_click_until_disappear(self.I_FALSE)
+                return False
 
 if __name__ == '__main__':
     from module.config.config import Config
@@ -111,3 +136,6 @@ if __name__ == '__main__':
     t.screenshot()
 
     t.run()
+
+
+

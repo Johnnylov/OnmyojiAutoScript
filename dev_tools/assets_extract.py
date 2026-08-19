@@ -283,11 +283,7 @@ class AssetsExtractor:
         :return:
         """
         with open(file, 'r', encoding='utf-8') as f:
-            try:
-                data = json.load(f)
-            except json.JSONDecodeError as e:
-                logger.error(f'{file} 文件解析错误')
-                raise e
+            data = json.load(f)
         if not isinstance(data, list) and not isinstance(data, dict):
             logger.error(f'{file} 文件解析错误，不是list 或者 dict')
             return None
@@ -418,9 +414,11 @@ class AllAssetsExtractor:
         self.task_paths = [x for x in self.task_paths if 'Component' not in x]
         self.task_paths.extend([str(x) for x in (self.task_path / 'Component').iterdir() if x.is_dir()])
 
+        # process_map(self.work, self.task_paths, max_workers=1)
         for task_path in self.task_paths:
             me = AssetsExtractor(task_path)
             me.extract()
+
 
     @staticmethod
     def work(task_path: str):

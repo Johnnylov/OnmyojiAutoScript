@@ -19,23 +19,42 @@ from tasks.DemonRetreat.assets import DemonRetreatAssets
 from tasks.AbyssShadows.assets import AbyssShadowsAssets
 from tasks.DemonRetreat.config import DemonRetreat
 
-
 class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DemonRetreatAssets, AbyssShadowsAssets):
 
     def run(self):
         """
         首领退治主函数
         """
+
         cfg: DemonRetreat = self.config.demon_retreat
-        if not self.check_date(datetime.now()):
-            logger.warning("Demon retreat is not available now")
-            self.set_next_run(task='DemonRetreat', server=False, target=self.get_next_dt(datetime.now()))
+
+        # 判断是否为周六，只有周六才可以进行退治
+        current_date = datetime.now()
+        current_day_of_week = current_date.weekday()  # Monday is 0 and Sunday is 6
+
+        if current_day_of_week == 5:
+            # 是周六，继续运行写好的任务代码
+            pass
+        else:
+            # 不是周六
+            if current_day_of_week < 5:
+                # 周一至周五
+                days_until_saturday = 5 - current_day_of_week
+            else:
+                # 周日
+                days_until_saturday = 5 - current_day_of_week + 7
+
+                # 设置下次运行时间
+            self.custom_next_run(task='DemonRetreat', custom_time=cfg.demon_retreat_time.custom_run_time, time_delta=days_until_saturday)
             raise TaskEnd
+
         if cfg.switch_soul_config.enable:
-            self.goto_page(page_shikigami_records)
+            self.ui_get_current_page()
+            self.ui_goto(page_shikigami_records)
             self.run_switch_soul(cfg.switch_soul_config.switch_group_team)
         if cfg.switch_soul_config.enable_switch_by_name:
-            self.goto_page(page_shikigami_records)
+            self.ui_get_current_page()
+            self.ui_goto(page_shikigami_records)
             self.run_switch_soul_by_name(cfg.switch_soul_config.group_name, cfg.switch_soul_config.team_name)
 
         # 进入妖怪退治
@@ -43,8 +62,8 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DemonRetreatAssets, AbyssSha
             logger.warning("Failed to enter demon retreat")
             if self.appear_then_click(self.I_DEMON_BACK_CHECK, interval=1):
                 pass
-            self.goto_page(page_main)
-            self.set_next_run(task='DemonRetreat', server=False, target=self.get_next_dt(datetime.now()))
+            self.goto_main()
+            self.set_next_run(task='DemonRetreat', finish=False, server=True, success=False)
             raise TaskEnd
 
         # 首领退治战斗
@@ -67,18 +86,28 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DemonRetreatAssets, AbyssSha
                 if self.appear_then_click(self.I_DEMON_BACK_CHECK, interval=1):
                     break
 
-        self.goto_page(page_main)
+        # 保持好习惯，一个任务结束了就返回到庭院，方便下一任务的开始
+        self.goto_main()
+
         # 设置下次运行时间
-        self.set_next_run(task='DemonRetreat', server=False, target=self.get_next_dt(datetime.now(), success))
+        if success:
+            logger.info(f"The next time the demon retreat is next Saturday")
+            self.custom_next_run(task='DemonRetreat', custom_time=cfg.demon_retreat_time.custom_run_time, time_delta=7)
+        else:
+            self.set_next_run(task="DemonRetreat", finish=True, server=True, success=False)
+
         raise TaskEnd
+
+
 
     def goto_demon_retreat(self) -> bool:
         """
         进入首领退治
         """
         cfg: DemonRetreat = self.config.demon_retreat
+        self.ui_get_current_page()
         logger.info("Entering demon_retreat")
-        self.goto_page(page_guild)
+        self.ui_goto(page_guild)
 
         goto_demon_retreat_num = 0
         while 1:
@@ -115,9 +144,12 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DemonRetreatAssets, AbyssSha
 
             if self.appear(self.I_RANK_LSIT):
                 logger.info("Enter demon_retreat false")
-                return False
+                sleep(3)
+                if self.appear_then_click(self.I_DEMON_BACK_CHECK, interval=1):
+                    pass
+                sleep(20)
             # 超过五次没有进入进入认为失败
-            if goto_demon_retreat_num >= 3:
+            if goto_demon_retreat_num >= 5:
                 break
         return False
 
@@ -141,6 +173,9 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DemonRetreatAssets, AbyssSha
             success = self.run_demon_battle(cfg.general_battle)
 
         return success
+
+
+
 
     def run_demon_battle(self, config: GeneralBattleConfig = None) -> bool:
         """
@@ -179,13 +214,16 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DemonRetreatAssets, AbyssSha
         # 绿标
         self.wait_until_disappear(self.I_BUFF)
         if self.is_in_battle(False):
-            self.green_mark(config.green_enable, config.green_mark, config.green_mark_type, config.green_mark_name)
+            self.green_mark(config.green_enable, config.green_mark)
 
         win = self.battle_wait(config.random_click_swipt_enable)
         if win:
             return True
         else:
             return False
+
+
+
 
     def battle_wait(self, random_click_swipt_enable: bool) -> bool:
         """
@@ -220,21 +258,17 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DemonRetreatAssets, AbyssSha
                 self.device.stuck_record_clear()
                 self.device.stuck_record_add('BATTLE_STATUS_S')
 
-    def get_next_dt(self, now: datetime, success: bool = False) -> datetime:
-        """获取下一次退治运行时间"""
-        rt = self.config.model.demon_retreat.demon_retreat_time.custom_run_time
-        scheduler = self.config.model.demon_retreat.scheduler
-        if now.weekday() != 5:
-            return datetime.combine(now + timedelta(days=(5 - now.weekday() + 7) % 7), rt)
-        target_dt = datetime.combine(now.date(), rt)
-        # 在1小时之内则间隔failure_interval后重试
-        if target_dt <= now < target_dt + timedelta(hours=1) and not success:
-            return now + scheduler.failure_interval
-        return target_dt + timedelta(days=7)
 
-    def check_date(self, now: datetime) -> bool:
-        """检查当前日期是否可以运行退治"""
-        return now.weekday() == 5
+    def goto_main(self):
+        ''' 保持好习惯，一个任务结束了就返回庭院，方便下一任务的开始或者是出错重启
+        '''
+        self.ui_get_current_page()
+        logger.info("Exiting DemonRetreat")
+        self.ui_goto(page_main)
+
+
+
+
 
 
 if __name__ == '__main__':

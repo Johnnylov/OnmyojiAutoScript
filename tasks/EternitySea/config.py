@@ -1,7 +1,7 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 from enum import Enum
 from datetime import datetime, time
 from tasks.Component.SwitchSoul.switch_soul_config import SwitchSoulConfig
@@ -29,19 +29,11 @@ class EternitySeaConfig(ConfigBase):
     # 限制次数
     limit_count: int = Field(default=30, description='limit_count_help')
 
-class EternitySeaBattleConfig(GeneralBattleConfig):
-    continuous_battle: bool = True
-
-    @field_validator('continuous_battle', mode='after')
-    @classmethod
-    def validate_continuous_battle(cls, v):
-        return True
-
 class EternitySea(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
     eternity_sea_config: EternitySeaConfig = Field(default_factory=EternitySeaConfig)
-    invite_config: InviteConfig = Field(default_factory=InviteConfig)
-    general_battle_config: EternitySeaBattleConfig = Field(default_factory=EternitySeaBattleConfig)
+    general_battle_config: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
     switch_soul_config_1: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig)
     switch_soul_config_2: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig)
+    invite_config: InviteConfig = Field(default_factory=InviteConfig)
 

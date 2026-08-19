@@ -7,26 +7,21 @@ import numpy as np
 from numpy import float32, int32, uint8, fromfile
 from pathlib import Path
 
+from module.atom.RuleImageMallResourceMixin import RuleImageMallResourceMixin
 from module.base.decorator import cached_property
-from module.image.rpc import get_image_client
 from module.logger import logger
 from module.base.utils import is_approx_rectangle
 
 
-class RuleImage:
+class RuleImage(RuleImageMallResourceMixin):
     debug_mode: bool = False
-    METHOD_TEMPLATE_MATCH = "Template matching"
-    METHOD_MULTI_SCALE_TEMPLATE_MATCH = "Multi-scale template matching"
-    METHOD_SIFT_FLANN = "Sift Flann"
-    DEFAULT_MULTI_SCALE_RANGE = (0.6, 1.2)
-    DEFAULT_MULTI_SCALE_STEP = 0.1
 
     def __init__(self, roi_front: tuple, roi_back: tuple, method: str, threshold: float, file: str) -> None:
         """
         初始化
         :param roi_front: 前置roi
         :param roi_back: 后置roi 用于匹配的区域
-        :param method: 匹配方法 "Template matching" / "Multi-scale template matching" / "Sift Flann"
+        :param method: 匹配方法 "Template matching"
         :param threshold: 阈值  0.8
         :param file: 相对路径, 带后缀
         """
@@ -40,8 +35,8 @@ class RuleImage:
         self.roi_back = roi_back
         self.threshold = threshold
         self.file = file
-        self.scale_range: tuple[float, float] | tuple[float, float, float] | None = None
-        self.scale_step: float = self.DEFAULT_MULTI_SCALE_STEP
+
+
 
     @cached_property
     def name(self) -> str:
@@ -65,6 +60,8 @@ class RuleImage:
     def __bool__(self):
         return True
 
+
+
     def load_image(self) -> None:
         """
         加载图片
@@ -87,6 +84,7 @@ class RuleImage:
             return
         self._kp, self._des = self.sift.detectAndCompute(self.image, None)
 
+
     @property
     def image(self):
         """
@@ -97,21 +95,17 @@ class RuleImage:
             self.load_image()
         return self._image
 
-    @property
+    @cached_property
     def is_template_match(self) -> bool:
         """
         是否是模板匹配
         :return:
         """
-        return self.method == self.METHOD_TEMPLATE_MATCH
+        return self.method == "Template matching"
 
-    @property
-    def is_multi_scale_template_match(self) -> bool:
-        return self.method == self.METHOD_MULTI_SCALE_TEMPLATE_MATCH
-
-    @property
+    @cached_property
     def is_sift_flann(self) -> bool:
-        return self.method == self.METHOD_SIFT_FLANN
+        return self.method == "Sift Flann"
 
     @cached_property
     def sift(self):
@@ -143,131 +137,110 @@ class RuleImage:
         x, y, w, h = int(x), int(y), int(w), int(h)
         return image[y:y + h, x:x + w]
 
-    def _template_image_invalid(self, mat: np.array) -> bool:
-        if mat is None or mat.shape[0] == 0 or mat.shape[1] == 0:
-            mat_shape = None if mat is None else mat.shape
-            logger.error(f"Template image is invalid: {mat_shape}")  # 检测模板尺寸，避免非法模板参与匹配
-            return True
-        return False
-
-    def _update_roi_front(self, loc: tuple[int, int], size: tuple[int, int]) -> None:
-        self.roi_front[0] = loc[0] + self.roi_back[0]
-        self.roi_front[1] = loc[1] + self.roi_back[1]
-        self.roi_front[2] = size[0]
-        self.roi_front[3] = size[1]
-
-    def to_service_payload(self) -> dict:
-        file_path = ""
-        if self.file:
-            file_path = str(Path(self.file).resolve())
-        scale_range = None
-        if self.scale_range is not None:
-            scale_range = list(self.scale_range)
-        return {
-            "name": self.name,
-            "file": file_path,
-            "method": self.method,
-            "threshold": float(self.threshold),
-            "roi_front": list(self.roi_front),
-            "roi_back": list(self.roi_back),
-            "scale_range": scale_range,
-            "scale_step": float(self.scale_step),
-        }
-
-    def _apply_match_result(self, result: dict) -> bool:
-        if result.get("matched"):
-            roi_front = result.get("roi_front")
-            if roi_front is not None:
-                self.roi_front = [int(v) for v in roi_front]
-            return True
-        return False
-
-    def template_match(self, image: np.array, threshold: float = None) -> bool:
-        if threshold is None:
-            threshold = self.threshold
-        source = self.corp(image)
-        mat = self.image
-
-        if self._template_image_invalid(mat):
-            return True  # 如果模板图像无效，直接返回 True
-
-        res = cv2.matchTemplate(source, mat, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, max_loc = cv2.minMaxLoc(res)
-        if self.debug_mode:
-            logger.attr(self.name, f'matching score {max_val:.5f}')
-
-        if max_val > threshold:
-            self._update_roi_front(max_loc, (mat.shape[1], mat.shape[0]))
-            return True
-        return False
-
-    def _get_multi_scale_range(self) -> tuple[float, float, float]:
-        active_scale_range = self.scale_range
-        if active_scale_range is None:
-            min_scale, max_scale = self.DEFAULT_MULTI_SCALE_RANGE
-            step = self.DEFAULT_MULTI_SCALE_STEP
-        elif len(active_scale_range) == 3:
-            min_scale, max_scale, step = active_scale_range
-        else:
-            min_scale, max_scale = active_scale_range
-            step = self.scale_step
-        if min_scale > max_scale:
-            min_scale, max_scale = max_scale, min_scale
-        if step <= 0:
-            step = self.DEFAULT_MULTI_SCALE_STEP
-        return min_scale, max_scale, step
-
-    def multi_scale_template_match(self, image: np.array, threshold: float = None) -> bool:
-        if threshold is None:
-            threshold = self.threshold
-        source = self.corp(image)
-        mat = self.image
-
-        if self._template_image_invalid(mat):
-            return True  # 如果模板图像无效，直接返回 True
-
-        min_scale, max_scale, step = self._get_multi_scale_range()
-        best_val = -1.0
-        best_loc = None
-        best_shape = None
-        cur_scale = min_scale
-        while cur_scale <= max_scale + 1e-8:
-            scaled_w = max(1, int(mat.shape[1] * cur_scale))
-            scaled_h = max(1, int(mat.shape[0] * cur_scale))
-            if scaled_w > source.shape[1] or scaled_h > source.shape[0]:
-                cur_scale += step
-                continue
-            scaled_mat = cv2.resize(mat, (scaled_w, scaled_h), interpolation=cv2.INTER_LINEAR)
-            res = cv2.matchTemplate(source, scaled_mat, cv2.TM_CCOEFF_NORMED)
-            _, max_val, _, max_loc = cv2.minMaxLoc(res)
-            if max_val > best_val:
-                best_val = max_val
-                best_loc = max_loc
-                best_shape = (scaled_w, scaled_h)
-            cur_scale += step
-        if self.debug_mode:
-            logger.attr(self.name, f'multi-scale matching score {best_val:.5f}')
-        if best_loc is not None and best_shape is not None and best_val > threshold:
-            self._update_roi_front(best_loc, best_shape)
-            return True
-        return False
-
-    def match(self, image: np.array, threshold: float = None, frame_id: str = None) -> bool:
+    def match(self, image: np.array, threshold: float = None) -> bool:
         """
         :param threshold:
         :param image:
         :return:
         """
-        client = get_image_client()
-        result = client.match_rule(
-            rule_data=self.to_service_payload(),
-            image=image,
-            frame_id=frame_id,
-            threshold=threshold,
-        )
-        return self._apply_match_result(result)
+        if threshold is None:
+            threshold = self.threshold
 
-    def match_all(self, image: np.array, threshold: float = None, roi: list = None, frame_id: str = None) -> list[tuple]:
+        if not self.is_template_match:
+            return self.sift_match(image)
+            # raise Exception(f"unknown method {self.method}")
+
+        source = self.corp(image)
+        mat = self.image
+
+        if mat is None or mat.shape[0] == 0 or mat.shape[1] == 0:
+            logger.error(f"Template image is invalid: {mat.shape}")
+            return False  # 模板无效，匹配失败
+
+        res = cv2.matchTemplate(source, mat, cv2.TM_CCOEFF_NORMED)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)  # 最小匹配度，最大匹配度，最小匹配度的坐标，最大匹配度的坐标
+        if self.debug_mode:
+            logger.attr(self.name, f'matching score {max_val:.5f}')
+
+        if max_val > threshold:
+            self.roi_front[0] = max_loc[0] + self.roi_back[0]
+            self.roi_front[1] = max_loc[1] + self.roi_back[1]
+            return True
+        else:
+            return False
+
+    def match_multi_scale(self, image: np.array, threshold: float = None,
+                          scales: list = None, scale_range: tuple = None) -> bool:
+        """
+        多尺度模板匹配，自动尝试多个缩放比例以适应图片大小的变化
+        :param image: 原始截图
+        :param threshold: 匹配阈值
+        :param scales: 缩放比例列表
+        :param scale_range: 缩放范围 (start, end, step)，例如 (0.8, 1.2, 0.1)，step 默认为 0.1
+        :return: 匹配是否成功
+        """
+        if threshold is None:
+            threshold = self.threshold
+
+        # 如果指定了 scale_range，自动生成 scales 列表
+        if scale_range is not None:
+            start, end = scale_range[:2]
+            step = scale_range[2] if len(scale_range) > 2 else 0.1
+            scales = sorted(set(round(x, 1) for x in np.arange(start, end + step, step)))
+
+        if scales is None:
+            scales = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2]
+        else:
+            scales = sorted(set(round(x, 1) for x in scales))
+
+        source = self.corp(image)
+        mat = self.image
+
+        if mat is None or mat.shape[0] == 0 or mat.shape[1] == 0:
+            logger.error(f"Template image is invalid: {mat.shape}")
+            return False
+
+        # 预计算模板尺寸
+        mat_h, mat_w = mat.shape[:2]
+        source_h, source_w = source.shape[:2]
+
+        best_score = 0
+        best_loc = None
+        best_scale = 1.0
+
+        for scale in scales:
+            scaled_w = int(mat_w * scale)
+            scaled_h = int(mat_h * scale)
+
+            # 跳过无效缩放
+            if scaled_w < 10 or scaled_h < 10:
+                continue
+
+            try:
+                scaled_mat = cv2.resize(mat, (scaled_w, scaled_h))
+                res = cv2.matchTemplate(source, scaled_mat, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, max_loc = cv2.minMaxLoc(res)
+
+                if max_val > best_score:
+                    best_score = max_val
+                    best_loc = max_loc
+                    best_scale = scale
+            except Exception as e:
+                continue
+
+        if self.debug_mode:
+            logger.attr(self.name, f'best scale: {best_scale:.2f}, best score: {best_score:.5f}')
+
+        if best_score > threshold and best_loc is not None:
+            self.roi_front[0] = best_loc[0] + self.roi_back[0]
+            self.roi_front[1] = best_loc[1] + self.roi_back[1]
+            self.roi_front[2] = scaled_w
+            self.roi_front[3] = scaled_h
+            return True
+        else:
+            return False
+
+    def match_all(self, image: np.array, threshold: float = None, roi: list = None) -> list[tuple]:
         """
         区别于match，这个是返回所有的匹配结果
         :param roi:
@@ -277,17 +250,24 @@ class RuleImage:
         """
         if roi is not None:
             self.roi_back = roi
-        client = get_image_client()
-        result = client.match_all(
-            rule_data=self.to_service_payload(),
-            image=image,
-            frame_id=frame_id,
-            threshold=threshold,
-            roi=self.roi_back,
-        )
-        return [tuple(item) for item in result.get("matches", [])]
+        if threshold is None:
+            threshold = self.threshold
+        if not self.is_template_match:
+            raise Exception(f"unknown method {self.method}")
+        source = self.corp(image)
+        mat = self.image
+        results = cv2.matchTemplate(source, mat, cv2.TM_CCOEFF_NORMED)
+        locations = np.where(results >= threshold)
+        matches = []
+        for pt in zip(*locations[::-1]):  # (x, y) coordinates
+            score = results[pt[1], pt[0]]
+            # 得分, x, y, w, h
+            x = self.roi_back[0] + pt[0]
+            y = self.roi_back[1] + pt[1]
+            matches.append((score, x, y, mat.shape[1], mat.shape[0]))
+        return matches
 
-    def match_all_any(self, image: np.array, threshold: float = None, roi: list = None, nms_threshold: float = 0.3, frame_id: str = None) -> list[tuple]:
+    def match_all_any(self, image: np.array, threshold: float = None, roi: list = None, nms_threshold: float = 0.3) -> list[tuple]:
         """
         区别于match，这个是返回所有的匹配结果，去除冗余匹配项（例如：多个框选区域重叠的情况）时使用。
         :param roi:
@@ -297,16 +277,29 @@ class RuleImage:
         """
         if roi is not None:
             self.roi_back = roi
-        client = get_image_client()
-        result = client.match_all_any(
-            rule_data=self.to_service_payload(),
-            image=image,
-            frame_id=frame_id,
-            threshold=threshold,
-            roi=self.roi_back,
-            nms_threshold=nms_threshold,
-        )
-        return [tuple(item) for item in result.get("matches", [])]
+        if threshold is None:
+            threshold = self.threshold
+        if not self.is_template_match:
+            raise Exception(f"unknown method {self.method}")
+        source = self.corp(image)
+        mat = self.image
+        results = cv2.matchTemplate(source, mat, cv2.TM_CCOEFF_NORMED)
+        locations = np.where(results >= threshold)
+        matches = []
+        for pt in zip(*locations[::-1]):  # (x, y) coordinates
+            score = results[pt[1], pt[0]]
+            # 得分, x, y, w, h
+            x = self.roi_back[0] + pt[0]
+            y = self.roi_back[1] + pt[1]
+            matches.append((score, x, y, mat.shape[1], mat.shape[0]))
+        if len(matches) > 0:
+            scores = np.array([m[0] for m in matches])
+            boxes = np.array([[m[1], m[2], m[3], m[4]] for m in matches])
+            # 使用OpenCV的NMSBoxes
+            indices = cv2.dnn.NMSBoxes(boxes.tolist(), scores.tolist(), score_threshold=threshold, nms_threshold=nms_threshold)
+            filtered_matches = [matches[i] for i in indices]
+            return filtered_matches
+        return matches
 
     def coord(self) -> tuple:
         """
@@ -335,8 +328,6 @@ class RuleImage:
     def test_match(self, image: np.array):
         self.debug_mode = True
         if self.is_template_match:
-            return self.match(image)
-        if self.is_multi_scale_template_match:
             return self.match(image)
         if self.is_sift_flann:
             return self.sift_match(image, show=True)
@@ -418,12 +409,62 @@ class RuleImage:
         """
         image = self.corp(image)
         average_color = cv2.mean(image)
-        # logger.info(f'{self.name} average_color: {average_color}')
+        if self.debug_mode:
+            logger.info(f'{self.name} average_color: {average_color}')
         for i in range(3):
             if abs(average_color[i] - color[i]) > bias:
                 return False
         return True
 
+    def match_brightness(
+            self, image: np.array,
+            threshold: float = 0.9,
+            roi: list = None,
+            gray: bool = False) -> bool:
+        source = self.corp(image, roi) if roi is not None else self.corp(image)
+        template = self.image
+
+        if len(source.shape) != 3:
+            raise Exception(f'{self.name} source image must be 3-channel RGB, got shape={source.shape}')
+        source_gray = cv2.cvtColor(source, cv2.COLOR_RGB2GRAY)
+        source_hsv = cv2.cvtColor(source, cv2.COLOR_RGB2HSV)
+
+        if len(template.shape) != 3:
+            raise Exception(f'{self.name} template image must be 3-channel RGB, got shape={template.shape}')
+        template_gray = cv2.cvtColor(template, cv2.COLOR_RGB2GRAY)
+        template_hsv = cv2.cvtColor(template, cv2.COLOR_RGB2HSV)
+
+        source_value = float(source_gray.mean()) if gray else float(source_hsv[:, :, 2].mean())
+        template_value = float(template_gray.mean()) if gray else float(template_hsv[:, :, 2].mean())
+        score = 1.0 - abs(source_value - template_value) / 255.0
+        score = max(0.0, min(1.0, score))
+
+        if self.debug_mode:
+            logger.attr(self.name, f'brightness similarity {score:.5f}')
+            logger.info(f'Template value: {template_value}, Source value: {source_value}')
+        return score >= threshold
+
+    def match_saturation(self, image: np.array, threshold: float = 0.9, roi: list = None) -> bool:
+        source = self.corp(image, roi) if roi is not None else self.corp(image)
+        template = self.image
+
+        if len(source.shape) != 3:
+            raise Exception(f'{self.name} source image must be 3-channel RGB, got shape={source.shape}')
+        source_hsv = cv2.cvtColor(source, cv2.COLOR_RGB2HSV)
+
+        if len(template.shape) != 3:
+            raise Exception(f'{self.name} template image must be 3-channel RGB, got shape={template.shape}')
+        template_hsv = cv2.cvtColor(template, cv2.COLOR_RGB2HSV)
+
+        source_value = float(source_hsv[:, :, 1].mean())
+        template_value = float(template_hsv[:, :, 1].mean())
+        score = 1.0 - abs(source_value - template_value) / 255.0
+        score = max(0.0, min(1.0, score))
+
+        if self.debug_mode:
+            logger.attr(self.name, f'saturation similarity {score:.5f}')
+            logger.info(f'Template value: {template_value}, Source value: {source_value}')
+        return score >= threshold
 
 if __name__ == "__main__":
     from dev_tools.assets_test import detect_image

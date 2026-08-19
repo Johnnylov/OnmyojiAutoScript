@@ -33,12 +33,13 @@ class Charisma(FriendshipPoints):
                               money_ocr=self.I_MALL_RESOURCE_CHARISMA.build_mall_resource_ocr(self.device.image), buy_money=400)
 
 
+
+
 if __name__ == '__main__':
     from module.config.config import Config
     from module.device.device import Device
 
-    c = Config('日常1')
+    c = Config('oas1')
     d = Device(c)
     t = Charisma(c, d)
-    t.execute_charisma()
 

@@ -42,43 +42,8 @@ class OcrMode(Enum):
     DURATION = 5  # str: "Duration"
     QUANTITY = 6  # str: "Quantity"
 
-
-class OcrMethodType(Enum):
-    # 默认，不需要预处理
-    DEFAULT = "DEFAULT"
-    # # 颜色过滤Color Filter
-    # 配置相关CF_RGB(lower, upper)
-    # lower ,upper 格式为6位16进制，例如FFFFFF
-    # 过滤图片中颜色，仅保留符合指定范围（lower到upper）的颜色
-    CF_HSV = "CF_HSV"
-    # 与CF_HSV  相似
-    CF_RGB = "CF_RGB"
-
-
-class OcrMethod:
-    _reg = r"([^()]+)\((.*?)\)?$"
-
-    def __init__(self, val: str = None):
-        self._method_type: OcrMethodType = OcrMethodType.DEFAULT
-        self._val: str = val
-        if val is None:
-            return
-        import re
-        match = re.match(self._reg, val)
-        if not match:
-            return
-        type_str = match.group(1).upper()
-        if type_str not in OcrMethodType.__members__:
-            return
-        self._method_type = OcrMethodType[type_str]
-        self._val = match.group(2)
-
-    def get_method_type(self):
-        return self._method_type
-
-    def get_val(self):
-        return self._val
-
+class OcrMethod(Enum):
+    DEFAULT = 1  # str: "Default"
 
 class BaseCor:
 
@@ -88,7 +53,7 @@ class BaseCor:
 
     name: str = "ocr"
     mode: OcrMode = OcrMode.FULL
-    method: OcrMethod = OcrMethod()
+    method: OcrMethod = OcrMethod.DEFAULT  # 占位符
     roi: list = []  # [x, y, width, height]
     area: list = []  # [x, y, width, height]
     keyword: str = ""  # 默认为空
@@ -116,7 +81,7 @@ class BaseCor:
         elif isinstance(mode, OcrMode):
             self.mode = mode
         if isinstance(method, str):
-            self.method = OcrMethod(method.upper())
+            self.method = OcrMethod[method.upper()]
         elif isinstance(method, OcrMethod):
             self.method = method
         self.roi: list = list(roi)
@@ -201,6 +166,7 @@ class BaseCor:
                                                                           OcrMode.QUANTITY]:
             logger.warning(
                 f'[{self.name}] Score {score:.2f} is low, but result "{result}" contains a digit. Accepting it.')
+            print(f'能保留')
         else:
             result = ""
         # after proces
@@ -210,7 +176,7 @@ class BaseCor:
                     text=f'[{result}]')
         return result
 
-    def detect_and_ocr(self, image, logDisplay: bool = True, **kwargs) -> list[BoxedResult]:
+    def detect_and_ocr(self, image, logDisplay: bool = True) -> list[BoxedResult]:
         """
         注意：这里使用了预处理和后处理
         :param image:
@@ -223,7 +189,7 @@ class BaseCor:
         image = enlarge_canvas(image)
 
         # ocr
-        boxed_results: list[BoxedResult] = self.model.detect_and_ocr(image, **kwargs)
+        boxed_results: list[BoxedResult] = self.model.detect_and_ocr(image)
         results = []
         # after proces
         for result in boxed_results:
@@ -270,7 +236,7 @@ class BaseCor:
         if result is not None:
             # logger.info("Filter result: %s" % result)
             return result
-        # TODO: 有问题,会把ocr_full搞炸,本来不匹配的结果由于单字匹配愣是返回了区域,导致外层永远无法判断到底是否匹配
+
         # 如果适用顺序拼接还是没有匹配到，那可能是竖排的，使用单个字节的keyword进行匹配
         indices = []
         # 对于keyword中的每一个字符，都要在strings中进行匹配

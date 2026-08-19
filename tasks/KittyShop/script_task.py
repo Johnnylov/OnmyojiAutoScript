@@ -25,7 +25,8 @@ class ScriptTask(GameUi, ActivityShikigamiAssets, KittyShopAssets):
                        KittyShopAssets.I_MAIN_BUSY_5]
 
     def run(self) -> None:
-        self.goto_page(page_main)
+        self.ui_get_current_page()
+        self.ui_goto(page_main)
         while 1:
             self.screenshot()
             if self.appear(self.I_START_FARMING):
@@ -133,4 +134,3 @@ if __name__ == '__main__':
     d = Device(c)
     t = ScriptTask(c, d)
     t.run()
-

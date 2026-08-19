@@ -3,7 +3,11 @@
 # github https://github.com/runhey
 import time
 
+import cv2
+import numpy as np
+
 from datetime import datetime, timedelta
+from numpy import uint8, fromfile
 from random import choice
 from cached_property import cached_property
 # Use cmd to install: ./toolkit/python.exe -m pip install -i https://pypi.org/simple/ oashya --trusted-host pypi.org
@@ -21,7 +25,25 @@ from tasks.GameUi.page import page_hyakkiyakou, page_main, page_onmyodo
 from tasks.Hyakkiyakou.config import InferenceEngine, ModelPrecision
 from tasks.Hyakkiyakou.agent.agent import Agent
 from tasks.Hyakkiyakou.slave.hya_slave import HyaSlave
-from module.hyakkiyakou import Debugger
+from tasks.Hyakkiyakou.debugger import Debugger
+
+
+def plot_save(image, boxes):
+    color_palette = np.random.uniform(0, 255, size=(226, 3))
+    for box in boxes:
+        _cls = box[0]
+        _scores = box[1]
+        _x, _y, _w, _h = box[2]
+        x1 = int(_x - _w / 2)
+        y1 = int(_y - _h / 2)
+        x2 = int(_x + _w / 2)
+        y2 = int(_y + _h / 2)
+        cv2.rectangle(image, (x1, y1), (x2, y2), color_palette[_cls], 2)
+        #
+        cv2.putText(image, f'{_cls} {_scores:.2f}', (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color_palette[_cls],
+                    2)
+    save_file = './tasks/Hyakkiyakou/temp/image.png'
+    cv2.imwrite(save_file, image)
 
 
 class ScriptTask(GameUi, HyaSlave, SwitchOnmyoji):
@@ -79,15 +101,7 @@ class ScriptTask(GameUi, HyaSlave, SwitchOnmyoji):
             'weights': weights,
             'priorities': priorities,
             'invite_friend': hya_config.hya_invite_friend,
-            'auto_bean': hya_config.hya_auto_bean,
-            'bean_threshold_low': hya_config.hya_bean_threshold_low,
-            'buff_omega': {
-                'prob_up': hya_config.hya_buff_prob_up,
-                'speed_up': hya_config.hya_buff_speed_up,
-                'add_beans': hya_config.hya_buff_add_beans,
-                'slow_down': hya_config.hya_buff_slow_down,
-                'freeze': hya_config.hya_buff_freeze,
-            }
+            'auto_bean': hya_config.hya_auto_bean
         }
         return Agent(strategy=strategy)
 
@@ -109,9 +123,9 @@ class ScriptTask(GameUi, HyaSlave, SwitchOnmyoji):
         limit_time = self._config.hyakkiyakou_config.hya_limit_time
         self.limit_time: timedelta = timedelta(hours=limit_time.hour, minutes=limit_time.minute,
                                                seconds=limit_time.second)
-        self.goto_page(page_onmyodo)
+        self.ui_goto_page(page_onmyodo)
         self.switch_onmyoji(self._config.hyakkiyakou_config.hya_onmyoji)
-        self.goto_page(page_hyakkiyakou)
+        self.ui_goto_page(page_hyakkiyakou)
 
         while 1:
             if hya_count >= self.limit_count:
@@ -184,8 +198,8 @@ class ScriptTask(GameUi, HyaSlave, SwitchOnmyoji):
                 best_class = _class
         if best_class != -1:
             logger.info(
-                f'Hyakki select: detect {id2name(best_class)} '
-                f'with rarity score {best_score}'
+                f'Hyakki select: detect {id2name(_class)} '
+                f'with rarity score {score}'
             )
         else:
             logger.warning('Hyakki select: no valid shikigami detected on title screen')
@@ -224,11 +238,8 @@ class ScriptTask(GameUi, HyaSlave, SwitchOnmyoji):
 
     def one(self):
         self.reset_state()
-        self.goto_page(page_hyakkiyakou)
-        self.screenshot()
         if not self.appear(self.I_HACCESS):
-            logger.error('Failed to navigate to Hyakkiyakou page after 3 retries')
-            raise RequestHumanTakeover('Failed to navigate to Hyakkiyakou page')
+            logger.warning('Page Error')
         if self._config.hyakkiyakou_config.hya_invite_friend:
             self.invite_friend()
         # start
@@ -244,11 +255,12 @@ class ScriptTask(GameUi, HyaSlave, SwitchOnmyoji):
             if self.appear_then_click(self.I_HSTART, interval=2):
                 continue
             if not self.appear(self.I_HSELECTED) and getattr(self, '_best_boss_button', None) is not None:
-                self.click(self._best_boss_button, interval=2)  # 保险：如果因为某些原因还没处于“已选中”状态，就再点一次最佳按钮
+                self.click(self._best_boss_button, interval=2) # 保险：如果因为某些原因还没处于“已选中”状态，就再点一次最佳按钮
                 continue
         self.device.stuck_record_add('BATTLE_STATUS_S')
         # 正式开始
         logger.hr('Start Hyakkiyakou')
+        init_bean_flag: bool = False
         last_action = [0, 0, False, 10]
         self.hya_fs_check_timer.reset()
         if self._config.debug_config.hya_show:
@@ -259,6 +271,10 @@ class ScriptTask(GameUi, HyaSlave, SwitchOnmyoji):
                 break
             if not self.appear(self.I_CHECK_RUN):
                 continue
+            if not init_bean_flag:
+                init_bean_flag = True
+                self.bean_05to10()
+                time.sleep(0.5)
             #修改：在这里不再区分freeze，而是将状态传到decision用于执行冻结策略
             #目前被禁用了 因为冰冻状态下检测正确率约等于0 全是蝉冰雪女 =.=
             if not self.appear(self.I_HFREEZE):
@@ -300,11 +316,6 @@ class ScriptTask(GameUi, HyaSlave, SwitchOnmyoji):
             return
         if state[0] <= 0:
             return
-        if state[2] != bean:  # 当前撒豆数量不等于要撒的数量则切换
-            if state[2] == 10 and bean == 5:
-                self.bean_10to05()
-            elif state[2] == 5 and bean == 10:
-                self.bean_05to10()
         self.fast_click(x=x, y=y, control_method=self._config.debug_config.hya_control_method)
 
 
@@ -323,3 +334,4 @@ if __name__ == '__main__':
     # from debugger import test_track
     # test_track(show=False)
     pass
+

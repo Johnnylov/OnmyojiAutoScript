@@ -30,6 +30,7 @@ class ScriptTask(Mall, Guild, ThousandThings, Shrine):
         self.execute_mall()
 
         self.set_next_run(task='RichMan', success=True, finish=False)
+
         raise TaskEnd('RichMan')
 
 

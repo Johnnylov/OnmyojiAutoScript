@@ -2,6 +2,8 @@
 # @author runhey
 # 脚本进程
 # github https://github.com/runhey
+import sys, os
+import signal
 import multiprocessing
 from asyncio import QueueEmpty, CancelledError, sleep
 from enum import Enum
@@ -9,10 +11,6 @@ from enum import Enum
 from module.logger import logger
 from module.server.config_manager import ConfigManager
 from module.server.script_websocket import ScriptWSManager
-
-# 脚本进程必须使用全新解释器，避免继承主服务已连接的 ZeroRPC/ZeroMQ context。
-# Pipe、Queue 和 Process 必须来自同一个 multiprocessing context。
-_SCRIPT_PROCESS_CONTEXT = multiprocessing.get_context("spawn")
 
 
 class ScriptState(int, Enum):
@@ -29,23 +27,10 @@ class ScriptProcess(ScriptWSManager):
         if config_name not in ConfigManager.all_script_files():
             raise FileNotFoundError(f'{config_name}.json not found')
         self.config_name = config_name  # config_name
-        self.log_pipe_out, self.log_pipe_in = _SCRIPT_PROCESS_CONTEXT.Pipe(False)
-        self.state_queue = _SCRIPT_PROCESS_CONTEXT.Queue()
+        self.log_pipe_out, self.log_pipe_in = multiprocessing.Pipe(False)
+        self.state_queue = multiprocessing.Queue()
         self.state: ScriptState = ScriptState.INACTIVE
         self._process = None
-
-    @staticmethod
-    def _extract_log_dedup_key(log: str) -> str | None:
-        text = str(log).strip()
-        if not text:
-            return None
-        parts = str(log).split('|', 2)
-        if len(parts) != 3:
-            return None
-        level, timestamp, message = [part.strip() for part in parts]
-        if not level or not timestamp or not message:
-            return None
-        return message
 
     async def start(self):
         self.state = ScriptState.RUNNING
@@ -55,14 +40,12 @@ class ScriptProcess(ScriptWSManager):
         if self._process and self._process.is_alive():
             logger.warning(f'Script {self.config_name} is already running and first stop it')
             self.stop()
-        self._process = _SCRIPT_PROCESS_CONTEXT.Process(
-            target=func,
-            args=(self.config_name, self.state_queue, self.log_pipe_in,),
-            name=self.config_name,
-            daemon=True,
-        )
+        self._process = multiprocessing.Process(target=func,
+                                                args=(self.config_name, self.state_queue, self.log_pipe_in,),
+                                                name=self.config_name,
+                                                daemon=True
+                                                )
         self._process.start()
-
 
     async def stop(self):
         self.state = ScriptState.INACTIVE
@@ -74,6 +57,10 @@ class ScriptProcess(ScriptWSManager):
             logger.warning(f'Script {self.config_name} is not running')
             return
         self._process.terminate()
+        self._process.join(timeout=0.7)
+        if self._process.is_alive():
+            logger.error(f'Script {self.config_name} subprocess terminate failed')
+            self._process.kill()
         self._process = None
 
     async def coroutine_broadcast_state(self):
@@ -107,7 +94,6 @@ class ScriptProcess(ScriptWSManager):
 
     async def coroutine_broadcast_log(self):
         try:
-            previous_log_key = None  # 缓存上一条正文日志，用于相邻重复去重
             while 1:
                 if self.state == ScriptState.INACTIVE:
                     await sleep(1)
@@ -118,15 +104,9 @@ class ScriptProcess(ScriptWSManager):
                         await sleep(0.3)
                         continue
                     log = self.log_pipe_out.recv()
-                    if not str(log).strip():
+                    if not log:
+                        await sleep(0.5)
                         continue
-                    current_log_key = self._extract_log_dedup_key(log)
-                    if current_log_key is not None:
-                        if current_log_key == previous_log_key:
-                            continue
-                        previous_log_key = current_log_key
-                    else:
-                        previous_log_key = None
                     await self.broadcast_log(log)
                 except EOFError as e:
                     await sleep(0.5)
@@ -141,6 +121,14 @@ class ScriptProcess(ScriptWSManager):
 
 
 def func(config: str, state_queue: multiprocessing.Queue, log_pipe_in) -> None:
+    def signal_handler(signum, frame):
+        logger.info(f'Script {config} received signal {signum}, exiting gracefully')
+        log_pipe_in.close()
+        state_queue.close()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
 
     def start_log() -> None:
         try:
@@ -180,3 +168,5 @@ if __name__ == '__main__':
     from time import sleep
     sleep(10)
     logger.info(p._process.exitcode)
+
+

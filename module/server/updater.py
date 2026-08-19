@@ -1,6 +1,9 @@
 import datetime
 import subprocess
-from typing import Tuple
+import threading
+import time
+import requests
+from typing import Generator, List, Tuple
 
 from deploy.config import ExecutionError
 from deploy.git import GitManager
@@ -9,11 +12,6 @@ from deploy.utils import DEPLOY_CONFIG
 from module.logger import logger
 from module.base.retry import retry
 from module.server.config import DeployConfig
-
-
-DEFAULT_GIT_TIMEOUT = 5
-DEFAULT_FETCH_TIMEOUT = 15
-FETCH_RETRY = 2
 
 
 class Updater(DeployConfig, GitManager, PipManager):
@@ -35,33 +33,12 @@ class Updater(DeployConfig, GitManager, PipManager):
         else:
             return None
 
-    def execute_command(self, command, timeout=DEFAULT_GIT_TIMEOUT) -> subprocess.CompletedProcess | None:
+    def execute_output(self, command) -> str:
         command = command.replace(r"\\", "/").replace("\\", "/").replace('"', '"')
-        try:
-            return subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                encoding="utf8",
-                errors="replace",
-                shell=True,
-                timeout=timeout,
-            )
-        except subprocess.TimeoutExpired:
-            logger.warning(f"Git command timeout after {timeout}s: {command}")
-            return None
-        except OSError as e:
-            logger.warning(f"Git command failed: {command}, error: {e}")
-            return None
-
-    def execute_output(self, command, timeout=DEFAULT_GIT_TIMEOUT) -> str:
-        result = self.execute_command(command, timeout=timeout)
-        if result is None:
-            return ""
-        if result.returncode:
-            logger.warning(f"Git command failed: {command}, stderr: {result.stderr.strip()}")
-            return ""
-        return result.stdout
+        log = subprocess.run(
+            command, capture_output=True, text=True, encoding="utf8", shell=True
+        ).stdout
+        return log
 
     def get_commit(self, revision="", n=1, short_sha1=False) -> Tuple:
         """
@@ -71,7 +48,7 @@ class Updater(DeployConfig, GitManager, PipManager):
         ph = "h" if short_sha1 else "H"
 
         log = self.execute_output(
-            f'"{self.git}" --no-pager log {revision} --pretty=format:"%{ph}---%an---%ad---%s" --date=iso -{n}'
+            f'"{self.git}" log {revision} --pretty=format:"%{ph}---%an---%ad---%s" --date=iso -{n}'
         )
 
         if not log:
@@ -95,64 +72,53 @@ class Updater(DeployConfig, GitManager, PipManager):
         source = "origin"
         return self.get_commit(f"{source}/{self.Branch}")
 
-    def fetch_remote(self) -> bool:
+    def check_update(self) -> bool:
+        self.state = "checking"
+
+        # if State.deploy_config.GitOverCdn:
+        #     status = self.goc_client.get_status()
+        #     if status == "uptodate":
+        #         logger.info(f"No update")
+        #         return False
+        #     elif status == "behind":
+        #         logger.info(f"New update available")
+        #         return True
+        #     else:
+        #         # failed, should fallback to `git pull`
+        #         pass
+
         source = "origin"
-        for _ in range(FETCH_RETRY):
-            result = self.execute_command(
-                f'"{self.git}" fetch {source} {self.Branch}',
-                timeout=DEFAULT_FETCH_TIMEOUT,
-            )
-            if result is not None and result.returncode == 0:
-                return True
-            if result is not None:
-                logger.warning(f"Git fetch failed: {result.stderr.strip()}")
+        for _ in range(3):
+            if self.execute(
+                    f'"{self.git}" fetch {source} {self.Branch}', allow_failure=True
+            ):
+                break
+        else:
+            logger.warning("Git fetch failed")
+            return False
 
-        logger.warning("Git fetch failed")
-        return False
-
-    def revision_distance(self, left: str, right: str) -> tuple[int, int] | None:
         log = self.execute_output(
-            f'"{self.git}" rev-list --left-right --count {left}...{right}'
+            f'"{self.git}" log --not --remotes={source}/* -1 --oneline'
         )
-        if not log:
-            return None
+        if log:
+            logger.info(
+                f"Cannot find local commit {log.split()[0]} in upstream, skip update"
+            )
+            return False
 
-        try:
-            ahead, behind = log.split()
-            return int(ahead), int(behind)
-        except ValueError:
-            logger.warning(f"Unexpected git rev-list output: {log.strip()}")
-            return None
+        sha1, _, _, message = self.get_commit(f"..{source}/{self.Branch}")
 
-    def get_update_info(self) -> dict:
-        is_update = False
-        source = "origin"
-        remote_revision = f"{source}/{self.Branch}"
-
-        if self.fetch_remote():
-            distance = self.revision_distance("HEAD", remote_revision)
-            if distance is None:
-                is_update = False
-            else:
-                ahead, behind = distance
-                is_update = not ahead and bool(behind)
-                if ahead:
-                    logger.info("Local branch has commits not in upstream, skip update")
-                logger.info("New update available" if is_update else "No update")
-
-        commits = self.get_commit(remote_revision, n=15)
-        latest_commit = commits[0] if commits and isinstance(commits, list) else commits
-        return {
-            'is_update': is_update,
-            'branch': self.current_branch(),
-            'current_commit': self.current_commit(),
-            'latest_commit': latest_commit,
-            'commit': commits,
-        }
+        if sha1:
+            logger.info(f"New update available")
+            logger.info(f"{sha1[:8]} - {message}")
+            return True
+        else:
+            logger.info(f"No update")
+            return False
 
     def execute_pull(self) -> bool:
         source = "origin"
-        for _ in range(FETCH_RETRY):
+        for _ in range(3):
             if self.execute(
                     f'"{self.git}" pull {source} {self.Branch} --no-rebase', allow_failure=True
             ):
@@ -162,6 +128,10 @@ class Updater(DeployConfig, GitManager, PipManager):
             return False
 
 
+
 if __name__ == "__main__":
     updater = Updater()
     print(updater.latest_commit())
+
+
+

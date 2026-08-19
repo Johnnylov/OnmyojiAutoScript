@@ -4,7 +4,6 @@
 from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 
-
 # 庭院皮肤
 class MainType(str, Enum):
     COSTUME_MAIN = 'costume_main'  # 初语谧景
@@ -23,17 +22,21 @@ class MainType(str, Enum):
     COSTUME_MAIN_13 = 'costume_main_13'  # 云景阆苑
     COSTUME_MAIN_14 = 'costume_main_14'  # 雪月华庭
     COSTUME_MAIN_15 = 'costume_main_15'  # 茨心乐园
-    COSTUME_MAIN_16 = 'costume_main_16'  # 琦梦茨庭
 
 # 结界皮肤
 class RealmType(str, Enum):
     COSTUME_REALM_DEFAULT = 'costume_realm_default'  # 妖扇结界
 
+# 鲤鱼旗皮肤
+class CarpBannerType(str, Enum):
+    COSTUME_CARPBANNER_DEFAULT = 'costume_carpbanner_default'  # 吉鲤游风
+    COSTUME_CARPBANNER_1 = 'costume_carpbanner_1'  # 无垢莲台
+    COSTUME_CARPBANNER_2 = 'costume_carpbanner_2'  # 萤灯月夜
+    COSTUME_CARPBANNER_3 = 'costume_carpbanner_3'  # 鸢戏游鲤
 
 # 主题，就是庭院最右下角的展开按钮
 class ThemeType(str, Enum):
     COSTUME_THEME_DEFAULT = 'costume_theme_default'  # 伊始之卷
-
 
 # 幕间，就是式神录这里
 class ShikigamiType(str, Enum):
@@ -46,13 +49,12 @@ class ShikigamiType(str, Enum):
     COSTUME_SHIKIGAMI_6 = 'costume_shikigami_6'  # 月下火舞
     COSTUME_SHIKIGAMI_7 = 'costume_shikigami_7'  # 赤溟幽界
     COSTUME_SHIKIGAMI_8 = 'costume_shikigami_8'  # 童梦基地
-    COSTUME_SHIKIGAMI_9 = 'costume_shikigami_9'  # 眠鹿之森
+    COSTUME_SHIKIGAMI_9 = 'costume_shikigami_9'  # 鹿眠之森
     COSTUME_SHIKIGAMI_10 = 'costume_shikigami_10'  # 今宵胧明
 
 # 签到主题
 class SignType(str, Enum):
     COSTUME_SIGN_DEFAULT = 'costume_sign_default'  # 默认
-
 
 # 战斗主题
 class BattleType(str, Enum):
@@ -73,21 +75,29 @@ class BattleType(str, Enum):
     COSTUME_BATTLE_14 = 'costume_battle_14'  # 茸茨跃动
 
 
-# 庭院事务主题
-class CourtyardAffairType(str, Enum):
-    CUSTOM_COURTYARD_AFFAIR_DEFAULT = 'custom_courtyard_affair_default'  # 默认
-    CUSTOM_COURTYARD_AFFAIR_1 = 'custom_courtyard_affair_1'  # 龙仪星引
 
 class CostumeConfig(BaseModel):
     # 皮肤配置
     costume_main_type: MainType = Field(default=MainType.COSTUME_MAIN, description='costume_main_type_help')
     costume_realm_type: RealmType = Field(default=RealmType.COSTUME_REALM_DEFAULT, description='costume_realm_type_help')
+    costume_carpbanner_type: CarpBannerType = Field(default=CarpBannerType.COSTUME_CARPBANNER_DEFAULT,description='costume_carpbanner_type_help')
     costume_theme_type: ThemeType = Field(default=ThemeType.COSTUME_THEME_DEFAULT, description='costume_theme_type_help')
     costume_shikigami_type: ShikigamiType = Field(default=ShikigamiType.COSTUME_SHIKIGAMI_DEFAULT, description='costume_shikigami_type_help')
     costume_sign_type: SignType = Field(default=SignType.COSTUME_SIGN_DEFAULT, description='costume_sign_type_help')
     costume_battle_type: BattleType = Field(default=BattleType.COSTUME_BATTLE_DEFAULT, description='costume_battle_type_help')
-    custom_courtyard_affair: CourtyardAffairType = Field(default=CourtyardAffairType.CUSTOM_COURTYARD_AFFAIR_DEFAULT)
 
-    @field_validator("costume_realm_type", mode="before")
-    def convert_old_value(cls, v):
-        return RealmType.COSTUME_REALM_DEFAULT
+    @field_validator('costume_realm_type', mode='before')
+    @classmethod
+    def validate_realm(cls, v):
+        if v and v not in RealmType._value2member_map_:
+            return RealmType.COSTUME_REALM_DEFAULT
+        return v
+
+
+
+
+
+
+
+
+

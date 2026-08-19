@@ -1,29 +1,29 @@
 [
   {
     "itemName": "s_greed",
-    "roiFront": "589,13,84,34",
-    "roiBack": "589,13,84,34",
-    "mode": "Digit",
+    "roiFront": "585,7,63,42",
+    "roiBack": "585,7,63,42",
+    "mode": "Single",
     "method": "Default",
     "keyword": "",
-    "description": "贪-票数"
+    "description": "Ocr-description"
   },
   {
     "itemName": "s_anger",
-    "roiFront": "770,12,84,36",
-    "roiBack": "770,12,84,36",
+    "roiFront": "759,9,79,43",
+    "roiBack": "759,9,79,43",
     "mode": "Digit",
     "method": "Default",
     "keyword": "",
-    "description": "嗔-票数"
+    "description": "Ocr-description"
   },
   {
     "itemName": "s_foolery",
-    "roiFront": "951,12,86,34",
-    "roiBack": "951,12,86,34",
+    "roiFront": "955,10,68,36",
+    "roiBack": "955,10,68,36",
     "mode": "Digit",
     "method": "Default",
     "keyword": "",
-    "description": "痴-票数"
+    "description": "Ocr-description"
   }
 ]

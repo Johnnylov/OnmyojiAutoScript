@@ -24,17 +24,21 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, DyeTrialsAssets):
 
         # 自动换御魂
         if cfg.switch_soul_config.enable:
-            self.goto_page(page_shikigami_records)
+            self.ui_get_current_page()
+            self.ui_goto(page_shikigami_records)
             self.run_switch_soul(cfg.switch_soul_config.switch_group_team)
         if cfg.switch_soul_config.enable_switch_by_name:
-            self.goto_page(page_shikigami_records)
+            self.ui_get_current_page()
+            self.ui_goto(page_shikigami_records)
             self.run_switch_soul_by_name(cfg.switch_soul_config.group_name, cfg.switch_soul_config.team_name)
 
-        self.goto_page(page_main)
+        self.ui_get_current_page()
+        self.ui_goto(page_main)
 
         self.get_all()
 
-        self.goto_page(page_main)
+        self.ui_get_current_page()
+        self.ui_goto(page_main)
 
         self.set_next_run(task='DyeTrials', success=True, finish=True)
         raise TaskEnd('DyeTrials')
@@ -60,10 +64,6 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, DyeTrialsAssets):
             if boss_timer.reached():
                 self.config.notifier.push(title='超鬼王', message='识别超时退出')
                 break
-            # 关闭获得皮肤提示弹窗
-            if self.appear_then_click(self.I_FP_CLOSE_GET_SKIN, interval=0.8):
-                logger.warning('Maybe already get skin, close tip')
-                continue
             # 获得奖励
             if self.ui_reward_appear_click():
                 boss_timer.reset()
@@ -99,4 +99,3 @@ if __name__ == '__main__':
     t.screenshot()
 
     t.run()
-

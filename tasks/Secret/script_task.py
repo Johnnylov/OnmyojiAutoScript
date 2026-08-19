@@ -7,13 +7,14 @@ from datetime import datetime
 
 from module.exception import TaskEnd
 from module.logger import logger
+from module.base.timer import Timer
 from module.atom.ocr import RuleOcr
 
 from tasks.GameUi.game_ui import GameUi
-from tasks.GameUi.page import page_main, page_secret_zones, page_shikigami_records, page_battle_result, any_of
+from tasks.GameUi.page import page_main, page_secret_zones, page_shikigami_records
 from tasks.Secret.config import SecretConfig, Secret
 from tasks.Secret.assets import SecretAssets
-from tasks.Component.GeneralBattle.general_battle import ExitMatcher, GeneralBattle
+from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.Component.GeneralBuff.config_buff import BuffClass
@@ -22,9 +23,6 @@ from tasks.WeeklyTrifles.assets import WeeklyTriflesAssets
 
 class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
     lay_list = ['壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖', '拾']
-
-    def _exit_matcher(self) -> ExitMatcher:
-        return self.I_SE_FIRE
 
     @cached_property
     def match_layer(self) -> dict:
@@ -42,22 +40,20 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
         conf.lock_team_enable = False
         return conf
 
-    def before_run(self):
-        battle_result = self.navigator.resolve_page(page_battle_result)
-        battle_result.recognizer = any_of(self.I_SE_BATTLE_WIN, battle_result.recognizer)
-
     def run(self):
-        self.before_run()
         self.check_time()
         secret: Secret = self.config.secret
         con = secret.secret_config
         if secret.switch_soul.enable:
-            self.goto_page(page_shikigami_records)
+            self.ui_get_current_page()
+            self.ui_goto(page_shikigami_records)
             self.run_switch_soul(secret.switch_soul.switch_group_team)
         if secret.switch_soul.enable_switch_by_name:
-            self.goto_page(page_shikigami_records)
+            self.ui_get_current_page()
+            self.ui_goto(page_shikigami_records)
             self.run_switch_soul_by_name(secret.switch_soul.group_name, secret.switch_soul.team_name)
-        self.goto_page(page_secret_zones)
+        self.ui_get_current_page()
+        self.ui_goto(page_secret_zones)
 
         # 进入
         success = True
@@ -86,10 +82,12 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
             if not layer:
                 if self.appear(WeeklyTriflesAssets.I_WT_SE_SHARE):
                     logger.warning('You have completed the weekly trifles, skip')
+                    self.ui_click(self.I_UI_BACK_BLUE, stop=self.I_UI_BACK_YELLOW)
                     break
                 text = self.O_SE_TOTAL_TIME.ocr_single(self.device.image)
                 if '尚未' not in text:
                     logger.warning('You have completed the weekly trifles, skip')
+                    self.ui_click(self.I_UI_BACK_BLUE, stop=self.I_UI_BACK_YELLOW)
                     break
                 continue
             if layer >= 6:
@@ -104,7 +102,7 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
                 if buff is []:
                     buff = None
                 self.click_battle()
-                success = self.run_general_battle(self.battle_config, buff=buff, battle_key="secret")
+                success = self.run_general_battle(self.battle_config, buff=buff)
                 continue
             if not first_battle and layer == 6:
                 # 第六次关闭加成，但是发现没有这个接口。。。！！！居然没有注意到
@@ -116,23 +114,26 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
                 if buff is []:
                     buff = None
                 self.click_battle()
-                success = self.run_general_battle(self.battle_config, buff=buff, battle_key="secret")
+                success = self.run_general_battle(self.battle_config, buff=buff)
                 continue
             elif not first_battle and layer == 9 and con.layer_9:
                 self.click_battle()
-                success = self.run_general_battle(self.battle_config, battle_key="secret")
+                success = self.run_general_battle(self.battle_config)
                 continue
             elif not first_battle and layer == 10 and con.layer_10:
                 self.click_battle()
-                success = self.run_general_battle(self.battle_config, battle_key="secret")
+                success = self.run_general_battle(self.battle_config)
                 break
             elif not first_battle:
                 # 其他层
                 self.click_battle()
-                success = self.run_general_battle(self.battle_config, battle_key="secret")
+                success = self.run_general_battle(self.battle_config)
                 continue
 
-        self.goto_page(page_main)
+        self.ui_click(self.I_UI_BACK_BLUE, self.I_UI_BACK_YELLOW)
+        self.ui_click(self.I_UI_BACK_YELLOW, self.I_CHECK_MAIN)
+        self.ui_get_current_page()
+        self.ui_goto(page_main)
         if con.secret_gold_50 or con.secret_gold_100:
             self.open_buff()
             if con.secret_gold_50:
@@ -148,6 +149,31 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
         自动寻找挑战的层数并且选定 , 找不到会向下划一点
         :return: 如果找得到返回层数，找不到返回None
         """
+
+        def set_layer_roi(ocr_target: RuleOcr, roi: tuple):
+            ocr_target.roi[0] = int(roi[0]) - 225
+            ocr_target.roi[1] = int(roi[1]) - 40
+
+        def check_layer(ocr_target: RuleOcr, roi=None) -> int or None:
+            #
+            # 手动留了一个bug： 即使匹配到了未通关 但是在判断层数的时候还是会先判断第一个是什么的
+            level = ocr_target.ocr(self.device.image)
+            if not isinstance(level, str):
+                logger.warning(f'OCR failed, try again {level}')
+            level = level.replace('·', '').replace(' ', '').replace('。', '').replace('武', '贰')
+            if level not in self.lay_list and roi:
+                print(roi)
+                print(ocr_target.roi)
+                set_layer_roi(ocr_target, roi)
+                self.screenshot()
+                level = ocr_target.ocr(self.device.image)
+            if level not in self.lay_list:
+                return None
+            try:
+                return self.match_layer[level]
+            except KeyError:
+                logger.warning(f'OCR failed, try again {level}')
+                return None
 
         def confirm_layer(ocr_target: RuleOcr, roi=None) -> int or None:
             """
@@ -231,6 +257,30 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
             if self.appear_then_click(self.I_SE_FIRE, interval=1):
                 continue
 
+    def battle_wait(self, random_click_swipt_enable: bool) -> bool:
+        # 重写
+        self.device.stuck_record_add('BATTLE_STATUS_S')
+        self.device.click_record_clear()
+        # 战斗过程 随机点击和滑动 防封
+        logger.info("Start battle process")
+        while 1:
+            self.screenshot()
+            if self.appear(self.I_SE_BATTLE_WIN):
+                logger.info('Win battle')
+                self.ui_click_until_disappear(self.I_SE_BATTLE_WIN, interval=2)
+                return True
+            if self.appear_then_click(self.I_WIN, interval=1):
+                continue
+            if self.appear(self.I_REWARD):
+                logger.info('Win battle')
+                self.ui_click_until_disappear(self.I_REWARD)
+                return True
+
+            if self.appear(self.I_FALSE):
+                logger.warning('False battle')
+                self.ui_click_until_disappear(self.I_FALSE)
+                return False
+
     def check_time(self) -> None:
         """
         周一早上不能打
@@ -254,3 +304,4 @@ if __name__ == '__main__':
     t.screenshot()
 
     t.run()
+    # t.find_battle(False)

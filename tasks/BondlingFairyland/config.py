@@ -3,11 +3,12 @@
 # github https://github.com/runhey
 from pydantic import BaseModel, Field, field_validator
 from enum import Enum
-from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
+from datetime import datetime, time
 
 from tasks.Component.config_scheduler import Scheduler
-from tasks.Component.config_base import ConfigBase, DateTime, TimeDelta, Time, dynamic_hide
-from tasks.Component.GeneralInvite.config_invite import FindMode, InviteConfig
+from tasks.Component.config_base import ConfigBase, DateTime, TimeDelta, Time
+from tasks.BondlingFairyland.config_battle import BattleConfig
+from tasks.Component.GeneralInvite.config_invite import InviteConfig
 
 
 class BondlingMode(str, Enum):
@@ -102,10 +103,6 @@ class BondlingSwitchSoul(ConfigBase):
         if group.isdigit() and team.isdigit():
             return 'int', (int(group), int(team))
         return 'str', (group, team)
-
-
-class BattleConfig(GeneralBattleConfig):
-    battle_hide_fields = dynamic_hide('lock_team_enable', 'preset_enable', 'preset_group', 'preset_team')
 
 
 class BondlingFairyland(ConfigBase):

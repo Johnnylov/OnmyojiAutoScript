@@ -1,4 +1,5 @@
 import os
+import re
 import typing as t
 from dataclasses import dataclass
 
@@ -94,38 +95,40 @@ class EmulatorInstanceBase:
         return True
 
     @cached_property
-    def instance_id(self):
-        """
-        通用实例 ID，委托给对应模拟器的 Handler。
-        Returns:
-            int: Instance ID, or None
-        """
-        from module.device.platform2.handlers import get_handler
-        handler = get_handler(self.type)
-        if handler is not None:
-            return handler.get_instance_id(self)
-        return None
-
-    @cached_property
     def MuMuPlayer12_id(self):
         """
-        兼容属性：MuMu 12 实例 ID。
+        Convert MuMu 12 instance name to instance id.
+        Example names:
+            MuMuPlayer-12.0-3
+            YXArkNights-12.0-1
+
         Returns:
             int: Instance ID, or None if this is not a MuMu 12 instance
         """
-        if self.type == 'MuMuPlayer12':
-            return self.instance_id
+        res = re.search(r'MuMuPlayer(?:Global)?-12.0-(\d+)', self.name)
+        if res:
+            return int(res.group(1))
+        res = re.search(r'YXArkNights-12.0-(\d+)', self.name)
+        if res:
+            return int(res.group(1))
+
         return None
 
     @cached_property
     def LDPlayer_id(self):
         """
-        兼容属性：LDPlayer 实例 ID。
+        Convert LDPlayer instance name to instance id.
+        Example names:
+            leidian0
+            leidian1
+
         Returns:
             int: Instance ID, or None if this is not a LDPlayer instance
         """
-        if self.type in ('LDPlayer3', 'LDPlayer4', 'LDPlayer9'):
-            return self.instance_id
+        res = re.search(r'leidian(\d+)', self.name)
+        if res:
+            return int(res.group(1))
+
         return None
 
 

@@ -7,19 +7,13 @@ from pydantic import BaseModel, ValidationError, Field
 
 from module.logger import logger
 
-
 class PackageName(str, Enum):
     AUTO = 'auto'
-    NETEASE_ONMYOJI = 'com.netease.onmyoji.wyzymnqsd_cps'  # 网易官方扫码版
+    NETEASE_ONMYOJI = 'com.netease.onmyoji.wyzymnqsd_cps'  # 网易自家的阴阳师
     NETEASE_MI = 'com.netease.onmyoji.mi'  # 小米
-    NETEASE = 'com.netease.onmyoji'     # 网易官方非扫码版
+    NETEASE = 'com.netease.onmyoji'
     NETEASE_HUAWEI = 'com.netease.onmyoji.huawei'
-    NETEASE_BILIBILI = 'com.netease.onmyoji.bili' #哔哩哔哩渠道服
-    NETEASE_VIVO = 'com.netease.onmyoji.vivo'  # vivo渠道服
-    NETEASE_M4399 = 'com.netease.onmyoji.m4399'  # 4399渠道服
-    NETEASE_NEARME = 'com.netease.onmyoji.nearme.gamecenter'  # OPPO渠道服
-    TENCENT_YYS = 'com.tencent.tmgp.yys.zqb'  # 腾讯应用宝渠道阴阳师
-
+    NETEASE_BILIBILI = 'com.netease.onmyoji.bili'
 
 class ScreenshotMethod(str, Enum):
     AUTO = 'auto'
@@ -32,13 +26,11 @@ class ScreenshotMethod(str, Enum):
     WINDOW_BACKGROUND = 'window_background'
     NEMU_IPC = 'nemu_ipc'
 
-
 class ControlMethod(str, Enum):
     ADB = 'adb'
     UIAUTOMATOR2 = 'uiautomator2'
     MINITOUCH = 'minitouch'
     WINDOW_MESSAGE = 'window_message'
-
 
 class EmulatorInfoType(str, Enum):
     # module.device.platform2.emulator_base.EmulatorBase
@@ -57,22 +49,34 @@ class EmulatorInfoType(str, Enum):
     MuMuPlayer12 = 'MuMuPlayer12'
     MEmuPlayer = 'MEmuPlayer'
 
-
 class Device(BaseModel):
-    serial: str = Field(default="auto", description='serial_help')
-    handle: str = Field(default='', description='handle_help')
-    package_name: PackageName = Field(title='Package Name', default=PackageName.AUTO, description='package_name_help')
-    screenshot_method: ScreenshotMethod = Field(default=ScreenshotMethod.AUTO, description='screenshot_method_help')
-    control_method: ControlMethod = Field(default=ControlMethod.MINITOUCH, description='control_method_help')
-    adb_restart: bool = Field(default=False, description='adb_restart_help')
-    emulatorinfo_type: EmulatorInfoType = Field(default=EmulatorInfoType.AUTO, description='emulatorinfo_type_help')
-    emulatorinfo_name: str = Field(default='', description='emulatorinfo_name_help')
-    emulatorinfo_path: str = Field(default='', description='emulatorinfo_path_help')
+    serial: str = Field(default="auto",
+                        description='serial_help')
+    handle: str = Field(default='',
+                        description='handle_help')
+    package_name: PackageName = Field(title='Package Name',
+                                      default=PackageName.AUTO,
+                                      description='package_name_help')
+    screenshot_method: ScreenshotMethod = Field(default=ScreenshotMethod.AUTO,
+                                                description='screenshot_method_help')
+    control_method: ControlMethod = Field(default=ControlMethod.MINITOUCH,
+                                          description='control_method_help')
+    adb_restart: bool = Field(default=False,
+                              description='adb_restart_help')
+    emulatorinfo_type: Union[EmulatorInfoType, str] = Field(default=EmulatorInfoType.AUTO,
+                                                description='emulatorinfo_type_help')
+    emulatorinfo_name: str = Field(default='',
+                                   description='emulatorinfo_name_help')
+    emulatorinfo_path: str = Field(default='',
+                                   description='emulatorinfo_path_help')
     # 举例, E:\ProgramFiles\MuMuPlayer-12.0\shell\MuMuPlayer.exe
     # 模拟器启动时最小化
-    emulator_window_minimize: bool = Field(default=False, description='模拟器静默启动并最小化')
+    emulator_window_minimize: bool = Field(default=False,
+                                             description='模拟器静默启动并最小化')
     # 启动时纯后台运行模拟器，不显示窗口和任务栏
-    run_background_only: bool = Field(default=False, description='模拟器无UI后台运行，关掉后重启脚本会重新显示（无需重启OAS）')
+    run_background_only: bool = Field(default=False,
+                                             description='模拟器无UI后台运行，关掉后重启脚本会重新显示（无需重启OAS）')
+
 
 
 if __name__ == '__main__':
