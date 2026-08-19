@@ -38,8 +38,8 @@
   {
     "itemName": "ryou_dokan_shikigami",
     "imageName": "res_ryou_dokan_shikigami.png",
-    "roiFront": "987,608,89,60",
-    "roiBack": "987,608,89,60",
+    "roiFront": "995,602,77,72",
+    "roiBack": "960,580,140,120",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "道馆内式神录"
@@ -47,8 +47,8 @@
   {
     "itemName": "ryou_dokan_attack_priority",
     "imageName": "res_ryou_dokan_priority.png",
-    "roiFront": "742,667,49,25",
-    "roiBack": "742,667,49,25",
+    "roiFront": "767,663,48,27",
+    "roiBack": "520,660,557,48",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "优先攻击选项"
@@ -173,7 +173,7 @@
   {
     "itemName": "ryou_dokan_master_battle",
     "imageName": "res_ryou_dokan_master_battle.png",
-    "roiFront": "640,0,640,360",
+    "roiFront": "862,69,41,89",
     "roiBack": "640,0,640,360",
     "method": "Template matching",
     "threshold": 0.8,
@@ -209,8 +209,8 @@
   {
     "itemName": "ryou_dokan_win",
     "imageName": "res_ryou_dokan_win.png",
-    "roiFront": "620,50,100,80",
-    "roiBack": "620,50,100,80",
+    "roiFront": "422,49,100,80",
+    "roiBack": "348,13,319,178",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "状态：道馆胜利"
@@ -227,7 +227,7 @@
   {
     "itemName": "ryou_dokan_battle_master_first",
     "imageName": "res_ryou_dokan_battle_master_first.png",
-    "roiFront": "1080,180,160,70",
+    "roiFront": "1113,205,50,28",
     "roiBack": "1080,180,160,70",
     "method": "Template matching",
     "threshold": 0.8,
@@ -236,11 +236,11 @@
   {
     "itemName": "ryou_dokan_battle_master_second",
     "imageName": "res_ryou_dokan_battle_master_second.png",
-    "roiFront": "1080,180,160,70",
+    "roiFront": "1114,208,48,25",
     "roiBack": "1080,180,160,70",
     "method": "Template matching",
     "threshold": 0.8,
-    "description": "馆主战,第二阵容 # TODO 截图"
+    "description": "馆主战,第二阵容"
   },
   {
     "itemName": "ryou_dokan_battle_over",
@@ -488,8 +488,8 @@
   {
     "itemName": "rightpad_point_bounty",
     "imageName": "res_ryou_dokan_rightpad_point_bounty.png",
-    "roiFront": "1050,0,230,0",
-    "roiBack": "1050,0,230,50",
+    "roiFront": "1125,103,27,29",
+    "roiBack": "1077,0,171,602",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "查找道馆时,右侧道馆赏金图标,为了定位该图右侧的 赏金金额"

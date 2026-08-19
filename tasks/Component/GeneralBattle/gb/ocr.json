@@ -27,12 +27,30 @@
     "description": "预设"
   },
   {
-    "itemName": "boss_mark",
-    "roiFront": "379,44,50,21",
-    "roiBack": "379,44,50,21",
+    "itemName": "green_mark_area",
+    "roiFront": "84,256,1116,308",
+    "roiBack": "84,256,1116,308",
+    "mode": "Full",
+    "method": "Default",
+    "keyword": "",
+    "description": "绿标区域"
+  },
+  {
+    "itemName": "battle_auto",
+    "roiFront": "37,642,51,36",
+    "roiBack": "0,589,133,128",
     "mode": "Single",
     "method": "Default",
-    "keyword": "已标记",
-    "description": "已标记"
+    "keyword": "自动",
+    "description": "战斗界面自动标识"
+  },
+  {
+    "itemName": "battle_hand",
+    "roiFront": "35,644,52,34",
+    "roiBack": "0,589,136,129",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": "手动",
+    "description": "战斗页面手动标志"
   }
 ]

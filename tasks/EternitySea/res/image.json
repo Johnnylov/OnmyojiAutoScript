@@ -2,8 +2,8 @@
   {
     "itemName": "eternity_sea",
     "imageName": "res_eternity_sea.png",
-    "roiFront": "1158,88,70,70",
-    "roiBack": "1002,78,233,353",
+    "roiFront": "1172,98,50,109",
+    "roiBack": "1054,88,180,244",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "选择永生之海"
@@ -11,8 +11,8 @@
   {
     "itemName": "form_team",
     "imageName": "res_form_team.png",
-    "roiFront": "962,579,96,90",
-    "roiBack": "962,579,96,90",
+    "roiFront": "964,603,89,51",
+    "roiBack": "931,558,165,162",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "组队"
@@ -20,8 +20,8 @@
   {
     "itemName": "eternity_sea_fire",
     "imageName": "res_eternity_sea_fire.png",
-    "roiFront": "1146,595,92,49",
-    "roiBack": "1142,580,96,93",
+    "roiFront": "1142,596,93,48",
+    "roiBack": "1102,556,171,164",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "挑战"
@@ -29,8 +29,8 @@
   {
     "itemName": "eternitysea_unlock",
     "imageName": "res_eternitysea_unlock.png",
-    "roiFront": "700,654,35,34",
-    "roiBack": "669,644,167,64",
+    "roiFront": "705,659,20,26",
+    "roiBack": "645,630,195,90",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "开锁"
@@ -38,28 +38,10 @@
   {
     "itemName": "neweternitysea_lock",
     "imageName": "res_neweternitysea_lock.png",
-    "roiFront": "699,652,31,37",
-    "roiBack": "667,652,164,53",
+    "roiFront": "702,658,24,28",
+    "roiBack": "655,636,182,84",
     "method": "Template matching",
-    "threshold": 0.8,
+    "threshold": 0.6,
     "description": "关锁"
-  },
-  {
-    "itemName": "pet_present",
-    "imageName": "res_pet_present.png",
-    "roiFront": "873,184,62,147",
-    "roiBack": "873,184,62,147",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "小小宠物，发现宝藏"
-  },
-  {
-    "itemName": "back_bottom",
-    "imageName": "res_back_bottom.png",
-    "roiFront": "1126,49,46,45",
-    "roiBack": "1126,49,46,45",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "description"
   }
 ]

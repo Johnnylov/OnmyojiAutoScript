@@ -23,6 +23,8 @@ from tasks.GameUi.page import page_main, page_shikigami_records
 
 
 class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
+    # TODO: 斗技适配页面模块
+
     battle_win_count = 0
     battle_lose_count = 0
     current_score = 0
@@ -45,26 +47,24 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
             self.screenshot()
             self.check_and_get_reward()
             if not self.duel_main():
-                self.ui_goto_page(page_duel)
+                self.goto_page(page_duel)
                 continue
             if not self.can_start_duel():
                 break
             self.start_duel()
         logger.info('Duel battle end')
+        self.goto_page(page_main)
         self.set_next_run(task='Duel', success=True, finish=True)
-        self.ui_goto_page(page_main)
-        # 调起花合战
-        self.set_next_run(task='TalismanPass', target=datetime.now())
         raise TaskEnd('Duel')
 
     def prepare_duel(self):
         """斗技准备工作(切换御魂or阴阳师...), 最后回到斗技主界面"""
-        self.ui_goto_page(page_main)
+        self.goto_page(page_main)
         self.switch_soul()
         if self.conf.duel_config.switch_enabled:
-            self.ui_goto_page(page_onmyodo)
+            self.goto_page(page_onmyodo)
             self.switch_onmyoji(self.conf.duel_config.switch_onmyoji)
-        self.ui_goto_page(page_duel)
+        self.goto_page(page_duel)
         self.switch_all_soul()
         self.current_score = self.conf.duel_celeb_config.initial_score
 
@@ -108,7 +108,7 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
         logger.info(f'battle result: {battle_ret}')
         logger.info(f'battle count:{self.current_count} | win:{self.battle_win_count} failure:{self.battle_lose_count}')
         logger.info(f'battle time: {task_run_time_seconds} / {self.limit_time}')
-        self.ui_goto_page(page_duel)
+        self.goto_page(page_duel)
 
     def enter_battle(self):
         """点击开始战斗(一直到出现战斗准备界面)"""
@@ -168,13 +168,16 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
         while True:
             self.screenshot()
             self.check_and_get_reward()
-            if self.appear(self.I_CHECK_DUEL, interval=0.6) and self.appear(self.I_D_HELP, interval=0.6):  # 斗技主界面
+            if self.appear(self.I_CHECK_DUEL) and self.appear(self.I_D_HELP):  # 斗技主界面
                 break
+            if self.appear(self.I_D_WIN_SHARE,interval= 1.2): #拔得头筹
+                self.click(random_click(ltrb=(True, True, False, True)), interval=1.2)
+                continue
             if self.appear_then_click(self.I_UI_BACK_RED, interval=1.2):  # 关闭段位上升页面
                 ret_timer.reset()
                 continue
             if ret_timer.started() and ret_timer.reached():  # 兜底逻辑, 已经结算了但是还没有到斗技主界面
-                self.ui_goto_page(page_duel)
+                self.goto_page(page_duel)
                 break
             if self.is_battle_win():
                 ret = True
@@ -186,17 +189,17 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
                 ret_timer.start()
                 self.click(random_click(ltrb=(True, True, False, True)), interval=1.2)
                 continue
-            if battle_timeout_cnt >= max_timeout_cnt:
+            if not ret_timer.started() and battle_timeout_cnt >= max_timeout_cnt:
                 logger.warning('Duel battle timeout[>15 minutes], exit')
                 self.duel_exit_battle()
                 continue
             if ret is None and not battle_operated:  # 进行战斗前的操作
-                self.ui_click(self.O_D_HAND, self.O_D_AUTO, interval=0.8)
+                self.ui_click(self.O_BATTLE_HAND, self.O_BATTLE_AUTO, interval=0.8)
                 self.green_mark(self.conf.duel_config.green_enable, self.conf.duel_config.green_mark)
                 battle_operated = True
                 self.reset_device('BATTLE_STATUS_S')
                 continue
-            if battle_timeout_timer.reached_and_reset():
+            if not ret_timer.started() and battle_timeout_timer.reached_and_reset():
                 battle_timeout_cnt += 1
                 self.reset_device('BATTLE_STATUS_S')
                 logger.warning("battle' time is too long, increase wait time")
@@ -255,12 +258,10 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
     def switch_soul(self):
         """从式神录界面切换御魂"""
         if self.conf.switch_soul.enable:
-            self.ui_get_current_page()
-            self.ui_goto(page_shikigami_records)
+            self.goto_page(page_shikigami_records)
             self.run_switch_soul(self.conf.switch_soul.switch_group_team)
         if self.conf.switch_soul.enable_switch_by_name:
-            self.ui_get_current_page()
-            self.ui_goto(page_shikigami_records)
+            self.goto_page(page_shikigami_records)
             self.run_switch_soul_by_name(self.conf.switch_soul.group_name, self.conf.switch_soul.team_name)
 
     def duel_main(self, screenshot=False) -> bool:
@@ -291,9 +292,9 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
 
     def check_and_get_reward(self):
         """检查并收获奖励"""
-        if self.appear(self.I_REWARD, interval=0.6) or self.appear(self.I_UI_REWARD, interval=0.6):
-            self.click(random_click(ltrb=(True, True, False, True)))
-            logger.info('get reward')
+        if self.appear(self.I_REWARD) or self.appear(self.I_UI_REWARD):
+            if self.click(random_click(ltrb=(True, True, False, True)), interval=0.6):
+                logger.info('get reward')
 
     def is_in_battle_prepare(self, skip_screenshot=True) -> bool:
         """是否在战斗准备界面"""
@@ -329,3 +330,4 @@ if __name__ == '__main__':
     t = ScriptTask(c, d)
 
     t.run()
+

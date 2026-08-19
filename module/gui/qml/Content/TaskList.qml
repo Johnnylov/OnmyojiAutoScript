@@ -143,29 +143,8 @@ Item{
 
     Component.onCompleted:{
 
-        var rawTaskList = process_manager.gui_task_list(MainEvent.scriptName)
-        var rawMenu     = process_manager.gui_menu()
-
-        console.log("TaskList rawTaskList =", rawTaskList)
-        console.log("TaskList rawMenu =", rawMenu)
-
-        var data = {}
-        var menu = {}
-
-        try {
-            data = JSON.parse(rawTaskList)
-        } catch (e) {
-            console.error("TaskList: JSON.parse task_list error:", e, "raw =", rawTaskList)
-            return   // 解析失败就不要往下走了
-        }
-
-        try {
-            menu = JSON.parse(rawMenu)
-        } catch (e) {
-            console.error("TaskList: JSON.parse menu error:", e, "raw =", rawMenu)
-            return
-        }
-
+        const data = JSON.parse(process_manager.gui_task_list(MainEvent.scriptName))
+        const menu = JSON.parse(process_manager.gui_menu())
         for(const key in menu){
             if(key === "Overview" || key === 'TaskList' || key === 'Script' || key === 'Tools'){
                 continue
@@ -173,8 +152,8 @@ Item{
             const groupData = classify(menu[key], data)
             create_group(key, groupData)
         }
-    }
 
+    }
 
     // 分类对每一个任务组，
     // 第一个参数是这个菜单组的所有， 如["Script", "Restart", "GlobalGame"]

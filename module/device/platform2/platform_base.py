@@ -67,6 +67,39 @@ class PlatformBase(EmulatorManagerBase):
             self.config.script.device.emulatorinfo_path = path
             self.config.save()
 
+    def refresh_emulator_instance(self, reason: str = '') -> t.Optional[EmulatorInstanceBase]:
+        """
+        Refresh emulator detection caches and resolve current target instance again.
+        """
+        if reason:
+            logger.info(f'[emu-instance] refresh: {reason}')
+        del_cached_property(self, 'emulator_instance')
+        del_cached_property(self, 'emulator_info')
+        del_cached_property(self, 'config_interface')
+        return self.emulator_instance
+
+    @classmethod
+    def list_adb_device_status(cls) -> dict[str, str]:
+        """
+        读取当前 ADB 服务中的设备状态列表。
+
+        Returns:
+            dict[str, str]: 键为设备 serial，值为 adb 状态。
+        """
+        return {}
+
+    def probe_target_instance_online(self) -> bool | None:
+        """
+        轻量探测当前目标模拟器是否已经在线。
+
+        Returns:
+            bool | None:
+                True 表示目标模拟器在线；
+                False 表示目标模拟器不在线；
+                None 表示当前平台不支持或无法准确判断。
+        """
+        return None
+
     @cached_property
     def emulator_info(self) -> EmulatorInfo:
         emulator = self.config_interface['emulator']
@@ -125,6 +158,7 @@ class PlatformBase(EmulatorManagerBase):
             )
             if new_info != old_info:
                 self._config_save_new(emulator=instance.type, name=instance.name, path=instance.path)
+                del_cached_property(self, 'config_interface')
                 del_cached_property(self, 'emulator_info')
 
         return instance
@@ -234,6 +268,7 @@ class PlatformBase(EmulatorManagerBase):
         # Still too many instances
         logger.warning(f'Found multiple emulator instances with {search_args}')
         return None
+
 
 def serial_to_id(serial: str):
     """

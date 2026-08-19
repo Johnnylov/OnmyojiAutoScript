@@ -30,7 +30,6 @@ class ScriptTask(Mall, Guild, ThousandThings, Shrine):
         self.execute_mall()
 
         self.set_next_run(task='RichMan', success=True, finish=False)
-
         raise TaskEnd('RichMan')
 
 
@@ -41,8 +40,8 @@ if __name__ == '__main__':
     d = Device(c)
     t = ScriptTask(c, d)
 
-    # t.run()
-    t.execute_mall()
+    t.run()
+    # t.execute_mall()
 
 
 

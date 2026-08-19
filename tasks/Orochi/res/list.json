@@ -2,60 +2,60 @@
   "name": "layer_list",
   "direction": "vertical",
   "type": "ocr",
-  "roiBack": "126,107,79,593",
+  "roiBack": "127,95,106,603",
   "description": "这个是御魂界面选择不同层数的",
   "list": [
     {
       "itemName": "壹",
-      "roiFront": "126,111,79,75"
+      "roiFront": "127,217,106,101"
     },
     {
       "itemName": "贰",
-      "roiFront": "126,191,77,85"
+      "roiFront": "127,217,106,101"
     },
     {
       "itemName": "叁",
-      "roiFront": "126,294,78,92"
+      "roiFront": "127,217,106,101"
     },
     {
       "itemName": "肆",
-      "roiFront": "127,394,78,89"
+      "roiFront": "127,217,106,101"
     },
     {
       "itemName": "伍",
-      "roiFront": "126,505,79,84"
+      "roiFront": "127,217,106,101"
     },
     {
       "itemName": "陆",
-      "roiFront": "126,390,79,90"
+      "roiFront": "127,217,106,101"
     },
     {
       "itemName": "柒",
-      "roiFront": "126,390,78,97"
+      "roiFront": "127,217,106,101"
     },
     {
       "itemName": "捌",
-      "roiFront": "126,409,78,94"
+      "roiFront": "127,217,106,101"
     },
     {
       "itemName": "玖",
-      "roiFront": "127,399,77,84"
+      "roiFront": "127,217,106,101"
     },
     {
       "itemName": "拾",
-      "roiFront": "127,399,78,86"
+      "roiFront": "127,217,106,101"
     },
     {
       "itemName": "悲",
-      "roiFront": "126,403,79,84"
+      "roiFront": "127,217,106,101"
     },
     {
       "itemName": "神",
-      "roiFront": "126,397,79,92"
+      "roiFront": "127,217,106,101"
     },
     {
       "itemName": "虚",
-      "roiFront": "126,506,78,85"
+      "roiFront": "127,217,106,101"
     }
   ]
 }

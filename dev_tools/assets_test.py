@@ -150,10 +150,10 @@ def detect_ocr_detail(file: str, target: RuleOcr) -> dict:
 
 
 # 图片文件路径 可以是相对路径
-IMAGE_FILE = r"C:\Users\Ryland\Desktop\ScreenShot_2026-05-30_141821_235.png"
+IMAGE_FILE = r"C:\Users\Ryland\Desktop\QQ20251014-103056.png"
 if __name__ == '__main__':
-    from tasks.Exploration.script_task import ScriptTask
-    targe = ScriptTask.I_TREASURE_BOX_CLICK
+    from tasks.KekkaiActivation.script_task import ScriptTask
+    targe = ScriptTask.I_UI_CONFIRM_SAMLL
     print(detect_image(IMAGE_FILE, targe))
 
     # ocr demo

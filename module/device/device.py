@@ -1,12 +1,14 @@
 
 from collections import deque
 from datetime import datetime
+import time
 
 # Patch pkg_resources before importing adbutils and uiautomator2
 from module.device.pkg_resources import get_distribution
 # Just avoid being removed by import optimization
 _ = get_distribution
 
+from module.base.utils import get_color
 from module.device.env import IS_WINDOWS
 from module.base.timer import Timer
 from module.config.utils import get_server_next_update
@@ -54,10 +56,36 @@ class Device(Platform, Screenshot, Control, AppControl):
             _ = self.emulator_instance
 
         self.screenshot_interval_set()
+        self._image_batch_cache_frame_id: str | None = None
+        self._image_batch_cache: dict[int, dict] = {}
 
         # Auto-select the fastest screenshot method
         if self.config.script.device.screenshot_method == 'auto':
             self.run_simple_screenshot_benchmark()
+
+    def reset_image_batch_cache(self, frame_id: str | None = None) -> None:
+        self._image_batch_cache_frame_id = frame_id
+        self._image_batch_cache = {}
+
+    def invalidate_image_batch_cache(self) -> None:
+        self.reset_image_batch_cache()
+
+    def get_image_batch_cache(self, target, frame_id: str | None = None) -> dict | None:
+        active_frame_id = self.image_frame_id if frame_id is None else frame_id
+        if active_frame_id is None:
+            return None
+        if self._image_batch_cache_frame_id != active_frame_id:
+            return None
+        return self._image_batch_cache.get(id(target))
+
+    def update_image_batch_cache(self, targets: list, results: list[dict], frame_id: str | None = None) -> None:
+        active_frame_id = self.image_frame_id if frame_id is None else frame_id
+        if active_frame_id is None:
+            return
+        if self._image_batch_cache_frame_id != active_frame_id:
+            self.reset_image_batch_cache(active_frame_id)
+        for target, result in zip(targets, results):
+            self._image_batch_cache[id(target)] = dict(result)
 
     def run_simple_screenshot_benchmark(self):
         """
@@ -112,6 +140,7 @@ class Device(Platform, Screenshot, Control, AppControl):
         if self.handle_night_commission():
             super().screenshot()
 
+        self.reset_image_batch_cache(self.image_frame_id)
         return self.image
 
     def release_during_wait(self):
@@ -243,6 +272,43 @@ class Device(Platform, Screenshot, Control, AppControl):
         super().app_stop()
         self.stuck_record_clear()
         self.click_record_clear()
+
+    def wait_app_start_ready(self, timeout: float = 15.0, interval: float = 0.5) -> None:
+        """
+        在启动app后，等待包名切换成功且画面脱离纯黑状态。
+
+        这里直接调用底层截图方法做静默探测，避免app刚启动时首屏黑场造成成批告警。
+
+        Args:
+            timeout: 最大等待秒数。
+            interval: 每轮探测的间隔秒数。
+        """
+        deadline = time.time() + timeout
+        screenshot_method = self.screenshot_methods.get(
+            self.config.script.device.screenshot_method,
+            self.screenshot_adb
+        )
+
+        while time.time() < deadline:
+            if not self.app_is_running():
+                time.sleep(interval)
+                continue
+
+            try:
+                image = screenshot_method()
+            except Exception as e:
+                logger.info(f'Wait game start ready: screenshot probe failed: {e}')
+                time.sleep(interval)
+                continue
+
+            color = get_color(image, area=(0, 0, 1280, 720))
+            if sum(color) >= 1:
+                logger.info(f'Game start ready, frame color: {color}')
+                return
+
+            time.sleep(interval)
+
+        logger.info('Wait game start ready timeout, continue with login flow')
 
 
 if __name__ == "__main__":

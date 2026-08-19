@@ -22,8 +22,9 @@ class Special(Buy, MallNavbar):
         if not con.enable:
             logger.info('Special room is not enable')
             return
-
-        self._enter_special()
+        if not self._enter_special():
+            logger.warning('Enter special mall failed')
+            return
         # 向下滑找到购买的物品
         totem_bought, medium_bought, low_bought = False, False, False
         while 1:
@@ -137,7 +138,10 @@ class Special(Buy, MallNavbar):
             buy_res_number = buy_number
         if buy_cycles_number:
             for i in range(buy_cycles_number):
-                self.buy_more(self.I_SP_BUY_LOW)
+                ret = self.buy_more(self.I_SP_BUY_LOW)
+                # 溢出了就不买了
+                if ret is not None and not ret:
+                    break
                 time.sleep(0.5)
         if buy_res_number:
             self.buy_more(self.I_SP_BUY_LOW, buy_res_number)
@@ -157,21 +161,10 @@ class Special(Buy, MallNavbar):
         # logger.info(f'图片的ROI是: {target.roi_front}')
         # logger.info(f'上中点是：{upper_midpoint}')
         # logger.info(f'数字的ROI是: {self.O_SP_RES_NUMBER.roi}')
-        result = self.O_SP_RES_NUMBER.ocr(self.device.image)
-        # https://github.com/runhey/OnmyojiAutoScript/issues/1400
-        result = (result.replace('？', '2').replace('?', '2')
-                  .replace(':', '：').replace('火', '次')
-                  .replace('教', '数').replace('刺', '剩')
-                  .replace('头', '买'))
-        try:
-            if '：' in result:
-                result = re.findall(r'(?:剩余)?购买次数：(\d+)', result)[0]
-                result = int(result)
-            else:
-                result = re.findall(r'本周剩余数量(\d+)', result)[0]
-                result = int(result)
-        except:
-            result = 0
+        txt = self.O_SP_RES_NUMBER.ocr(self.device.image)
+        txt = txt.replace('？', '2').replace('?', '2').replace(':', '；').replace('火', '次').replace('教', '数').replace('刺', '剩').replace('头', '买')
+        match = re.search(r'(\d+)', txt)
+        result = int(match.group(1)) if match else 0
         logger.info(f'Remain [{result}]')
         return result
 
@@ -185,4 +178,3 @@ if __name__ == '__main__':
     t = Special(c, d)
 
     t.execute_special()
-

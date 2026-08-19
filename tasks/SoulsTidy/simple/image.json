@@ -144,15 +144,6 @@
     "description": "御魂溢出"
   },
   {
-    "itemName": "st_soul_stack",
-    "imageName": "simple_st_soul_stack.png",
-    "roiFront": "142,234,20,16",
-    "roiBack": "142,234,20,16",
-    "method": "Template matching",
-    "threshold": 0.8,
-    "description": "5星御魂的堆叠标识_大于1个"
-  },
-  {
     "itemName": "st_souls_close",
     "imageName": "simple_st_souls_close.png",
     "roiFront": "1180,227,56,83",
@@ -160,6 +151,15 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "御魂关闭状态"
+  },
+  {
+    "itemName": "st_soul_stack",
+    "imageName": "simple_st_soul_stack.png",
+    "roiFront": "142,234,20,16",
+    "roiBack": "142,234,20,16",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "5星御魂的堆叠标识_大于1个"
   },
   {
     "itemName": "st_soul_stack_1",

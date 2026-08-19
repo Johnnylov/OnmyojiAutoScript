@@ -4,14 +4,17 @@
 import time
 import re
 from cached_property import cached_property
+from tasks.GameUi.default_pages import page_exploration
 
 from tasks.base_task import BaseTask
-from tasks.Component.GeneralBattle.general_battle import GeneralBattle
+from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
+from tasks.Component.GeneralBattle.general_battle import BattleAction, BattleContext, ExitMatcher, GeneralBattle
 from tasks.GameUi.game_ui import GameUi
-from tasks.GameUi.page import page_realm_raid, page_main, page_shikigami_records
+from tasks.GameUi.page import page_realm_raid
 from tasks.RealmRaid.assets import RealmRaidAssets
-from tasks.RealmRaid.config import RealmRaid, RaidMode, AttackNumber, WhenAttackFail
+from tasks.RealmRaid.config import RealmRaid, AttackNumber, WhenAttackFail
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
+from tasks.RealmRaid.page import page_shikigami_records
 
 
 from module.logger import logger
@@ -23,9 +26,140 @@ from module.atom.click import RuleClick
 
 class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
     medal_grid: ImageGrid = None
+    init_tickets: int = -1
+
+    def _handle_result(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
+        if config.quick_exit:
+            context.reward_no_battle_ts = None
+            context.is_win = not self.appear(self.I_FALSE)
+            return BattleAction.EXIT_WIN if context.is_win else BattleAction.EXIT_LOSE
+        return super()._handle_result(context, config)
+
+    def _exit_matcher(self) -> ExitMatcher:
+        return self.I_BACK_RED
 
     def run(self):
-        self.run_2()
+        con = self.config.realm_raid
+        # 直接进入个人突破页面
+        self.goto_page(page_realm_raid)
+
+        # 在突破页面内先判断票数，如果没有票了或者已经达到攻击次数上限，就直接结束任务
+        if not self.check_ticket(con.raid_config.number_base):
+            self.goto_page(page_exploration)
+            self.set_next_run(task='RealmRaid', success=False, finish=True)
+            raise TaskEnd
+
+        # 票数足够，现在开始进行御魂切换
+        if con.switch_soul_config.enable:
+            self.goto_page(page_shikigami_records)
+            self.run_switch_soul(con.switch_soul_config.switch_group_team)
+                
+        if con.switch_soul_config.enable_switch_by_name:
+            self.goto_page(page_shikigami_records)
+            self.run_switch_soul_by_name(con.switch_soul_config.group_name, con.switch_soul_config.team_name)
+            
+        # 切换完成后，必须返回突破页面
+        self.goto_page(page_realm_raid)
+
+        # 有呱太活动的时候第一次进入还会 出现一个弹窗
+        self.screenshot()
+        if self.appear(self.I_FROG_RAID):
+            logger.info(f'Click {self.I_FROG_RAID.name}')
+            while 1:
+                self.screenshot()
+                if not self.appear(self.I_FROG_RAID):
+                    break
+                if self.appear_then_click(self.I_FROG_RAID, interval=1):
+                    continue
+        # 判断是不是锁定阵容
+        self.ensure_lock(con.general_battle_config.lock_team_enable)
+        # 判断是否是呱太活动
+        frog = self.is_frog(True)
+        if frog:
+            logger.info(f'Frog raid')
+
+        # 开始循环
+        success = True
+        last_battle = True  # 记录上一次战斗的结果
+        # 更改循环顺序
+        while 1:
+            self.screenshot()
+            # 检查票数
+            if not self.check_ticket(con.raid_config.number_base):
+                break
+            # ----------------------------------------开始进攻
+            medal, index = self.find_one(False)
+            if not medal and not index:
+                # 已经没有可以挑战的了，只能刷新
+                if con.raid_config.when_attack_fail == WhenAttackFail.CONTINUE:
+                    logger.info('No one can attack and then refresh')
+                    if self.check_refresh():
+                        continue
+                    else:
+                        success = False
+                        break
+                else:
+                    logger.info('No one can attack, break')
+                    success = False
+                    break
+            # 判断是不是左上角第一个
+            lock_before = con.general_battle_config.lock_team_enable
+            handled_first_target = False
+            if index == 1:
+                logger.info('Now is the first one')
+                if con.raid_config.exit_four:
+                    logger.info('Exit four enable')
+                    if not self.fire(index):
+                        # 没有成功进入战斗则重新检查票数和其他条件
+                        continue
+                    self.run_general_battle(config=self.build_quick_exit_config(con.general_battle_config))
+                    self.fire_again()
+                    self.run_general_battle(config=self.build_quick_exit_config(con.general_battle_config))
+                    self.fire_again()
+                    self.run_general_battle(config=self.build_quick_exit_config(con.general_battle_config))
+                    self.fire_again()
+                    self.run_general_battle(config=self.build_quick_exit_config(con.general_battle_config))
+                    self.fire_again()
+                    last_battle = self.run_general_battle(con.general_battle_config)
+                    handled_first_target = True
+            elif self.check_medal_is_frog(frog, medal, index):
+                # 如果挑战的这只是呱太的话，就要把锁定改为不锁定
+                con.general_battle_config.lock_team_enable = False
+            if not handled_first_target:
+                if not self.fire(index):
+                    # 没有成功进入战斗则重新检查票数和其他条件
+                    continue
+                last_battle = self.run_general_battle(con.general_battle_config)
+            if lock_before:
+                con.general_battle_config.lock_team_enable = lock_before
+            # 检查是否每三次领一个奖励
+            if self.reward_detect_click(False):
+                logger.info('Rewards of three wins')
+                continue
+            # 刷新 >> 如果勾选了三次刷新并且到达了三次，就刷新
+            if con.raid_config.three_refresh and self.appear(self.I_RR_THREE, threshold=0.8):
+                logger.info('Three refresh')
+                if self.check_refresh():
+                    continue
+                else:
+                    success = False
+                    break
+            # 刷新 >> 如果上一轮的失败并且勾选了失败刷新，就刷新
+            if not last_battle and con.raid_config.when_attack_fail == WhenAttackFail.REFRESH:
+                logger.info('Battle lost and then refresh')
+                if self.check_refresh():
+                    continue
+                else:
+                    success = False
+                    break
+            # 如果上一轮失败 -> 退出
+            if not last_battle and con.raid_config.when_attack_fail == WhenAttackFail.EXIT:
+                logger.info('Battle lost and exit')
+                break
+
+        self.goto_page(page_exploration)
+        self.set_next_run(task='RealmRaid', success=success, finish=True)
+        raise TaskEnd
 
     def is_ticket(self) -> bool:
         """
@@ -63,7 +197,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                         break
                 continue
 
-            target = self.medal_grid.find_anyone(self.device.image)
+            target = self.medal_grid.find_anyone(self.device.image, frame_id=self.device.image_frame_id)
             if target:
                 self.appear_then_click(target, interval=2)  # 点击勋章,但是设置为两秒的间隔，适应不同的模拟器速度
                 is_click = not is_click
@@ -82,174 +216,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 break
         logger.info(f'Click {self.I_FIRE.name}')
 
-    def execute_round(self, config: RealmRaid) -> bool:
-        """
-        执行一轮 除非票不够，一直到到九次
-        :return:
-        """
-        # 如果没有票了，就退出
-        if not self.is_ticket():
-            return False
-
-        # 判断是退四打九还是全部打
-        if config.raid_config.raid_mode == RaidMode.NORMAL:
-            logger.info(f'Execute round, retreat four attack nine')
-            self.medal_fire()
-            self.run_general_battle_back(config.general_battle_config)
-
-            self.medal_fire()
-            self.run_general_battle_back(config.general_battle_config)
-
-            self.medal_fire()
-            self.run_general_battle_back(config.general_battle_config)
-
-            self.medal_fire()
-            self.run_general_battle_back(config.general_battle_config)
-
-        # 打九次
-        for i in range(9):
-            if not self.is_ticket():
-                return False
-            self.medal_fire()
-            self.run_general_battle(config.general_battle_config)
-            self.wait_until_appear(self.I_BACK_RED)
-
-        return True
-
-    # ------------------------------------------------------------------------------------------------------------------
-    def run_2(self):
-        con = self.config.realm_raid
-        if con.switch_soul_config.enable:
-            self.ui_get_current_page()
-            self.ui_goto(page_shikigami_records)
-            self.run_switch_soul(con.switch_soul_config.switch_group_team)
-        if con.switch_soul_config.enable_switch_by_name:
-            self.ui_get_current_page()
-            self.ui_goto(page_shikigami_records)
-            self.run_switch_soul_by_name(con.switch_soul_config.group_name, con.switch_soul_config.team_name)
-
-        self.ui_get_current_page()
-        self.ui_goto(page_realm_raid)
-
-        # 有呱太活动的时候第一次进入还会 出现一个弹窗
-        self.screenshot()
-        if self.appear(self.I_FROG_RAID):
-            logger.info(f'Click {self.I_FROG_RAID.name}')
-            while 1:
-                self.screenshot()
-                if not self.appear(self.I_FROG_RAID):
-                    break
-                if self.appear_then_click(self.I_FROG_RAID, interval=1):
-                    continue
-        # 判断是不是锁定阵容
-        self.ensure_lock(con.general_battle_config.lock_team_enable)
-        # 判断是否是呱太活动
-        frog = self.is_frog(True)
-        if frog:
-            logger.info(f'Frog raid')
-
-
-        # 开始循环
-        success = True
-        last_battle = True  # 记录上一次战斗的结果
-        # 更改循环顺序
-        while 1:
-            self.screenshot()
-            #看到弹窗点掉，不然会卡死
-            if self.appear(self.I_FRESH_ENSURE):
-                logger.info("Pop-up detected: Refresh Confirmation. Clicking Confirm.")
-                self.appear_then_click(self.I_FRESH_ENSURE, interval=1.5)
-                continue
-            # 检查票数
-            if not self.check_ticket(con.raid_config.number_base):
-                break
-            # 挑战次数
-            if self.current_count >= con.raid_config.number_attack:
-                logger.info(f'Current count {self.current_count}, max count {con.raid_config.number_attack}')
-                break
-            # ----------------------------------------开始进攻
-            medal, index = self.find_one(False)
-            if not medal and not index:
-                # 已经没有可以挑战的了，只能刷新
-                if con.raid_config.when_attack_fail == WhenAttackFail.CONTINUE:
-                    logger.info('No one can attack and then refresh')
-                    if self.check_refresh():
-                        continue
-                    else:
-                        success = False
-                        break
-                else:
-                    logger.info('No one can attack, break')
-                    # 检查是否有“刷新确认”弹窗挡路
-                    if self.appear(self.I_FRESH_ENSURE):
-                        logger.info("Closing obstructing refresh dialog (Click Ensure)...")
-                        # 点击“确定”来完成刷新（或者你可以改成点取消）
-                        self.appear_then_click(self.I_FRESH_ENSURE, interval=2)
-                    success = False
-                    break
-            # 判断是不是左上角第一个
-            lock_before = con.general_battle_config.lock_team_enable
-            if index == 1:
-                logger.info('Now is the first one')
-                if con.raid_config.exit_four:
-                    logger.info('Exit four enable')
-                    self.fire(index)
-                    self.run_general_battle_back(con.general_battle_config, exit_four=True)
-                    self.fire(index)
-                    self.run_general_battle_back(con.general_battle_config, exit_four=True)
-                    self.fire(index)
-                    self.run_general_battle_back(con.general_battle_config, exit_four=True)
-                    self.fire(index)
-                    self.run_general_battle_back(con.general_battle_config, exit_four=True)
-            elif self.check_medal_is_frog(frog, medal, index):
-                # 如果挑战的这只是呱太的话，就要把锁定改为不锁定
-                con.general_battle_config.lock_team_enable = False
-            self.fire(index)
-            last_battle = self.run_general_battle(con.general_battle_config)
-            if lock_before:
-                con.general_battle_config.lock_team_enable = lock_before
-            # 检查是否每三次领一个奖励
-            if self.reward_detect_click(False):
-                logger.info('Rewards of three wins')
-                continue
-            # 刷新 >> 如果勾选了三次刷新并且到达了三次，就刷新
-            if con.raid_config.three_refresh and self.appear(self.I_RR_THREE, threshold=0.8):
-                logger.info('Three refresh')
-                if self.check_refresh():
-                    continue
-                else:
-                    success = False
-                    break
-            # 刷新 >> 如果上一轮的失败并且勾选了失败刷新，就刷新
-            if not last_battle and con.raid_config.when_attack_fail == WhenAttackFail.REFRESH:
-                logger.info('Battle lost and then refresh')
-                if self.check_refresh():
-                    continue
-                else:
-                    success = False
-                    break
-            # 如果上一轮失败 -> 退出
-            if not last_battle and con.raid_config.when_attack_fail == WhenAttackFail.EXIT:
-                logger.info('Battle lost and exit')
-                break
-
-
-        self.ui_click(self.I_BACK_RED, self.I_CHECK_EXPLORATION)
-        self.ui_get_current_page()
-        self.ui_goto(page_main)
-        self.set_next_run(task='RealmRaid', success=success, finish=True)
-        raise TaskEnd
-
-
-
-
-
-
-
-
     # ----------------------------------------------------------------------------------------------------------------------
     # 2023.7.21 改版个人突破
-
     def ensure_lock(self, lock_team_enable: bool):
         """
         确保锁定阵容
@@ -314,6 +282,11 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
             return False
         elif cu + res == total and cu < base:
             logger.warning(f'Execute raid failed, ticket is not enough')
+            return False
+        self.init_tickets = cu if self.init_tickets == -1 else self.init_tickets
+        if self.init_tickets - cu >= self.config.realm_raid.raid_config.number_attack:  # 检查挑战次数
+            logger.info(f'Current count {self.init_tickets - cu}, '
+                        f'max count {self.config.realm_raid.raid_config.number_attack}')
             return False
         return True
 
@@ -423,30 +396,18 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
             self.screenshot()
         # 由于更改识别顺序，退出战斗之后，需要先等待回到个人突破界面，即识别到红色退出按钮，再进行奖励判断
         self.wait_until_appear(self.I_BACK_RED)
+        self.ui_click_until_disappear(self.I_SOUL_RAID, interval=1.2)
         text = self.O_TEXT.ocr(self.device.image)
         # 识别突破卷区域，如果识别到了且其中含有文字，即有聊天框遮挡则进入循环，等待三胜奖励出现并点击，循环退出条件为识别到票（即*/*的形式）
-        if text != "":
-            if re.search(r'[\u4e00-\u9fff]', text):
-                while 1:
-                    self.screenshot()
-                    result = self.O_TEXT.ocr(self.device.image)
-                    if not re.search(r'[\u4e00-\u9fff]', result) and re.search(r'(\d+)/(\d+)', result):
-                        return True
-                    if self.appear_then_click(self.I_SOUL_RAID, interval=1.5):
-                        continue
-
-        # if self.appear(self.I_SOUL_RAID):
-        #     self.screenshot()
-        #     # 稳定一次的截图时间
-        #     # 再次判断是否出现的
-        #     if not self.appear(self.I_SOUL_RAID):
-        #         return False
-        #     while 1:
-        #         self.screenshot()
-        #         if not self.appear(self.I_SOUL_RAID, threshold=0.7):
-        #             return True
-        #         if self.appear_then_click(self.I_SOUL_RAID, interval=1.5):
-        #             continue
+        if text != "" and re.search(r'[\u4e00-\u9fff]', text):
+            while 1:
+                self.screenshot()
+                result = self.O_TEXT.ocr(self.device.image)
+                if not re.search(r'[\u4e00-\u9fff]', result) and re.search(r'(\d+)/(\d+)', result):
+                    return True
+                if self.appear_then_click(self.I_SOUL_RAID, interval=1.5):
+                    continue
+        return False
 
     def check_refresh(self, screenshot: bool=True) -> bool:
         """
@@ -472,60 +433,46 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 return True
             if self.appear_then_click(self.I_FRESH_ENSURE, interval=1):
                 continue
+        return False
 
-    def fire(self, order: int):
+    def fire(self, order: int) -> bool:
         """
         挑战
         :param order:  第几个
-        :return:
+        :return: 是否点击进攻成功
         """
-        retry_clean = 0
-        while not self.appear(self.I_RR_PERSON):
-            if retry_clean > 20:
-                logger.warning("Stuck too long, try force quit or random click")
-            
-            logger.info("Title not found! Checking for popups or rewards...")
-            
-            # 如果看到了“刷新确认”弹窗 (I_FRESH_ENSURE 是右边的确定)
-            if self.appear(self.I_FRESH_ENSURE):
-                logger.info("Refresh popup detected! Clicking CANCEL (Red Button).")
-                # 点击“取消”按钮的坐标 (基于1280x720分辨率)
-                self.device.click(x=530, y=460) 
-                time.sleep(1.5)
-                self.screenshot()
-                continue
-
-            # 点击屏幕正上方 (640, 50)，而不是右下角，避免误触"刷新"按钮
-            logger.info("Clicking safe area to clear rewards...")
-            self.device.click(x=640, y=50)  
-            time.sleep(1.5)
-            self.screenshot()
-            retry_clean += 1
-        
         click = self.partition[order - 1]
-        
-        # 进攻循环
-        while 1:
+        self.wait_until_appear(self.I_RR_PERSON)
+        self.device.click_record_clear()
+        while True:
             self.screenshot()
-            
-            # 双重保险：如果在进攻阶段又弹出了窗口，也把它关掉
-            if self.appear(self.I_FRESH_ENSURE):
-                logger.info("Refresh popup blocking attack! Clicking CANCEL.")
-                self.device.click(x=530, y=460) # 点取消
-                time.sleep(1.0)
-                continue
-
-            if not self.appear(self.I_RR_PERSON, threshold=0.8):
-                break
-            # https://github.com/runhey/OnmyojiAutoScript/issues/1692
-            if self.appear_then_click(self.I_SOUL_RAID, interval=2):
-                continue
+            if not self.appear(self.I_RR_PERSON):
+                return True
             if self.appear_then_click(self.I_FIRE, interval=1):
                 continue
-            if self.click(click, interval=1.8):
+            if self.click(click, interval=2):
                 continue
-                
         logger.info(f'Click fire {order} success')
+        return False
+
+    def fire_again(self) -> bool:
+        """
+        失败界面再次挑战
+        :return: 是否再战成功
+        """
+        self.wait_until_appear(self.I_FIRE_AGAIN)
+        while True:
+            self.screenshot()
+            if not self.appear(self.I_FIRE_AGAIN):
+                logger.info(f'Click fire again success')
+                return True
+            if self.appear_then_click(self.I_SHOW_AGAIN, interval=2):
+                continue
+            if self.appear_then_click(self.I_FRESH_ENSURE, interval=2):
+                continue
+            if self.appear_then_click(self.I_FIRE_AGAIN, interval=2):
+                continue
+        return False
 
     @cached_property
     def false_roi(self) -> list:
@@ -557,9 +504,6 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                          method="Template matching",
                          file="./tasks/RyouToppa/dev/loser_sign_1.png")
 
-    def battle_wait(self, random_click_swipt_enable: bool) -> bool:
-        return self.battle_wait_v2(random_click_swipt_enable=random_click_swipt_enable)
-
 
 if __name__ == "__main__":
     from module.config.config import Config
@@ -569,4 +513,3 @@ if __name__ == "__main__":
     t = ScriptTask(config, device)
 
     t.run()
-

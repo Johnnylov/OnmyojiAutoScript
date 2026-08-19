@@ -5,8 +5,6 @@ import time
 
 from module.logger import logger
 
-from tasks.GameUi.page import page_main, page_guild
-from tasks.GameUi.game_ui import GameUi
 from tasks.Component.Buy.buy import Buy
 from tasks.RichMan.mall.navbar import MallNavbar
 from tasks.RichMan.config import Scales as ScalesConfig
@@ -29,7 +27,6 @@ class Scales(Buy, MallNavbar):
         self._scales_demon(con.demon_souls, con.demon_class, con.demon_position)
         # 海国御魂
         self._scales_sea(con.picture_book_scrap, con.picture_book_rule)
-
 
     def _scales_buy_confirm(self, start_click, number: int = None):
         while 1:
@@ -76,7 +73,7 @@ class Scales(Buy, MallNavbar):
                     self.screenshot()
                     if not self.appear(self.I_SCA_SIX_STAR):
                         break
-                    if self.click(self.C_SCA_SOULS_BACK, interval=1):
+                    if self.click(self.C_SCA_SOULS_GET, interval=1):
                         continue
                 # 收获购买的东西
                 logger.info('Scales get success')
@@ -146,6 +143,7 @@ class Scales(Buy, MallNavbar):
             # 购买
             self._scales_buy_more(self.I_SCA_OROCHI_SCALES)
             time.sleep(0.5)
+
     def _scales_orochi(self, buy_number: int):
         """
         要求必须是在御魂礼盒界面
@@ -187,7 +185,6 @@ class Scales(Buy, MallNavbar):
         else:
             self._scales_buy_more(self.I_SCA_OROCHI_SCALES, buy_number)
         time.sleep(0.5)
-
 
     def _scales_demon(self, buy_number: int, buy_class: DemonClass=DemonClass.ODOKURO, buy_position: int=1):
         """
@@ -353,20 +350,12 @@ class Scales(Buy, MallNavbar):
             time.sleep(0.5)
 
 
-
-
-
-
-
-
 if __name__ == '__main__':
     from module.config.config import Config
     from module.device.device import Device
 
-    c = Config('oas1')
+    c = Config('日常1')
     d = Device(c)
     t = Scales(c, d)
 
-    t.execute_scales()
-
-
+    t._scales_orochi_new(10)

@@ -12,24 +12,20 @@ class EternitySeaAssets:
 
 	# Image Rule Assets
 	# 选择永生之海 
-	I_ETERNITY_SEA = RuleImage(roi_front=(1158,88,70,70), roi_back=(1002,78,233,353), threshold=0.8, method="Template matching", file="./tasks/EternitySea/res/res_eternity_sea.png")
+	I_ETERNITY_SEA = RuleImage(roi_front=(1172,98,50,109), roi_back=(1054,88,180,244), threshold=0.8, method="Template matching", file="./tasks/EternitySea/res/res_eternity_sea.png")
 	# 组队 
-	I_FORM_TEAM = RuleImage(roi_front=(962,579,96,90), roi_back=(962,579,96,90), threshold=0.8, method="Template matching", file="./tasks/EternitySea/res/res_form_team.png")
+	I_FORM_TEAM = RuleImage(roi_front=(964,603,89,51), roi_back=(931,558,165,162), threshold=0.8, method="Template matching", file="./tasks/EternitySea/res/res_form_team.png")
 	# 挑战 
-	I_ETERNITY_SEA_FIRE = RuleImage(roi_front=(1146,595,92,49), roi_back=(1142,580,96,93), threshold=0.8, method="Template matching", file="./tasks/EternitySea/res/res_eternity_sea_fire.png")
+	I_ETERNITY_SEA_FIRE = RuleImage(roi_front=(1142,596,93,48), roi_back=(1102,556,171,164), threshold=0.8, method="Template matching", file="./tasks/EternitySea/res/res_eternity_sea_fire.png")
 	# 开锁 
-	I_ETERNITYSEA_UNLOCK = RuleImage(roi_front=(700,654,35,34), roi_back=(669,644,167,64), threshold=0.8, method="Template matching", file="./tasks/EternitySea/res/res_eternitysea_unlock.png")
+	I_ETERNITYSEA_UNLOCK = RuleImage(roi_front=(705,659,20,26), roi_back=(645,630,195,90), threshold=0.8, method="Template matching", file="./tasks/EternitySea/res/res_eternitysea_unlock.png")
 	# 关锁 
-	I_NEWETERNITYSEA_LOCK = RuleImage(roi_front=(699,652,31,37), roi_back=(667,652,164,53), threshold=0.8, method="Template matching", file="./tasks/EternitySea/res/res_neweternitysea_lock.png")
-	# 小小宠物，发现宝藏 
-	I_PET_PRESENT = RuleImage(roi_front=(873,184,62,147), roi_back=(873,184,62,147), threshold=0.8, method="Template matching", file="./tasks/EternitySea/res/res_pet_present.png")
-	# description 
-	I_BACK_BOTTOM = RuleImage(roi_front=(1126,49,46,45), roi_back=(1126,49,46,45), threshold=0.8, method="Template matching", file="./tasks/EternitySea/res/res_back_bottom.png")
+	I_NEWETERNITYSEA_LOCK = RuleImage(roi_front=(702,658,24,28), roi_back=(655,636,182,84), threshold=0.6, method="Template matching", file="./tasks/EternitySea/res/res_neweternitysea_lock.png")
 
 
 	# List Rule Assets
 	# 永生之海层数列表 
-	L_LAYER_LIST = RuleList(folder="./tasks/EternitySea/res", direction="vertical", mode="ocr", roi_back=(124,101,74,593), size=(71, 84), 
+	L_LAYER_LIST = RuleList(folder="./tasks/EternitySea/res", direction="vertical", mode="ocr", roi_back=(128,103,62,586), size=(62, 107), 
 					 array=["壹", "贰", "叁", "肆"])
 
 

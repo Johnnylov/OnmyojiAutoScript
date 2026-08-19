@@ -2,8 +2,8 @@
   {
     "itemName": "fire_kirin",
     "imageName": "o_fire_kirin.png",
-    "roiFront": "104,120,217,325",
-    "roiBack": "104,120,217,325",
+    "roiFront": "127,176,139,252",
+    "roiBack": "106,121,217,406",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "火麒麟进入"
@@ -11,8 +11,8 @@
   {
     "itemName": "form_team",
     "imageName": "o_form_team.png",
-    "roiFront": "959,580,100,100",
-    "roiBack": "916,572,156,130",
+    "roiFront": "961,602,96,55",
+    "roiBack": "937,555,153,154",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "组队"
@@ -20,8 +20,8 @@
   {
     "itemName": "evozone_lock",
     "imageName": "o_evozone_lock.png",
-    "roiFront": "700,655,31,32",
-    "roiBack": "690,648,53,54",
+    "roiFront": "703,656,24,32",
+    "roiBack": "683,646,63,64",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
@@ -29,8 +29,8 @@
   {
     "itemName": "evozone_unlock",
     "imageName": "o_evozone_unlock.png",
-    "roiFront": "701,657,26,29",
-    "roiBack": "695,650,43,45",
+    "roiFront": "704,658,21,27",
+    "roiBack": "680,643,67,67",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
@@ -38,8 +38,8 @@
   {
     "itemName": "evozone_fire",
     "imageName": "o_evozone_fire.png",
-    "roiFront": "1127,568,131,124",
-    "roiBack": "1127,568,131,124",
+    "roiFront": "1146,595,93,50",
+    "roiBack": "1125,570,131,124",
     "method": "Template matching",
     "threshold": 0.6,
     "description": "点击挑战"
@@ -47,8 +47,8 @@
   {
     "itemName": "shi_records",
     "imageName": "o_shi_records.png",
-    "roiFront": "843,570,48,45",
-    "roiBack": "843,570,48,45",
+    "roiFront": "844,569,43,43",
+    "roiBack": "827,559,79,74",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "式神录"
@@ -65,8 +65,8 @@
   {
     "itemName": "wind_kirin",
     "imageName": "o_wind_kirin.png",
-    "roiFront": "423,116,201,250",
-    "roiBack": "423,116,201,250",
+    "roiFront": "445,114,139,252",
+    "roiBack": "411,77,217,406",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "风麒麟进入"
@@ -74,8 +74,8 @@
   {
     "itemName": "water_kirin",
     "imageName": "o_water_kirin.png",
-    "roiFront": "728,115,201,342",
-    "roiBack": "728,115,201,342",
+    "roiFront": "743,182,139,252",
+    "roiBack": "710,121,217,406",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "水麒麟进入"
@@ -83,8 +83,8 @@
   {
     "itemName": "lightning_kirin",
     "imageName": "o_lightning_kirin.png",
-    "roiFront": "1016,99,218,270",
-    "roiBack": "1016,99,218,270",
+    "roiFront": "1051,111,139,252",
+    "roiBack": "1013,85,217,406",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "雷麒麟进入"

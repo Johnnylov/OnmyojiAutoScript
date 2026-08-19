@@ -1,11 +1,11 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
-from datetime import timedelta
+from datetime import timedelta, datetime
 from pydantic import BaseModel, Field
 
 from tasks.Component.config_scheduler import Scheduler
-from tasks.Component.config_base import ConfigBase
+from tasks.Component.config_base import ConfigBase, DateTime, dynamic_hide
 from tasks.Utils.config_enum import DemonClass
 
 
@@ -17,10 +17,12 @@ class ThousandThings(BaseModel):
     black_daruma_fragment: bool = Field(title='Black Daruma Fragment', default=False)
     ap: bool = Field(title='AP', default=False, description='ap_help')
 
+
 class Consignment(BaseModel):
     # 寄售屋
     enable: bool = Field(title='Enable', default=False)
     buy_sale_ticket: bool = Field(title='Buy Sale Ticket', default=False, description='buy_sale_ticket_help')
+
 
 class Scales(BaseModel):
     # 密卷屋 蛇皮
@@ -41,11 +43,13 @@ class SpecialRoom(BaseModel):
     medium_bondling_discs: int = Field(title='Medium Bondling Discs', default=0, description='medium_bondling_discs_special')
     low_bondling_discs: int = Field(title='Low Bondling Discs', default=0, description='low_bondling_discs_special')
 
+
 class HonorRoom(BaseModel):
     # 杂货铺 荣誉购买
     enable: bool = Field(title='Enable', default=False)
     mystery_amulet: bool = Field(title='Mystery Amulet', default=False, description='mystery_amulet_help_honor')
     black_daruma_scrap: bool = Field(title='Black Daruma Scrap', default=False, description='black_daruma_scrap_help_honor')
+
 
 class FriendshipPoints(BaseModel):
     # 杂货铺 友情点
@@ -53,6 +57,7 @@ class FriendshipPoints(BaseModel):
     white_daruma: bool = Field(title='White Daruma', default=False)
     red_daruma: int = Field(title='Red Daruma', default=0)
     broken_amulet: int = Field(title='Broken Amulet', default=0)
+
 
 class MedalRoom(BaseModel):
     # 杂货铺 勋章购买
@@ -66,11 +71,13 @@ class MedalRoom(BaseModel):
     red_daruma: int = Field(title='Red Daruma', default=0)
     broken_amulet: int = Field(title='Broken Amulet', default=0)
 
+
 class Charisma(BaseModel):
     # 杂货铺 魅力购买
     enable: bool = Field(title='Enable', default=False)
     black_daruma_scrap: bool = Field(title='Black Daruma Scrap', default=False)
     mystery_amulet: bool = Field(title='Mystery Amulet', default=False)
+
 
 class Shrine(BaseModel):
     # 神社 神龛
@@ -78,6 +85,7 @@ class Shrine(BaseModel):
     black_daruma: bool = Field(title='Black Daruma', default=False)
     white_daruma_five: bool = Field(title='White Daruma Five', default=False)
     white_daruma_four: bool = Field(title='White Daruma Four', default=False)
+
 
 class Bondlings(BaseModel):
     # 契灵商店 契忆
@@ -87,14 +95,14 @@ class Bondlings(BaseModel):
     high_bondling_discs: int = Field(title='High Bondling Discs', default=0, description='high_bondling_discs_help')
     medium_bondling_discs: int = Field(title='Medium Bondling Discs', default=0, description='medium_bondling_discs_help')
 
+
 class GuildStore(BaseModel):
     # 寮商店
     enable: bool = Field(title='Enable', default=False)
+    honor_gift: bool = Field(default=False)
     mystery_amulet: bool = Field(title='Mystery Amulet', default=False)
     black_daruma_scrap: bool = Field(title='Black Daruma Scrap', default=False)
     skin_ticket: int = Field(title='Skin Ticket', default=0, description='skin_ticket_help')
-
-
 
 
 class RichMan(ConfigBase):

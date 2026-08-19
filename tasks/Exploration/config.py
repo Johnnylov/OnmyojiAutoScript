@@ -4,7 +4,7 @@ from datetime import datetime, time
 
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.SwitchSoul.switch_soul_config import SwitchSoulConfig
-from tasks.Component.GeneralInvite.config_invite import FindMode
+from tasks.Component.GeneralInvite.config_invite import FindMode, InviteConfig
 from tasks.Component.config_base import ConfigBase, TimeDelta, Time
 from tasks.Component.config_scheduler import Scheduler
 
@@ -39,6 +39,9 @@ class ExplorationLevel(str, Enum):
     EXPLORATION_27 = '第二十七章'
     EXPLORATION_28 = '第二十八章'
 
+    def get_index(self):
+        return list(ExplorationLevel).index(self)
+
 
 class AttackNumber(str, Enum):
     SEVEN = '7'
@@ -50,6 +53,7 @@ class UpType(str, Enum):
     EXP = 'up_exp'  # 经验
     COIN = 'up_coin'  # 金币
     DARUMAA = 'up_daruma'  # 达摩
+
 
 class UserStatus(str, Enum):
     LEADER = 'leader'
@@ -67,18 +71,12 @@ class ChooseRarity(str, Enum):
     N = 'N卡'
     S = '素材'
 
-class InviteConfig(BaseModel):
-
-    friend_1: str = Field(default='', description='friend_name_help')
-    find_mode: FindMode = Field(default=FindMode.AUTO_FIND, description='find_mode_help')
-    wait_time: Time = Field(default=Time(minute=2), description='wait_time_help')
-
 
 class Scrolls(BaseModel):
     # 绘卷模式
     scrolls_enable: bool = Field(title='绘卷模式', default=False, description='scrolls_enable_help')
     scrolls_cd: TimeDelta = Field(title='间隔时间', default=TimeDelta(hours=0, minutes=30, seconds=0), description='scrolls_cd_help')
-    scrolls_threshold: int = Field(title='突破票数量', default='25', description='scrolls_threshold_help')
+    scrolls_threshold: int = Field(title='突破票数量', default=25, description='scrolls_threshold_help')
 
 
 class ExplorationConfig(BaseModel):
@@ -90,10 +88,11 @@ class ExplorationConfig(BaseModel):
     user_status: UserStatus = Field(default=UserStatus.ALONE, description='user_status_help_')
     # current_exploration_count: int = Field(title='探索次数', default='7', description='默认探索7次')
     limit_time: Time = Field(default=Time(minute=30), description='limit_time_help')
-    minions_cnt: int = Field(title='战斗次数', default='30', ge=0, description='minions_cnt_help')
+    minions_cnt: int = Field(title='战斗次数', default=30, ge=0, description='minions_cnt_help')
 
     exploration_level: ExplorationLevel = Field(title='探索等级', default=ExplorationLevel.EXPLORATION_28,
                                                 description='exploration_level_help')
+    collect_paper_reward: bool = Field(default=True, description='collect_paper_reward_help')
 
     auto_rotate: AutoRotate = Field(title='自动添加候补式神', default=AutoRotate.no,
                                     description='auto_rotate_help')
@@ -101,6 +100,7 @@ class ExplorationConfig(BaseModel):
     choose_rarity: ChooseRarity = Field(title='选择狗粮稀有度', default=ChooseRarity.N, description='choose_rarity_help')
 
     up_type: UpType = Field(title='UpType', default=UpType.ALL, description='up_type_help')
+
 
 class Exploration(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)

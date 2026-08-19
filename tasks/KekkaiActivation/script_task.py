@@ -15,6 +15,7 @@ from module.atom.image import RuleImage
 from module.base.utils import point2str
 from module.logger import logger
 from module.exception import TaskEnd, GameStuckError
+from tasks.KekkaiUtilize.page import page_guild_realm, page_guild_realm_growth, page_guild_card
 
 from tasks.KekkaiUtilize.script_task import ScriptTask as KU
 from tasks.KekkaiUtilize.utils import CardClass
@@ -30,36 +31,20 @@ class ScriptTask(KU, KekkaiActivationAssets):
 
     def run(self):
         con = self.config.kekkai_activation.activation_config
-        self.ui_get_current_page()
-        self.ui_goto(page_guild)
-
-        # 在寮的主界面 检查是否有收取体力或者是收取寮资金
-        # self.check_guild_ap_or_assets()
-
         # 进入寮结界
-        self.goto_realm()
+        self.goto_page(page_guild_realm)
 
         if con.exchange_before:
-            self.check_max_lv(con.shikigami_class)
+            self.check_max_lv(con.shikigami_class, con.auto_fill)
         # 收取经验
         self.harvest_card()
         # 开始挂卡
         self.run_activation(con)
-        while 1:
-            # 关闭到结界界面
-            self.screenshot()
-            if self.appear(self.I_REALM_SHIN):
-                break
-            if self.appear(self.I_SHI_GROWN):
-                break
-            if self.appear_then_click(self.I_UI_BACK_RED, interval=1):
-                continue
+        self.goto_page(page_guild_realm)
 
         if con.exchange_max:
-            self.check_max_lv(con.shikigami_class)
-        # self.back_guild()
-        self.ui_get_current_page()
-        self.ui_goto(page_main)
+            self.check_max_lv(con.shikigami_class, con.auto_fill)
+        self.goto_page(page_main)
 
         raise TaskEnd('KekkaiActivation')
 
@@ -105,7 +90,7 @@ class ScriptTask(KU, KekkaiActivationAssets):
         :return: 挂卡成功（）返回True，失败(时间没到提前来了)返回False
         退出的时候还是在挂卡界面而不是结界界面
         """
-        self.goto_cards()
+        self.goto_page(page_guild_card)
         # 太诡异了 为什么有这么长的动画, 那么长的动画先休息一会
         logger.hr('Start activation')
         time.sleep(0.5)
@@ -149,22 +134,6 @@ class ScriptTask(KU, KekkaiActivationAssets):
             if not card_status and not card_effect:
                 logger.info('Card is not selected also not using')
                 self.screening_card(_config.card_type)
-
-    def goto_cards(self):
-        """
-        寮结界,前往挂卡界面
-        :return:
-        """
-        while 1:
-            self.screenshot()
-
-            if self.appear(self.I_A_CHECK_CARD):
-                break
-            if self.appear(self.I_A_AUTO_INVITE):
-                break
-            if self.appear_then_click_multi_scale(self.I_SHI_CARD, interval=1):
-                continue
-        logger.info('Enter card page')
 
     def check_card_status(self, screenshot=False) -> bool:
         """
@@ -361,38 +330,6 @@ class ScriptTask(KU, KekkaiActivationAssets):
         self.set_next_run("KekkaiActivation", target=next_run)
         raise TaskEnd
 
-    def check_max_lv(self, shikigami_class: ShikigamiClass = ShikigamiClass.N):
-        """
-        在结界界面，进入式神育成，检查是否有满级的，如果有就换下一个
-        退出的时候还是结界界面
-        :return:
-        """
-        self.realm_goto_grown()
-        if self.appear(self.I_RS_LEVEL_MAX):
-            # 存在满级的式神
-            logger.info('Exist max level shikigami and replace it')
-            self.unset_shikigami_max_lv()
-            self.switch_shikigami_class(shikigami_class)
-            self.set_shikigami(shikigami_order=7, stop_image=self.I_RS_NO_ADD)
-        else:
-            logger.info('No max level shikigami')
-        if self.detect_no_shikigami():
-            logger.warning('There are no any shikigami grow room')
-            self.switch_shikigami_class(shikigami_class)
-            self.set_shikigami(shikigami_order=7, stop_image=self.I_RS_NO_ADD)
-
-        # 回到结界界面
-        while 1:
-            self.screenshot()
-
-            if self.appear(self.I_REALM_SHIN) and self.appear_multi_scale(self.I_SHI_GROWN):
-                self.screenshot()
-                if not self.appear(self.I_REALM_SHIN):
-                    continue
-                break
-            if self.appear_then_click(self.I_UI_BACK_BLUE, interval=2.5):
-                continue
-
     def harvest_card(self):
         """
         收卡的经验
@@ -406,16 +343,3 @@ class ScriptTask(KU, KekkaiActivationAssets):
         self.appear_then_click(self.I_A_HARVEST_FISH_6)  # 斗鱼6
         self.appear_then_click(self.I_A_HARVEST_MOON_3)  # 太阴3
         self.appear_then_click(self.I_A_HARVEST_FISH_3)  # 斗鱼三
-
-
-if __name__ == "__main__":
-    from module.config.config import Config
-    from module.device.device import Device
-    import cv2
-
-    c = Config('oas1')
-    d = Device(c)
-
-    t = ScriptTask(c, d)
-    t.run()
-    # t.run_activation(t.config.kekkai_activation.activation_config)

@@ -10,16 +10,13 @@ class ModelPrecision(str, Enum):
     FP32 = 'FP32'
     INT8 = 'INT8'
 
-
 class InferenceEngine(str, Enum):
     ONNXRUNTIME = 'Onnxruntime'
     TENSORRT = 'TensorRT'
 
-
 class ScreenshotMethod(str, Enum):
     WINDOW_BACKGROUND = 'window_background'
     NEMU_IPC = 'nemu_ipc'
-
 
 class ControlMethod(str, Enum):
     MINITOUCH = 'minitouch'
@@ -33,6 +30,7 @@ class HyakkiyakouConfig(ConfigBase):
     hya_onmyoji: Onmyoji = Field(default=Onmyoji.KAGURA, description='切换阴阳师')
     # 自动调整豆子数量
     hya_auto_bean: bool = Field(default=False, description='hya_auto_bean_help')
+    hya_bean_threshold_low: int = Field(default=10, description='hya_bean_threshold_low_help')
     hya_priorities: str = Field(default='', description='hya_priorities_help')
     hya_sp: float = Field(default=1., description='hya_sp_help')
     hya_ssr: float = Field(default=1., description='hya_ssr_help')
@@ -41,6 +39,12 @@ class HyakkiyakouConfig(ConfigBase):
     hya_n: float = Field(default=0.0, description='hya_n_help')
     # 呱太和N卡不是一个东西
     hya_g: float = Field(default=0.0, description='hya_g_help')
+    # BUFF omega 权重
+    hya_buff_prob_up: float = Field(default=2.2)
+    hya_buff_speed_up: float = Field(default=2.0)
+    hya_buff_add_beans: float = Field(default=2.0)
+    hya_buff_slow_down: float = Field(default=2.0)
+    hya_buff_freeze: float = Field(default=2.0)
 
 
 class HyakkiyakouModels(ConfigBase):
@@ -74,6 +78,7 @@ class DebugConfig(ConfigBase):
 
     hide_fields = dynamic_hide('continuous_learning')
 
+
     @field_validator('continuous_learning', mode='after')
     @classmethod
     def false_continuous_learning(cls, v):
@@ -87,3 +92,4 @@ class Hyakkiyakou(ConfigBase):
     hyakkiyakou_config: HyakkiyakouConfig = Field(default_factory=HyakkiyakouConfig)
     hyakkiyakou_models: HyakkiyakouModels = Field(default_factory=HyakkiyakouModels)
     debug_config: DebugConfig = Field(default_factory=DebugConfig)
+

@@ -2,44 +2,38 @@
 # @author runhey
 # github https://github.com/runhey
 
-from functools import wraps
 import zerorpc
 import zmq
-import msgpack
-import random
 import re
 import cv2
 import time
 import os
 import inflection
-import asyncio
 import json
 
 from datetime import date
 import threading
-from typing import Callable
+from module.device.device import Device
+from typing import Any, Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 from cached_property import cached_property
 from pydantic import BaseModel, ValidationError
 from threading import Thread
 from multiprocessing.queues import Queue
-
-
 from module.config.utils import convert_to_underscore
 from module.config.config import Config
-from module.config.config_model import ConfigModel
-from module.config.instance_guard import InstanceGuard
-from module.device.device import Device
 from module.device.env import IS_WINDOWS
 from module.base.utils import load_module
 from module.base.decorator import del_cached_property
 from module.logger import logger
 from module.exception import *
 from module.server.i18n import I18n
-from module.ocr.rpc import ensure_ocr_server_started
-
-
+from module.image.rpc import ensure_image_server_ready
+from module.ocr.rpc import ensure_ocr_server_ready
+from module.script import ScriptRuntimeController, ScriptRuntimeDecision
+from tasks.Restart.server_update import delay_pending_tasks_for_server_update, is_server_update_window
+from module.server.log_service import build_error_log_dir_name
 
 _log_switch_lock = threading.Lock()#线程锁
 
@@ -50,6 +44,7 @@ class Script:
         self.server = None
         self.state_queue: Queue = None
         self._emulator_down = False
+        self.runtime = ScriptRuntimeController(self)
         self.gui_update_task: Callable = None  # 回调函数, gui进程注册当每次config更新任务的时候更新gui的信息
         self.config_name = config_name
         # Skip first restart
@@ -57,10 +52,9 @@ class Script:
         # Failure count of tasks
         # Key: str, task name, value: int, failure count
         self.failure_record = {}
+        self.last_task_runtime_outcome: dict[str, Any] | None = None
         # 运行loop的线程
         self.loop_thread: Thread = None
-        # 跨进程排队管理器（仅在 queue_mode=True 时初始化）
-        self.instance_guard: InstanceGuard = None
 
     @cached_property
     def config(self) -> "Config":
@@ -76,7 +70,7 @@ class Script:
             exit(1)
 
     @cached_property
-    def device(self) -> "Device":
+    def device(self) -> Device | None:
         try:
             from module.device.device import Device
             device = Device(config=self.config)
@@ -98,8 +92,15 @@ class Script:
 
     def save_error_log(self):
         """
-        Save last 60 screenshots in ./log/error/<timestamp>
-        Save logs to ./log/error/<timestamp>/log.txt
+        保存错误现场到 ./log/error/<script_name>_<timestamp_ms>。
+
+        保存内容包括:
+        - 最近一段截图, 文件名为时间戳 PNG。
+        - 当前脚本日志的截取内容, 文件名为 log.txt。
+
+        说明:
+        - 新错误目录名会带上脚本名, 便于前端区分不同脚本产生的错误。
+        - 目录名和脚本名都会经过统一净化, 避免路径注入。
         """
         from module.base.utils import save_image
         from module.handler.sensitive_info import (handle_sensitive_image,
@@ -107,11 +108,10 @@ class Script:
         if self.config.script.error.save_error:
             if not os.path.exists('./log/error'):
                 os.mkdir('./log/error')
-            folder_name = str(int(time.time() * 1000))
+            # 用统一规则生成错误目录名, 目录格式为 <script_name>_<timestamp_ms>。
+            folder_name = build_error_log_dir_name(self.config_name, int(time.time() * 1000))
             folder = f'./log/error/{folder_name}'
             logger.warning(f'Saving error: {folder}')
-            logger.info('保存详细错误的日志和截图到路径:')
-            logger.info(f'{str( Path.cwd() / "log" / "error" / folder_name)}')
             os.mkdir(folder)
             for data in self.device.screenshot_deque:
                 image_time = datetime.strftime(data['time'], '%Y-%m-%d_%H-%M-%S-%f')
@@ -279,19 +279,6 @@ class Script:
             result[key] = item
         return json.dumps(result)
 
-    def _release_token_before_wait(func):
-        @wraps(func)
-        def wrapper(self, future):
-            if self.instance_guard and self.instance_guard.should_release(
-                pending_task=self.config.pending_task,
-                waiting_task=self.config.waiting_task,
-                idle_threshold_minutes=self.config.script.optimization.queue_idle_threshold
-            ):
-                self.instance_guard.release()
-            return func(self, future)
-        return wrapper
-
-    @_release_token_before_wait
     def wait_until(self, future):
         """
         Wait until a specific time.
@@ -329,196 +316,17 @@ class Script:
             if self.state_queue:
                 self.state_queue.put({"schedule": self.config.get_schedule_data()})
             now = datetime.now()
-            if not self._try_acquire_queue_token():
-                del_cached_property(self, "config")
-                continue
             # 任务时间到了返回任务名称
             if task.next_run <= now:
                 return task.command
             # 根据策略执行等待逻辑
-            if not self._handle_wait_during_idle(task.next_run):
-                # 若等待被打断, 则刷新配置
+            decision = self.runtime.handle_wait_during_idle(task.next_run)
+            if decision == ScriptRuntimeDecision.RESCHEDULE:
+                logger.info('Idle wait requested scheduler refresh, reload config and reschedule')
                 del_cached_property(self, "config")
-
-    def _try_acquire_queue_token(self) -> bool:
-        """
-        尝试获取排队执行权。
-        如果排队模式未启用，返回 True。
-        如果排队模式启用但未能获取到执行权，进入等待循环直到获取成功或配置变更。
-
-        Returns:
-            True: 获取得执行权，可以执行任务
-            False: 等待被配置变更打断，调用方应重新加载配置后重试
-        """
-        # 是否开启排队模式
-        if not self.config.script.optimization.queue_mode:
-            if self.instance_guard:
-                self.instance_guard.remove_from_queue()
-                self.instance_guard = None
-            return True
-
-        # 懒加载instance_guard
-        if self.instance_guard is None:
-            try:
-                self.instance_guard = InstanceGuard(self.config_name)
-                logger.info(f"[Queue] Queue mode enabled for '{self.config_name}'")
-            except Exception:
-                self.instance_guard = None
-                return True
-
-        # 尝试获取执行权
-        if self.instance_guard.try_acquire():
-            return True
-
-        # 执行权获取失败，关闭模拟器并进入等待循环
-        logger.info(f"[Queue] '{self.config_name}' waiting for execution token...")
-        if (self.config.script.optimization.when_task_queue_empty == 'close_game'
-                and not self._emulator_down
-                and 'device' in self.__dict__):
-            try:
-                self.device.emulator_stop()
-                self._emulator_down = True
-                logger.info(f"[Queue] Emulator closed during queue wait")
-            except Exception:
-                pass
-        self.config.start_watching()
-        while True:
-            time.sleep(30)
-
-            if self.config.should_reload():
-                logger.info(f"[Queue] Config changed, re-evaluating")
-                return False
-
-            if self.instance_guard.try_acquire():
-                return True
-
-    def _handle_wait_during_idle(self, next_run: datetime) -> bool:
-        """
-        处理任务空闲期间的行为策略
-        :param next_run: 下一个任务的时间
-        :return: True 表示等待成功完成, False 表示等待被中断
-        """
-        method = self.config.script.optimization.when_task_queue_empty
-        strategy_map = {
-            "close_game": self._wait_close_game,
-            "goto_main": self._wait_goto_main,
-        }
-        func = strategy_map.get(method)
-        if func is None:
-            logger.warning(f"Invalid Optimization_WhenTaskQueueEmpty: {method}, fallback to stay_there")
-            func = self._wait_stay_there
-        return func(next_run)
-
-    @staticmethod
-    def _time_to_timedelta(value) -> timedelta:
-        if value is None:
-            return timedelta(0)
-        return timedelta(hours=value.hour, minutes=value.minute, seconds=value.second)
-
-    def _wait_until_with_emulator_preheat(self, next_run: datetime) -> bool:
-        """Wait until next_run; if emulator is down, preheat startup before next task."""
-        if not self._emulator_down:
-            return self.wait_until(next_run)
-
-        startup_lead = self._time_to_timedelta(self.config.script.optimization.emulator_startup_lead_time)
-        now = datetime.now()
-        wake_time = next_run - startup_lead if startup_lead > timedelta(0) else next_run
-        if wake_time < now:
-            wake_time = now
-
-        now = datetime.now()
-        if wake_time > now:
-            logger.info(f"Wait before wake emulator: {wake_time.strftime('%Y-%m-%d %H:%M:%S')}")
-            if not self.wait_until(wake_time):
-                return False
-
-        if self._emulator_down:
-            logger.info("Wake emulator before next task")
-            if not self._try_acquire_queue_token():
-                return False
-            self.device = Device(self.config)
-            self._emulator_down = False
-
-        if wake_time < next_run:
-            return self.wait_until(next_run)
-        return True
-
-    def _wait_close_game(self, next_run: datetime) -> bool:
-        if self._emulator_down:
-            logger.info("Emulator is down, skip close_game/goto_main action and wait with preheat")
-            return self._wait_until_with_emulator_preheat(next_run)
-
-        close_game_wait_duration = self.config.script.optimization.close_game_wait_duration
-        close_game_wait = self._time_to_timedelta(close_game_wait_duration)
-        close_emulator_wait_duration = self.config.script.optimization.close_emulator_wait_duration
-        close_emulator_wait = self._time_to_timedelta(close_emulator_wait_duration)
-
-        if close_emulator_wait > timedelta(0) and next_run > datetime.now() + close_emulator_wait:
-            logger.info("Close emulator during wait")
-            self.device.emulator_stop()
-            self._emulator_down = True
-
-            if not self._wait_until_with_emulator_preheat(next_run):
-                return False
-
-            self.run("Restart")
-            return True
-
-        if close_game_wait <= timedelta(0):
-            logger.info("Close game during wait")
-            self.device.app_stop()
-            self.device.release_during_wait()
-            if not self.wait_until(next_run):
-                return False
-            self.run("Restart")
-            return True
-
-        if next_run > datetime.now() + close_game_wait:
-            logger.info("Close game during wait")
-            self.device.app_stop()
-            self.device.release_during_wait()
-            if not self.wait_until(next_run):
-                return False
-            self.run("Restart")
-            return True
-
-        logger.info("Wait without closing game (close_game wait duration not reached)")
-        self.device.release_during_wait()
-        if not self.wait_until(next_run):
-            return False
-        return True
-
-    def _wait_goto_main(self, next_run: datetime) -> bool:
-        if self._emulator_down:
-            logger.info("Emulator is down, skip goto_main and wait with preheat")
-            return self._wait_until_with_emulator_preheat(next_run)
-
-        close_emulator_wait_duration = self.config.script.optimization.close_emulator_wait_duration
-        close_emulator_wait = self._time_to_timedelta(close_emulator_wait_duration)
-        if close_emulator_wait > timedelta(0) and next_run > datetime.now() + close_emulator_wait:
-            logger.info("Close emulator during wait")
-            self.device.emulator_stop()
-            self._emulator_down = True
-
-            if not self._wait_until_with_emulator_preheat(next_run):
-                return False
-
-            self.run("Restart")
-            return True
-
-        logger.info("Goto main page during wait")
-        self.run("GotoMain")
-        self.device.release_during_wait()
-        return self.wait_until(next_run)
-
-    def _wait_stay_there(self, next_run: datetime) -> bool:
-        if self._emulator_down:
-            logger.info("Stay_there during wait (emulator is down, with preheat)")
-            return self._wait_until_with_emulator_preheat(next_run)
-
-        logger.info("Stay_there (no action) during wait")
-        self.device.release_during_wait()
-        return self.wait_until(next_run)
+            elif decision == ScriptRuntimeDecision.FAILED:
+                logger.warning('Idle wait preparation failed, reload config and retry scheduling')
+                del_cached_property(self, "config")
 
     def exception_handler(self, e: Exception, command: str) -> None:
         # 处理御魂溢出
@@ -532,6 +340,50 @@ class Script:
             self.config.task_call('SoulsTidy')
             time.sleep(1)
 
+    def _reset_task_runtime_outcome(self) -> None:
+        self.last_task_runtime_outcome = None
+        if 'config' in self.__dict__:
+            self.config.task_runtime_outcome = None
+
+    def _set_task_runtime_outcome(self, task: str, status: str, wait_until: datetime | None = None) -> None:
+        outcome = {
+            'task': task,
+            'status': status,
+        }
+        if wait_until is not None:
+            outcome['wait_until'] = wait_until
+        self.last_task_runtime_outcome = outcome
+        if 'config' in self.__dict__:
+            self.config.task_runtime_outcome = outcome
+
+    def _capture_task_runtime_outcome(self, command: str) -> None:
+        outcome = getattr(self.config, 'task_runtime_outcome', None)
+        self.last_task_runtime_outcome = outcome if isinstance(outcome, dict) else None
+        if self.last_task_runtime_outcome is None:
+            return
+        status = self.last_task_runtime_outcome.get('status')
+        if status == 'server_update_delayed':
+            wait_until = self.last_task_runtime_outcome.get('wait_until')
+            logger.info(f'{command} runtime outcome: server_update_delayed (wait_until={wait_until})')
+            if isinstance(wait_until, datetime):
+                self.runtime.server_update_wait_until = wait_until
+                self.runtime.server_update_wait_log_until = None
+            return
+        if command != 'Restart':
+            return
+        if status == 'recovered':
+            logger.info('Restart runtime outcome: recovered')
+            return
+        logger.info(f'Restart runtime outcome: {status}')
+
+    def _delay_tasks_for_server_update(self, task: str, reason: str) -> bool:
+        if not is_server_update_window():
+            return False
+
+        delay_target = delay_pending_tasks_for_server_update(self.config, reason=reason)
+        self._set_task_runtime_outcome(task=task, status='server_update_delayed', wait_until=delay_target)
+        return True
+
     def run(self, command: str) -> bool:
         """
         :param command:  大写驼峰命名的任务名字
@@ -540,80 +392,17 @@ class Script:
         if command == 'start' or command == 'goto_main':
             logger.error(f'Invalid command `{command}`')
 
-        if not self._try_acquire_queue_token():
-            return False
-
-        if self.instance_guard and self.instance_guard.token_lost:
-            logger.warning(f'Token lost, stopping emulator and rejoining queue')
-            try:
-                self.device.emulator_stop()
-            except Exception:
-                pass
-            self._emulator_down = True
-            self.instance_guard.release()
-            return False
-
+        self._reset_task_runtime_outcome()
         try:
             self.device.screenshot()
             module_name = 'script_task'
-            module_path = str(Path.cwd() / 'tasks' / command / (module_name+'.py'))
+            module_path = str(Path.cwd() / 'tasks' / command / (module_name + '.py'))
             logger.info(f'module_path: {module_path}, module_name: {module_name}')
             task_module = load_module(module_name, module_path)
             task_module.ScriptTask(config=self.config, device=self.device).run()
-        except TaskEnd:
-            return True
-        except GameNotRunningError as e:
-            logger.warning(e)
-            self.exception_handler(e=e, command=command)
-            self.config.task_call('Restart')
-            return True
-        except (GameStuckError, GameTooManyClickError) as e:
-            logger.error(e)
-            self.save_error_log()
-            self.exception_handler(e=e, command=command)
-            logger.warning(f'Game stuck, {self.device.package} will be restarted in 10 seconds')
-            logger.warning('If you are playing by hand, please stop Alas')
-            self.config.notifier.push(title=f'{I18n.trans_zh_cn(command)}{command}', content=f"<{self.config_name}> GameStuckError or GameTooManyClickError")
-            self.config.task_call('Restart')
-            self.device.sleep(10)
-            return False
-        except GameBugError as e:
-            logger.warning(e)
-            self.save_error_log()
-            self.exception_handler(e=e, command=command)
-            logger.warning('An error has occurred in Azur Lane game client, Alas is unable to handle')
-            logger.warning(f'Restarting {self.device.package} to fix it')
-            self.config.task_call('Restart')
-            self.device.sleep(10)
-            return False
-        except GamePageUnknownError as e:
-            logger.info('Game server may be under maintenance or network may be broken, check server status now')
-            # 这个还不重要 留着坑填
-            logger.critical('Game page unknown')
-            self.save_error_log()
-            self.exception_handler(e=e, command=command)
-            self.config.notifier.push(title=f'{I18n.trans_zh_cn(command)}{command}', content=f"<{self.config_name}> GamePageUnknownError")
-            self.config.task_call('Restart')
-            self.device.sleep(10)
-            return False
-        except ScriptError as e:
-            logger.critical(e)
-            self.exception_handler(e=e, command=command)
-            logger.critical('This is likely to be a mistake of developers, but sometimes just random issues')
-            self.config.notifier.push(title=f'{I18n.trans_zh_cn(command)}{command}', content=f"<{self.config_name}> ScriptError")
-            exit(1)
-        except RequestHumanTakeover as e:
-            logger.critical(e)
-            self.exception_handler(e=e, command=command)
-            logger.critical('Request human takeover')
-            self.config.notifier.push(title=f'{I18n.trans_zh_cn(command)}{command}', content=f"<{self.config_name}> RequestHumanTakeover")
-            exit(1)
         except Exception as e:
-            logger.exception(e)
-            self.exception_handler(e=e, command=command)
-            self.save_error_log()
-            self.config.notifier.push(title=f'{I18n.trans_zh_cn(command)}{command}', content=f"<{self.config_name}> Exception occured")
-            exit(1)
+            return self._handle_task_exception(e, command)
+        return False
 
     def loop(self):
         """
@@ -641,38 +430,32 @@ class Script:
                 with _log_switch_lock:
                     logger.set_file_logger(self.config_name, do_cleanup=True)
                 start_day = date.today()
-            # Check update event from GUI
-            # if self.stop_event is not None:
-            #     if self.stop_event.is_set():
-            #         logger.info("Update event detected")
-            #         logger.info(f"Alas [{self.config_name}] exited.")
-            #         break
 
-            # Check game server maintenance
-            # self.checker.wait_until_available()
-            # if self.checker.is_recovered():
-            #     # There is an accidental bug hard to reproduce
-            #     # Sometimes, config won't be updated due to blocking
-            #     # even though it has been changed
-            #     # So update it once recovered
-            #     del_cached_property(self, 'config')
-            #     logger.info('Server or network is recovered. Restart game client')
-            #     self.config.task_call('Restart')
-
-            # Get task
-            task = self.get_next_task()
-            # Skip first restart
-            if self.is_first_task and task == 'Restart':
-                logger.info('Skip task `Restart` at scheduler start')
-                self.config.task_delay(task='Restart', success=True, server=True)
+            task = ""
+            try:
+                # Get task
+                task = self.get_next_task()
+                # Skip first restart
+                if self.is_first_task and task == 'Restart':
+                    logger.info('Skip task `Restart` at scheduler start')
+                    self.config.task_delay(task='Restart', success=True, server=True)
+                    del_cached_property(self, 'config')
+                    continue
+                decision = self.runtime.prepare_task_execution(task)
+            except Exception as e:
+                self._handle_task_exception(e, task)
+                # 本轮 prepare 失败,重新调度
                 del_cached_property(self, 'config')
                 continue
 
-            if self._emulator_down:
-                self.device = Device(self.config)
-                self._emulator_down = False
-            else:
-                _ = self.device
+            if decision == ScriptRuntimeDecision.RESCHEDULE:
+                logger.info(f'Runtime preparation for `{task}` requested reschedule, reload config and retry scheduling')
+                del_cached_property(self, 'config')
+                continue
+            if decision == ScriptRuntimeDecision.FAILED:
+                logger.warning(f'Runtime preparation for `{task}` failed, reload config and retry scheduling')
+                del_cached_property(self, 'config')
+                continue
 
             # Run
             logger.info(f'Scheduler: Start task `{task}`')
@@ -719,6 +502,98 @@ class Script:
             else:
                 break
 
+    def _handle_task_exception(self, e: Exception, command: str) -> bool:
+        """
+        统一处理任务执行 / 准备阶段抛出的异常。
+        Returns:
+            True  -> 视为正常结束或已自动恢复 (例如已 task_call('Restart')),
+                     调度器继续推进
+            False -> 视为失败,脚本继续运行
+        对致命异常 (ScriptError / RequestHumanTakeover / 未识别 Exception)
+        在内部直接 exit(1)。
+        """
+        if isinstance(e, TaskEnd):
+            self._capture_task_runtime_outcome(command)
+            return True
+
+        if isinstance(e, GameNotRunningError):
+            logger.warning(e)
+            self.exception_handler(e=e, command=command)
+            self.config.task_call('Restart')
+            return True
+
+        if isinstance(e, (GameStuckError, GameTooManyClickError)):
+            logger.error(e)
+            self.save_error_log()
+            self.exception_handler(e=e, command=command)
+            logger.warning(f'Game stuck, {self.device.package} will be restarted in 10 seconds')
+            logger.warning('If you are playing by hand, please stop Alas')
+            self.config.notifier.push(title=f'{I18n.trans_zh_cn(command)}{command}',
+                                      content=f"<{self.config_name}> GameStuckError or GameTooManyClickError")
+            self.config.task_call('Restart')
+            self.device.sleep(10)
+            return False
+
+        if isinstance(e, GameBugError):
+            logger.warning(e)
+            self.save_error_log()
+            self.exception_handler(e=e, command=command)
+            logger.warning('An error has occurred in Azur Lane game client, Alas is unable to handle')
+            logger.warning(f'Restarting {self.device.package} to fix it')
+            self.config.task_call('Restart')
+            self.device.sleep(10)
+            return False
+
+        if isinstance(e, GamePageUnknownError):
+            logger.info('Game server may be under maintenance or network may be broken, check server status now')
+            if command == 'GotoMain' and self._delay_tasks_for_server_update(
+                    task=command,
+                    reason='failed to goto main during morning server update window',
+            ):
+                logger.info('GotoMain failed during server update window, delayed pending tasks and reschedule')
+                return False
+            logger.critical('Game page unknown')
+            self.save_error_log()
+            self.exception_handler(e=e, command=command)
+            self.config.notifier.push(
+                title=f'{I18n.trans_zh_cn(command)}{command}',
+                content=f"<{self.config_name}> GamePageUnknownError",
+            )
+            self.config.task_call('Restart')
+            self.device.sleep(10)
+            return False
+
+        if isinstance(e, ScriptError):
+            logger.critical(e)
+            self.exception_handler(e=e, command=command)
+            logger.critical('This is likely to be a mistake of developers, but sometimes just random issues')
+            self.config.notifier.push(
+                title=f'{I18n.trans_zh_cn(command)}{command}',
+                content=f"<{self.config_name}> ScriptError",
+            )
+            exit(1)
+
+        if isinstance(e, RequestHumanTakeover):
+            logger.critical(e)
+            self.exception_handler(e=e, command=command)
+            logger.critical('Request human takeover')
+            self.config.notifier.push(
+                title=f'{I18n.trans_zh_cn(command)}{command}',
+                content=f"<{self.config_name}> RequestHumanTakeover",
+            )
+            exit(1)
+
+        # generic
+        logger.exception(e)
+        self.exception_handler(e=e, command=command)
+        self.save_error_log()
+        self.config.notifier.push(
+            title=f'{I18n.trans_zh_cn(command)}{command}',
+            content=f"<{self.config_name}> Exception occured",
+        )
+        exit(1)
+        return False
+
     def start_loop(self) -> None:
         """
         创建一个线程，运行loop
@@ -730,6 +605,7 @@ class Script:
 
 
 if __name__ == "__main__":
-    ensure_ocr_server_started()
+    ensure_image_server_ready()
+    ensure_ocr_server_ready()
     script = Script("oas1")
     script.loop()

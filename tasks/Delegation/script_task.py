@@ -17,8 +17,7 @@ from tasks.Delegation.assets import DelegationAssets
 class ScriptTask(GameUi, DelegationAssets):
 
     def run(self):
-        self.ui_get_current_page()
-        self.ui_goto(page_delegation)
+        self.goto_page(page_delegation)
         self.check_reward()
         con: DelegationConfig = self.config.delegation.delegation_config
         if con.miyoshino_painting:
@@ -130,12 +129,14 @@ class ScriptTask(GameUi, DelegationAssets):
 if __name__ == '__main__':
     from module.config.config import Config
     from module.device.device import Device
+    from memory_profiler import profile
     c = Config('oas1')
     d = Device(c)
     t = ScriptTask(c, d)
 
     # t.delegate_one('弥助的画')
     t.run()
+
 
 
 

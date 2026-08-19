@@ -5,12 +5,11 @@
 from module.atom.image import RuleImage
 from module.logger import logger
 
-from tasks.Component.Costume.config import (MainType, CostumeConfig, RealmType,
-                                            ThemeType, ShikigamiType, SignType, BattleType, CarpBannerType)
+from tasks.Component.Costume.config import (MainType, CostumeConfig, ShikigamiType, BattleType, CourtyardAffairType)
 from tasks.Component.Costume.assets import CostumeAssets
 from tasks.Component.CostumeBattle.assets import CostumeBattleAssets
 from tasks.Component.CostumeShikigami.assets import CostumeShikigamiAssets
-from tasks.Component.CostumeCarpBanner.assets import CostumeCarpBannerAssets
+from tasks.Component.CustomCourtyardAffair.assets import CustomCourtyardAffairAssets
 
 # 庭院皮肤
 # 主界面皮肤（使用字典推导式动态生成）
@@ -20,34 +19,32 @@ main_costume_model = {
         'I_MAIN_GOTO_EXPLORATION': f'I_MAIN_GOTO_EXPLORATION_{i}',
         'I_MAIN_GOTO_SUMMON': f'I_MAIN_GOTO_SUMMON_{i}',
         'I_MAIN_GOTO_TOWN': f'I_MAIN_GOTO_TOWN_{i}',
-        'I_PET_HOUSE': f'I_PET_HOUSE_{i}'
-    } for i in range(1, 16)
+        'I_PET_HOUSE': f'I_PET_HOUSE_{i}',
+        'I_WQ_DONE': f'I_WQ_DONE_{i}',  # 该条及以下非强制更改, 若对应庭院内容识别不到可以添加
+        'I_HARVEST_SIGN': f'I_HARVEST_SIGN_{i}',
+        'I_HARVEST_JADE': f'I_HARVEST_JADE_{i}',
+        'I_HARVEST_MAIL': f'I_HARVEST_MAIL_{i}',
+        'I_HARVEST_SOUL': f'I_HARVEST_SOUL_{i}',
+        'I_HARVEST_GUILD_REWARD': f'I_HARVEST_GUILD_REWARD_{i}'
+    } for i in range(1, 17)
 }
 
-
-# 鲤鱼旗皮肤
-carpbanner_costume_model = {
-    getattr(CarpBannerType, f"COSTUME_CARPBANNER_{i}"): {
-        'I_SHI_CARD': f'I_SHI_CARD_{i}',
-        'I_SHI_DEFENSE': f'I_SHI_DEFENSE_{i}',
-        'I_SHI_GROWN': f'I_SHI_GROWN_{i}',
-    } for i in range(1, 4)
-}
-
-
-# 战斗主题
-battle_theme_model = {
-    getattr(BattleType, f"COSTUME_BATTLE_{i}"): {
+# 战斗主题（使用循环处理常规情况 + 特例处理）
+battle_theme_model = {}
+for i in range(1, 15):
+    entry = {
         'I_LOCAL': f'I_LOCAL_{i}',
         'I_EXIT': f'I_EXIT_{i}',
         'I_FRIENDS': f'I_FRIENDS_{i}',
         'I_BATTLE_INFO': f'I_BATTLE_INFO_{i}',
-        # 以下资源并非所有主题都需要修改，未采集的资源将被跳过
-        'I_WIN': f'I_WIN_{i}', # 已知：8，12，13，14
-        'I_DE_WIN': f'I_DE_WIN_{i}', # 已知：8，12，13，14
-        'I_FALSE': f'I_FALSE_{i}' # 已知：8，12，13，14
-    } for i in range(1, 15)
-}
+    }
+    if i in [8, 12, 13, 14]:  # 特殊处理
+        entry.update({
+            'I_WIN': f'I_WIN_{i}',
+            'I_DE_WIN': f'I_DE_WIN_{i}',
+            'I_FALSE': f'I_FALSE_{i}'
+        })
+    battle_theme_model[getattr(BattleType, f"COSTUME_BATTLE_{i}")] = entry
 
 # 幕间主题
 shikigami_costume_model = {
@@ -72,14 +69,25 @@ shikigami_costume_model = {
     for i in range(1, 11)  # 目前支持 COSTUME_SHIKIGAMI_1 到 COSTUME_SHIKIGAMI_10
 }
 
+# 庭院事务皮肤
+courtyard_affair_model = {
+    getattr(CourtyardAffairType, f"CUSTOM_COURTYARD_AFFAIR_{i}"): {
+        'I_CHECK_COURTYARD_AFFAIRS': f'I_CHECK_COURTYARD_AFFAIRS_{i}',
+        'I_ONE_COMPLETE': f'I_ONE_COMPLETE_{i}',
+        'I_ENTER_DAILY': f'I_ENTER_DAILY_{i}',
+        'I_CHECK_IN_DAILY': f'I_CHECK_IN_DAILY_{i}',
+    } for i in range(1, 2)
+}
+
+
 class CostumeBase:
     def check_costume(self, config: CostumeConfig=None):
         if config is None:
             config: CostumeConfig = self.config.model.global_game.costume_config
         self.check_costume_main(config.costume_main_type)
-        self.check_costume_carpbanner(config.costume_carpbanner_type)
         self.check_costume_battle(config.costume_battle_type)
         self.check_costume_shikigami(config.costume_shikigami_type)
+        self.check_custom_courtyard_affair(config.custom_courtyard_affair)
 
     def replace_img(self,
                     asset_before: str,
@@ -101,21 +109,9 @@ class CostumeBase:
         logger.info(f'Switch main costume to {main_type}')
         costume_assets = CostumeAssets()
         for key, value in main_costume_model[main_type].items():
-            assert_value: RuleImage = getattr(costume_assets, value)
-            self.replace_img(key, assert_value)
-
-    def check_costume_carpbanner(self, carpbanner_type: CarpBannerType):
-        if carpbanner_type == CarpBannerType.COSTUME_CARPBANNER_DEFAULT:
-            return
-        logger.info(f'Switch carp banner theme {carpbanner_type} (override realm assets)')
-        carpbanner_assets = CostumeCarpBannerAssets()
-        model = carpbanner_costume_model.get(carpbanner_type, {})
-        for key, value in model.items():
-            if not hasattr(carpbanner_assets, value):
-                logger.warning(f'Carp banner asset {value} not found, skip')
+            assert_value: RuleImage = getattr(costume_assets, value, None)
+            if assert_value is None:
                 continue
-            assert_value: RuleImage = getattr(carpbanner_assets, value)
-            # 执行替换（覆盖结界皮肤的同名key）
             self.replace_img(key, assert_value)
 
     def check_costume_battle(self, battle_type: BattleType):
@@ -124,9 +120,6 @@ class CostumeBase:
         logger.info(f'Switch battle theme {battle_type}')
         costume_battle_assets = CostumeBattleAssets()
         for key, value in battle_theme_model[battle_type].items():
-            if not hasattr(costume_battle_assets, value):
-                # 尚未采集完成的资产，跳过
-                continue
             assert_value: RuleImage = getattr(costume_battle_assets, value)
             # 绿标的坐标点范围不变
             if key == 'I_LOCAL':
@@ -146,6 +139,15 @@ class CostumeBase:
                 continue
             assert_value: RuleImage = getattr(shikigami_assets, value)
             # 一般不需要固定 back ROI，如确有需要可在此为特例设置 rp_roi_back=False
+            self.replace_img(key, assert_value)
+
+    def check_custom_courtyard_affair(self, courtyard_affair_type: CourtyardAffairType):
+        if courtyard_affair_type == CourtyardAffairType.CUSTOM_COURTYARD_AFFAIR_DEFAULT:
+            return
+        logger.info(f'Switch courtyard affair {courtyard_affair_type}')
+        courtyard_affair_assets = CustomCourtyardAffairAssets()
+        for key, value in courtyard_affair_model[courtyard_affair_type].items():
+            assert_value: RuleImage = getattr(courtyard_affair_assets, value)
             self.replace_img(key, assert_value)
 
 

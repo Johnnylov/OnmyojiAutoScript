@@ -1,49 +1,42 @@
 # This Python file uses the following encoding: utf-8
-# @author runhey
-# github https://github.com/runhey
+# @author AzurTian
 import time
 import numpy as np
-import random
-from enum import Enum
 from cached_property import cached_property
 from datetime import timedelta, datetime
+from module.atom.gif import RuleGif
+from module.atom.image import RuleImage
+from module.base.timer import Timer
 
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.Component.GeneralRoom.general_room import GeneralRoom
 from tasks.Component.GeneralInvite.general_invite import GeneralInvite
 from tasks.Component.ReplaceShikigami.replace_shikigami import ReplaceShikigami
 from tasks.Exploration.assets import ExplorationAssets
-from tasks.Exploration.config import ChooseRarity, AutoRotate, AttackNumber, UpType
-from tasks.Component.GeneralBattle.general_battle import GeneralBattle
+from tasks.Exploration.config import ChooseRarity, UpType, ExplorationLevel, AutoRotate, UserStatus, Exploration
+from tasks.Component.GeneralBattle.general_battle import GeneralBattle, ExitMatcher, BattleContext, BattleAction
 from tasks.GameUi.game_ui import GameUi
-from tasks.GameUi.page import page_exploration, page_shikigami_records, page_main
-from tasks.RealmRaid.script_task import ScriptTask as RealmRaidScriptTask
 from tasks.Utils.config_enum import ShikigamiClass
+import tasks.Exploration.page as pages
 
 from module.logger import logger
-from module.base.timer import Timer
-from module.exception import RequestHumanTakeover, TaskEnd, GameStuckError
-from module.atom.image_grid import ImageGrid
+from module.exception import TaskEnd, GameStuckError
 from module.atom.animate import RuleAnimate
-from module.base.utils import load_image
-
-class Scene(Enum):
-    UNKNOWN = 0  #
-    WORLD = 1  # 探索大世界
-    ENTRANCE = 2  # 入口弹窗
-    MAIN = 3  # 探索里面
-    BATTLE_PREPARE = 4  # 战斗准备
-    BATTLE_FIGHTING = 5  # 战斗中
-    TEAM = 6  # 组队
-
-
+from typing import Optional
 
 
 class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, ReplaceShikigami, SwitchSoul, ExplorationAssets):
-    minions_cnt = 0
+    fire_monster_type: str = ''
+    need_exit: bool = False
+    user_status: UserStatus = UserStatus.ALONE
+    wait_start_time: datetime = datetime.now()
+    pre_page: pages.Page = None
+
+    def _exit_matcher(self) -> ExitMatcher:
+        return pages.any_of(self.I_E_SETTINGS_BUTTON, self.I_E_AUTO_ROTATE_ON, self.I_E_AUTO_ROTATE_OFF)
 
     @cached_property
-    def _config(self):
+    def _config(self) -> Exploration:
         self.config.exploration.general_battle_config.lock_team_enable = True
         limit_time = self.config.exploration.exploration_config.limit_time
         self.limit_time: timedelta = timedelta(
@@ -57,53 +50,19 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
     def _match_end(self):
         return RuleAnimate(self.I_SWIPE_END)
 
-    def is_swipe_unchanged(self, before_image, after_image, threshold: float = 20) -> bool:
-        # 对比滑屏前后同一块区域，变化很小说明地图大概率没有移动，已经滑到尽头。
-        swipe_check_roi = (1216, 86, 64, 225)
-        before = self.I_SWIPE_END.corp(before_image, swipe_check_roi)
-        after = self.I_SWIPE_END.corp(after_image, swipe_check_roi)
-        diff = np.mean(np.abs(before.astype(np.int16) - after.astype(np.int16)))
-        logger.info(f'Swipe end area diff: {diff:.2f}')
-        return diff <= threshold
-
-    def get_current_scene(self, reuse_screenshot: bool = True) -> Scene:
-        if not reuse_screenshot:
-            self.screenshot()
-
-        if self.appear(self.I_CHECK_EXPLORATION) and not self.appear(self.I_E_SETTINGS_BUTTON):
-            return Scene.WORLD
-        elif self.appear(self.I_E_EXPLORATION_CLICK):
-            return Scene.ENTRANCE
-        elif self.appear(self.I_E_SETTINGS_BUTTON) or self.appear(self.I_E_AUTO_ROTATE_ON) or self.appear(self.I_E_AUTO_ROTATE_OFF):
-            return Scene.MAIN
-        elif self.is_in_prepare():
-            return Scene.BATTLE_PREPARE
-        elif self.is_in_battle():
-            return Scene.BATTLE_FIGHTING
-        elif self.is_in_room() or self.appear(self.I_CREATE_ENSURE):
-            return Scene.TEAM
-
-        logger.info("Unknown scene")
-        return Scene.UNKNOWN
-
     def pre_process(self):
-        explorationConfig = self._config
-        if explorationConfig.switch_soul_config.enable:
-            self.ui_get_current_page()
-            self.ui_goto(page_shikigami_records)
-            self.run_switch_soul(explorationConfig.switch_soul_config.switch_group_team)
+        if self._config.switch_soul_config.enable:
+            self.goto_page(pages.page_shikigami_records)
+            self.run_switch_soul(self._config.switch_soul_config.switch_group_team)
 
-        if explorationConfig.switch_soul_config.enable_switch_by_name:
-            self.ui_get_current_page()
-            self.ui_goto(page_shikigami_records)
-            self.run_switch_soul_by_name(explorationConfig.switch_soul_config.group_name,
-                                         explorationConfig.switch_soul_config.team_name)
-
+        if self._config.switch_soul_config.enable_switch_by_name:
+            self.goto_page(pages.page_shikigami_records)
+            self.run_switch_soul_by_name(self._config.switch_soul_config.group_name,
+                                         self._config.switch_soul_config.team_name)
         # 开启加成
         con = self.config.exploration.exploration_config
         if con.buff_gold_50_click or con.buff_gold_100_click or con.buff_exp_50_click or con.buff_exp_100_click:
-            self.ui_get_current_page()
-            self.ui_goto(page_main)
+            self.goto_page(pages.page_main)
             self.open_buff()
             if con.buff_gold_50_click:
                 self.gold_50()
@@ -114,19 +73,14 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
             if con.buff_exp_100_click:
                 self.exp_100()
             self.close_buff()
-
-        self.ui_get_current_page()
-        # 探索页面
-        self.ui_goto(page_exploration)
+        self.user_status = self._config.exploration_config.user_status
+        self.wait_start_time = datetime.now()  # 重置等待时间
 
     def post_process(self):
-        self.wait_until_stable(self.I_UI_BACK_RED)
-        if self.appear(self.I_UI_BACK_RED):
-            self.ui_click_until_disappear(self.I_UI_BACK_RED)
-        self.ui_get_current_page()
-        self.ui_goto(page_main)
+        self.goto_page(pages.page_exploration)
         con = self._config.exploration_config
         if con.buff_gold_50_click or con.buff_gold_100_click or con.buff_exp_50_click or con.buff_exp_100_click:
+            self.goto_page(pages.page_main)
             self.open_buff()
             self.gold_50(is_open=False)
             self.gold_100(is_open=False)
@@ -139,19 +93,22 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
     # 打开指定的章节：
     def open_expect_level(self):
         swipeCount = 0
-        while 1:
-            # 探索的 config
-            explorationConfig = self.config.exploration
-
+        config_exploration_level = self.config.exploration.exploration_config.exploration_level
+        while True:
             # 判断有无目标章节
             self.screenshot()
             # 获取当前章节名
             results = self.O_E_EXPLORATION_LEVEL_NUMBER.detect_and_ocr(self.device.image)
             text1 = [result.ocr_text for result in results]
-            # https://github.com/runhey/OnmyojiAutoScript/issues/1540
-            text1 = [text.replace("名", "第").replace("书", "第") for text in text1]
+            exp_level_enum_list = []
+            for txt in text1:
+                try:
+                    exp_level_enum_list.append(ExplorationLevel(txt))
+                except ValueError as e:
+                    logger.warning(f'convert {txt} failed')
+            sorted(exp_level_enum_list, key=lambda x: x.get_index())  # Sort by index
             # 判断当前章节有无目标章节
-            result = set(text1).intersection({explorationConfig.exploration_config.exploration_level})
+            result = set(text1).intersection({config_exploration_level})
             # 有则跳出检测
             if self.appear(self.I_E_EXPLORATION_CLICK) or result and len(result) > 0:
                 break
@@ -160,11 +117,17 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
             if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1):
                 continue
             self.device.click_record_clear()
-            self.swipe(self.S_SWIPE_LEVEL_UP)
+            if len(exp_level_enum_list) > 0:
+                min_level = exp_level_enum_list[0]
+                max_level = exp_level_enum_list[-1]
+                if config_exploration_level.get_index() < min_level.get_index():
+                    self.swipe(self.S_SWIPE_LEVEL_UP)
+                elif config_exploration_level.get_index() > max_level.get_index():
+                    self.swipe(self.S_SWIPE_LEVEL_DOWN)
             swipeCount += 1
             debug_info = f"Swiped {swipeCount} times, current exploration level: {text1}"
             logger.info(debug_info)
-            if swipeCount >= 15:
+            if swipeCount >= 25:
                 raise GameStuckError(
                     f"Swiped too many times ({swipeCount}), seems stuck in exploration level selection"
                 )
@@ -177,7 +140,7 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
                 continue
             if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1):
                 continue
-            self.O_E_EXPLORATION_LEVEL_NUMBER.keyword = explorationConfig.exploration_config.exploration_level
+            self.O_E_EXPLORATION_LEVEL_NUMBER.keyword = config_exploration_level
             if self.ocr_appear_click(self.O_E_EXPLORATION_LEVEL_NUMBER):
                 self.wait_until_appear(self.I_E_EXPLORATION_CLICK, wait_time=3)
             if self.appear(self.I_E_EXPLORATION_CLICK):
@@ -187,289 +150,249 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
 
         return True
 
-    # 候补：
-    def enter_settings_and_do_operations(self):
-        # 打开设置
-        while 1:
-            self.screenshot()
-            if self.appear(self.I_E_OPEN_SETTINGS):
-                logger.info("Open settings")
-                break
-            if self.is_in_battle():
-                logger.warning('Opening settings failed due to now in battle')
-                return
-            if self.click(self.C_CLICK_SETTINGS, interval=2):
-                continue
-
+    def fill_shikigami(self):
+        """填充式神(最后回到探索主界面)"""
         # 候补出战数量识别
-        self.screenshot()
-        if not self.appear(self.I_E_OPEN_SETTINGS):
-            logger.warning('Opening settings failed due to now in battle')
-            return
         cu, res, total = self.O_E_ALTERNATE_NUMBER.ocr(self.device.image)
         if cu >= 40:
             logger.info("Alternate number is enough")
-            self.ui_click_until_disappear(self.I_E_SURE_BUTTON)
+            self.goto_page(pages.page_exp_main)
             return
-        else:
-            self.add_shiki()
-
-    # 添加式神
-    def add_shiki(self, screenshot=True):
-        if screenshot:
-            self.screenshot()
-            if not self.appear(self.I_E_OPEN_SETTINGS):
-                logger.warning('Opening settings failed due to now in battle')
-                return
-
-        # 先点候补式神区域，再切换稀有度，避免点击失败
-        self.click(self.C_CLICK_STANDBY_TEAM)
-
         choose_rarity = self._config.exploration_config.choose_rarity
         rarity = ShikigamiClass.N if choose_rarity == ChooseRarity.N else ShikigamiClass.MATERIAL
-        self.switch_shikigami_class(rarity)
-
-        # 移动至未候补的狗粮
-        while 1:
-            # 慢一点
+        self.click(self.C_CLICK_STANDBY_TEAM)  # 先点击候补出战区域
+        self.switch_shikigami_class(rarity)  # 切换式神类别
+        pre = -1
+        while True:
             time.sleep(0.5)
             self.screenshot()
             if not self.appear(self.I_E_OPEN_SETTINGS):
-                logger.warning('Opening settings failed due to now in battle')
+                logger.warning('Opening settings failed')
                 return
-            if self.appear(self.I_E_RATATE_EXSIT):
+            cur, res, total = self.O_E_ALTERNATE_NUMBER.ocr(self.device.image)
+            if cur >= 40:
+                logger.info(f'Alternate number is enough, exit')
+                break
+            # 连续向后滑动超过6次还能识别到候补狗粮(1. 滑动的不够× 2. 没新狗粮了)
+            if self.device.click_record.count(self.S_SWIPE_SHIKI_TO_LEFT.name) >= 6 or \
+                    self.device.click_record.count(self.S_SWIPE_SHIKI_TO_LEFT_ONE.name) >= 6:
+                if cur > 0: # 上了一部分狗粮, 先用着
+                    logger.warning(f'Alternate number is not enough, current: {cur}')
+                    break
+                # 滑动很多次了, 结果也没成功上狗粮, 要么滑的不够(基本不可能)要么没狗粮(大概率)
+                # TODO: 1. 增加选项狗粮不够时继续打 2. 去召唤界面换狗粮(这里还有问题是否去商店买厕纸)
+                raise GameStuckError(f"Alternate number is not enough")
+            # 识别到右侧候补狗粮, 则大幅度向右移动
+            if self.appear(self.I_E_ROTATE_EXIST_RIGHT):
                 self.swipe(self.S_SWIPE_SHIKI_TO_LEFT)
-            else:
-                break
-        while 1:
-            # 候补出战数量识别
-            self.screenshot()
-            if not self.appear(self.I_E_OPEN_SETTINGS):
-                logger.warning('Opening settings failed due to now in battle')
-                return
-            cu, res, total = self.O_E_ALTERNATE_NUMBER.ocr(self.device.image)
-            if cu >= 40:
-                break
-            self.swipe(self.S_SWIPE_SHIKI_TO_LEFT_ONE)
-            # 慢一点
-            time.sleep(0.5)
-            self.screenshot()
+                continue
+            # 识别到候补狗粮, 则滑动一部分
+            if self.appear(self.I_E_RATATE_EXSIT):
+                self.swipe(self.S_SWIPE_SHIKI_TO_LEFT_ONE)
+                continue
+            # 没识别到候补狗粮(没狗粮/已经全满级)导致不滑动了, 但是上狗粮后数量又没变
+            if pre == cur:
+                if cur > 0:  # 上了一部分狗粮, 先用着
+                    logger.warning(f'Alternate number is not enough, current: {cur}')
+                    break
+                # TODO: 同上一个todo
+                raise GameStuckError(f"Alternate number is not enough")
+            pre = cur
+            # 长按上狗粮
             self.click(self.L_ROTATE_1)
             self.device.click_record_clear()
-
-        self.appear_then_click(self.I_E_SURE_BUTTON)
+        self.goto_page(pages.page_exp_main)
 
     # 找up按钮
-    def search_up_fight(self, up_type: UpType = None):
-        if up_type is None:
-            up_type = self._config.exploration_config.up_type
-        
-        # 1. 如果选择了特定的 UP 类型 (比如达摩)
-        if up_type != UpType.ALL:
-            match up_type:
-                case UpType.EXP:
-                    find_flag = self.I_UP_EXP
-                case UpType.COIN:
-                    find_flag = self.I_UP_COIN
-                case UpType.DARUMAA:
-                    find_flag = self.I_UP_DARUMA
-                case _:
-                    find_flag = self.I_UP_EXP
-            
-            # 尝试寻找 UP 图标
-            if self.appear(find_flag):
-                # 获取 UP 图标的坐标和中心点
-                x, y, w, h = find_flag.roi_front
-                x_center, y_center = find_flag.front_center()
-                
-                logger.info(f'Found up type: {up_type} at {find_flag.roi_front}')
-
-                # 缩小搜索范围 (ROI)
-                # 原来左右各扩 160-200，太宽了容易甚至把隔壁怪算进来
-                # 现在改为左右各扩 50-80，强制只找垂直线附近的战斗图标
-                roi_back_y = max(0, y - 300)      # 向上找300像素
-                roi_back_h = y - 20 - roi_back_y  #直到UP图标上方20像素截止
-                
-                # 左右范围缩窄：防止误触旁边的怪
-                roi_back_x = max(0, x - 60)       
-                roi_back_w = min(1280, x + w + 60) - roi_back_x
-                
-                logger.info(f'Searching sword icon in narrowed area: {roi_back_x, roi_back_y, roi_back_w, roi_back_h}')
-                
-                matches = self.I_NORMAL_BATTLE_BUTTON.match_all(
-                    image=self.device.image,
-                    threshold=0.9,
-                    roi=[roi_back_x, roi_back_y, roi_back_w, roi_back_h]
-                )
-                
-                if matches:
-                    distances = []
-                    for match in matches:
-                        # 这里假设 match[1], match[2] 是 x, y
-                        x_match = match[1] + match[3] / 2  # 战斗图标中心 X
-                        y_match = match[2] + match[4] / 2  # 战斗图标中心 Y
-                        
-                        # 这样能完美避开“距离很近但属于隔壁怪”的情况
-                        x_diff = abs(x_center - x_match)
-                        y_diff = abs(y_center - y_match)
-                        weighted_distance = (x_diff * 3) + y_diff
-                        
-                        distances.append((weighted_distance, match))
-                    
-                    # 按加权距离排序，取最正对着的一个
-                    distances.sort(key=lambda x: x[0], reverse=False)
-                    match = distances[0][1]
-                    
-                    roi_front = list(match[1:])  # x,y,w,h
-                    self.I_NORMAL_BATTLE_BUTTON.roi_front = roi_front
-                    logger.info(f"Target locked: sword at {roi_front} (aligned with UP icon)")
-                    return self.I_NORMAL_BATTLE_BUTTON
-            else:
-                # 没找到 UP 图标，返回 None 让外层逻辑去处理(滑动或退出)
-                return None
-
-        # 2. 如果是默认情况 (UpType.ALL)，则只要有怪就打
-        if self.appear(self.I_NORMAL_BATTLE_BUTTON):
+    def search_up_fight(self, up_type: UpType = None) -> Optional[RuleImage | RuleGif]:
+        up_type = self._config.exploration_config.up_type if up_type is None else up_type
+        if up_type == UpType.ALL and self.appear(self.I_NORMAL_BATTLE_BUTTON):
             return self.I_NORMAL_BATTLE_BUTTON
-            
-        return None
+        match up_type:
+            case UpType.EXP:
+                find_flag = self.I_UP_EXP
+            case UpType.COIN:
+                find_flag = self.I_UP_COIN
+            case UpType.DARUMAA:
+                find_flag = self.I_UP_DARUMA
+            case _:
+                find_flag = self.I_UP_EXP
+        appear = self.appear(find_flag)
+        if not appear:
+            return None
+        # logger.info(f'Found up type: {up_type} at  {find_flag.roi_front}')
+        x, y, _, _ = find_flag.roi_front
+        x_center, y_center = find_flag.front_center()
+        roi_back_y = max(0, y - 300)
+        roi_back_h = y - 20 - roi_back_y
+        roi_back_x = max(0, x - 160)
+        roi_back_w = min(1280, x + 200) - roi_back_x
+        # self.I_NORMAL_BATTLE_BUTTON.roi_back = [roi_back_x, roi_back_y, roi_back_w, roi_back_h]
+        # logger.info(f'It will search normal battle button at {roi_back_x, roi_back_y, roi_back_w, roi_back_h}')
+        matches = self.I_NORMAL_BATTLE_BUTTON.match_all(
+            image=self.device.image,
+            threshold=0.9,
+            roi=[roi_back_x, roi_back_y, roi_back_w, roi_back_h],
+            frame_id=self.device.image_frame_id,
+        )
+        if not matches:
+            return None
+        distances = []
+        for match in matches:
+            x_match, y_match = match[1], match[2]
+            distance = np.linalg.norm(
+                np.array([x_center, y_center]) - np.array([x_match, y_match])
+            )
+            distances.append((distance, match))
+        distances.sort(key=lambda x: x[0], reverse=False)
+        match = distances[0][1]
+        roi_front = list(match[1:])  # x,y,w,h
+        self.I_NORMAL_BATTLE_BUTTON.roi_front = roi_front
+        # logger.info(f"Found normal battle button at {roi_front}")
+        self.fire_monster_type = 'normal'
+        return self.I_NORMAL_BATTLE_BUTTON
 
-    def activate_realm_raid(self, con_scrolls, con) -> None:
+    def activate_realm_raid(self, con_scrolls, con, current_page: pages.Page | None) -> None:
         # 判断是否开启突破票检测
-        if not con_scrolls.scrolls_enable:
+        if not con_scrolls.scrolls_enable or current_page is None or \
+                current_page not in (pages.page_exploration, pages.page_exp_entrance):
             return
-        if self.appear(self.I_E_EXPLORATION_CLICK) and self.appear(self.I_EXP_CREATE_TEAM):
+        if current_page == pages.page_exp_entrance:
             cu, res, total = self.O_REALM_RAID_NUMBER1.ocr(self.device.image)
         else:
             cu, res, total = self.O_REALM_RAID_NUMBER.ocr(self.device.image)
         # 判断突破票数量
         if cu < con_scrolls.scrolls_threshold:
             return
-
         # 关闭加成
-        if self.appear(self.I_RED_CLOSE):
-            self.ui_click_until_disappear(self.I_RED_CLOSE)
-        if self.appear(self.I_UI_CANCEL):
-            self.ui_click_until_disappear(self.I_UI_CANCEL)
-        if self.appear(self.I_UI_CANCEL_SAMLL):
-            self.ui_click_until_disappear(self.I_UI_CANCEL_SAMLL)
-        self.ui_goto(page_main)
         if con.buff_gold_50_click or con.buff_gold_100_click or con.buff_exp_50_click or con.buff_exp_100_click:
+            self.goto_page(pages.page_main)
             self.open_buff()
             self.gold_50(is_open=False)
             self.gold_100(is_open=False)
             self.exp_50(is_open=False)
             self.exp_100(is_open=False)
             self.close_buff()
-
         # 设置下次执行行时间
         logger.info("RealmRaid and Exploration  set_next_run !")
         next_run = datetime.now() + con_scrolls.scrolls_cd
+        self.goto_page(pages.page_exploration)
         self.set_next_run(task='Exploration', success=False, finish=False, target=next_run)
         self.set_next_run(task='RealmRaid', success=False, finish=False, server=False, target=datetime.now())
         self.set_next_run(task='MemoryScrolls', success=False, finish=False, target=datetime.now())
         raise TaskEnd
 
-    #
-    def check_exit(self) -> bool:
+    def check_exit(self, current_page: pages.Page | None) -> bool:
         # True 表示要退出这个任务
-        if self.minions_cnt >= self._config.exploration_config.minions_cnt:
+        if self.current_count >= self._config.exploration_config.minions_cnt:
             logger.info('Minions count is enough, exit')
             return True
         if datetime.now() - self.start_time >= self.limit_time:
-            logger.info('Exploration time limit out')
+            logger.info('Exploration time limit out, exit')
             return True
-        self.activate_realm_raid(self._config.scrolls, self._config.exploration_config)
-        return False
-
-    def quit_explore(self):
-        logger.info('Quit explore')
-        boss_timer = Timer(15)
-        boss_timer.start()
-        # click_yellow_button = 0 #用于保证只点一次左上返回按钮，不要直接触发连点回到主界面
-        
-        while 1:
-            self.screenshot()
-            
-            # 探索章节标题界面
-            if self.appear(self.I_UI_BACK_YELLOW) and self.appear(self.I_E_EXPLORATION_CLICK):
-                break
-            # 探索大世界界面
-            if self.appear(self.I_CHECK_EXPLORATION) and not self.appear(self.I_E_SETTINGS_BUTTON):
-                break
-  
-            # 防止BOSS打完箱子刚落地，脚本就手快点退出了
-            if self.appear_then_click(self.I_BATTLE_REWARD, interval=1.5):
-                logger.info("Found battle reward during exit, picking it up.")
-                boss_timer.reset()
-                continue
-
-            if boss_timer.reached():
-                logger.warning('Exit timeout, force clicking back button')
-                boss_timer.reset()
-                self.click(self.I_UI_BACK_BLUE)
-                continue
-
-            if self.appear_then_click(self.I_E_EXIT_CONFIRM, interval=0.8):
-                continue
-            if self.appear_then_click(self.I_BACK_YOLLOW, interval=3.5):
-                continue
-            
-            if self.appear(self.I_EXPLORATION_TITLE) or self.appear(self.I_CHECK_EXPLORATION):
-                continue
-
-    def _hook_special_reward(self) -> bool:
-        if self.appear(self.I_STATISTICS) and not self.appear(self.I_REWARD) and not self.appear(self.I_WIN):
-            if self.appear_then_click(self.I_CONFIRM_CLOSE_DIFF_SOUL):
-                return True
-            self.click(self.C_RANDOM_CLICK, interval=1.5)
+        if self.user_status == UserStatus.MEMBER and \
+                datetime.now() - self.wait_start_time >= self._config.invite_config.wait_time_v:
+            logger.info('Member wait time out, exit')
+            return True
+        self.activate_realm_raid(self._config.scrolls, self._config.exploration_config, current_page)
         return False
 
     def fire(self, button) -> bool:
-        self.ui_click_until_disappear(button, interval=3)
-        self.screenshot()
-        if (self.appear(self.I_E_SETTINGS_BUTTON) or
-                self.appear(self.I_E_AUTO_ROTATE_ON) or
-                self.appear(self.I_E_AUTO_ROTATE_OFF)):
-            # 如果还在探索说明，这个是显示滑动导致挑战按钮不在范围内
-            logger.warning('Fire button disappear, but still in exploration')
-            return False
-        self.run_general_battle(self._config.general_battle_config)
-        self.minions_cnt += 1
-        return True
-
-    def wait_world_stable(self) -> bool:
+        """进入战斗(True:成功进入战斗/识别到退出弹窗, 否则False)
+        这里之所以违反页面特性使用循环, 是因为由于怪物移动的原因可能导致一次点击会无法进入战斗,
+        回到外循环之后由于UP旋转的特性可能导致识别不到怪物然后开始滑动, 导致错过的怪物更多
+        因此这里使用贪心的思想, 只要识别到怪物一次就尽最大可能直接进入战斗, 保证尽可能有怪则打
         """
-        # 打开右边箭头 and https://github.com/runhey/OnmyojiAutoScript/pull/1589/
-        https://github.com/runhey/OnmyojiAutoScript/issues/1588
-        @return:
-        """
-        while 1:
-            scene = self.get_current_scene(reuse_screenshot=False)
-            if scene == Scene.WORLD and self.appear(self.I_EXP_ARROW_RIGHT):
+        max_tries = 4
+        timeout_timer = Timer(10).start()  # 增加最大时间限制, 防止因未知因素引起无限等待
+        while max_tries > 0 and not timeout_timer.reached():
+            self.screenshot()
+            cur_page = self.get_current_page()
+            # 退出动画期间可能再次识别到怪物开始攻击, 因此取消退出
+            if cur_page == pages.page_exp_exit:
+                self.need_exit = False
                 return True
-            if scene == Scene.ENTRANCE:
-                logger.warning('World scene unstable, possibly transient frame after paper doll collection')
-                return False
-            if self.appear_then_click(self.I_EXP_ARROW_LEFT, interval=2):
+            if cur_page in (pages.page_battle_prepare, pages.page_battle):
+                return True
+            if self.appear_then_click(button, interval=0.8):
+                max_tries -= 1
                 continue
+        return False
 
+    def switch_rotate(self) -> bool:
+        """切换轮换类型并添加式神 True(执行了切换)/False"""
+        match self._config.exploration_config.auto_rotate:
+            case AutoRotate.yes:
+                if self.appear(self.I_E_AUTO_ROTATE_OFF):  # 轮换关闭/式神不够了则需要打开并添加式神
+                    self.click(self.C_CLICK_SETTINGS, interval=2)
+                    return True
+            case AutoRotate.no:  # 不是自动添加候补式神则关闭轮换
+                if self.appear_then_click(self.I_E_AUTO_ROTATE_ON, interval=0.8):
+                    return True
+        return False
+
+    def arrive_end(self) -> bool:
+        """是否到达探索的最后方, 需要先调用截图(滑动超过6次直接判定已经到达底部)"""
+        if self.device.click_record.count(self.S_SWIPE_BACKGROUND_RIGHT.name) >= 6:
+            self.device.click_record_clear()
+            return True
+        return self._match_end.stable(self.device.image, refresh_after_stable=True, frame_id=self.device.image_frame_id)
+
+    def get_fire_button(self) -> Optional[RuleImage | RuleGif]:
+        """获取需要攻击的按钮"""
+        if self.appear(self.I_BOSS_BATTLE_BUTTON):
+            self.fire_monster_type = 'boss'
+            return self.I_BOSS_BATTLE_BUTTON
+        return self.search_up_fight()
+
+    def collect_treasure_box(self) -> bool:
+        """收集宝箱奖励"""
+        if self.appear(self.I_E_REWARD_BOX_SMALL):  # 小宝箱
+            logger.info('Treasure box small appear, get it.')
+            self.ui_click(self.I_E_REWARD_BOX_SMALL, self.I_REWARD, interval=0.8)
+            self.ui_click_until_disappear(self.I_REWARD, interval=0.8)
+            return True
+        if self.appear(self.I_E_REWARD_BOX_BIG):  # 大宝箱
+            logger.info('Treasure box big appear, get it.')
+            self.ui_click(self.I_E_REWARD_BOX_BIG, self.I_REWARD, interval=0.8)
+            self.ui_click_until_disappear(self.I_REWARD, interval=0.8)
+            return True
+        return False
+
+    def collect_paper_man_reward(self) -> bool:
+        """收集小纸人奖励, 若未开启则自动退出"""
+        # 已经打过boss了且设置了不收集小纸人奖励则直接返回
+        if self.fire_monster_type == 'boss' and not self._config.exploration_config.collect_paper_reward:
+            logger.info("Not collect paper doll reward")
+            self.quit_exp_main()
+            return True
+        # 没打boss或者收集纸人奖励, 且出现了纸人则处理掉落奖励
+        if self.appear(self.I_BATTLE_REWARD) and self._config.exploration_config.collect_paper_reward:
+            self.ui_get_reward(self.I_BATTLE_REWARD)
+            self.wait_start_time = datetime.now()  # 队友等待时间重置
+            return True
+        return False
+
+    def quit_exp_main(self):
+        """退出探索主界面(要求当前必须处于探索主界面, 不保证任何后续结果)"""
+        self.need_exit = True
+        self.appear_then_click(self.I_UI_BACK_YELLOW, interval=0.8)
+        self.wait_start_time = datetime.now()  # 队友等待时间重置
+
+    def collect_reward(self) -> bool:
+        """处理掉落奖励(True表示进行了操作, False表示没有操作)"""
+        return self.collect_treasure_box() or self.collect_paper_man_reward()
+
+    def enter_team(self) -> bool:
+        """进入战斗组队页面"""
+        return self.create_room(self.I_EXP_CREATE_TEAM) and self.ensure_private() and self.create_ensure()
 
 if __name__ == "__main__":
     from module.config.config import Config
     from module.device.device import Device
 
-    config = Config('oas1')
+    config = Config('绘卷oas2')
     device = Device(config)
     t = BaseExploration(config, device)
     t.screenshot()
-
-    # IMAGE_FILE = r"C:\Users\萌萌哒\Desktop\QQ20240818-163854.png"
-    # image = load_image(IMAGE_FILE)
-    # t.device.image = image
-    while 1:
-        # print(t.search_up_fight(UpType.EXP))
-        t.screenshot()
-        print(t.get_current_scene())
-    from PIL import Image
-    # Image.fromarray(t.device.image.astype(np.uint8)).show()
+    t.fill_shikigami()

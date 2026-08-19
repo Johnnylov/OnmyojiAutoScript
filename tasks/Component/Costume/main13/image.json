@@ -29,8 +29,8 @@
   {
     "itemName": "check_main_13",
     "imageName": "main13_check_main_13.png",
-    "roiFront": "806,273,64,31",
-    "roiBack": "805,273,67,31",
+    "roiFront": "620,121,90,94",
+    "roiBack": "574,89,189,180",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "description"
@@ -42,6 +42,60 @@
     "roiBack": "543,125,57,64",
     "method": "Template matching",
     "threshold": 0.6,
+    "description": "description"
+  },
+  {
+    "itemName": "wq_done_13",
+    "imageName": "main13_wq_done_13.png",
+    "roiFront": "172,281,32,34",
+    "roiBack": "97,171,211,244",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "harvest_sign_13",
+    "imageName": "main13_harvest_sign_13.png",
+    "roiFront": "890,424,21,30",
+    "roiBack": "804,387,312,129",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "harvest_jade_13",
+    "imageName": "main13_harvest_jade_13.png",
+    "roiFront": "992,428,20,25",
+    "roiBack": "808,395,327,118",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "harvest_mail_13",
+    "imageName": "main13_harvest_mail_13.png",
+    "roiFront": "888,430,26,20",
+    "roiBack": "782,392,328,135",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "harvest_soul_13",
+    "imageName": "main13_harvest_soul_13.png",
+    "roiFront": "887,423,20,31",
+    "roiBack": "814,386,279,137",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "description"
+  },
+  {
+    "itemName": "harvest_guild_reward_13",
+    "imageName": "main13_harvest_guild_reward_13.png",
+    "roiFront": "881,429,33,25",
+    "roiBack": "774,382,320,122",
+    "method": "Template matching",
+    "threshold": 0.8,
     "description": "description"
   }
 ]

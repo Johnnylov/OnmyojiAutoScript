@@ -11,6 +11,7 @@ from random import randint
 from ppocronnx.predict_system import BoxedResult
 from module.atom.ocr import RuleOcr
 from module.atom.image import RuleImage
+from module.image.rpc import get_image_client
 from module.logger import logger
 
 
@@ -57,7 +58,7 @@ class RuleList:
         :param after:
         :return:
         """
-        center: tuple = (self.roi_back[0] + self.roi_back[2]) // 2, (self.roi_back[1] + self.roi_back[3]) // 2
+        center: tuple = self.roi_back[0] + self.roi_back[2] // 2, self.roi_back[1] + self.roi_back[3] // 2
         distance: int = self.size[1] * number if self.is_vertical else self.size[0] * number
         random_start: int = randint(- self.size[0] // 4, self.size[0] // 4) if self.is_vertical else randint(- self.size[1] // 4, self.size[1] // 4)
         random_end: int = randint(- self.size[0] // 4, self.size[0] // 4) if self.is_vertical else randint(- self.size[1] // 4, self.size[1] // 4)
@@ -137,7 +138,7 @@ class RuleList:
             self.targets[item] = RuleImage(roi_front=self.roi_back, roi_back=self.roi_back,
                                            method="Template matching", threshold=0.8, file=file)
 
-    def image_appear(self, image: np.array, name: str) -> bool | tuple:
+    def image_appear(self, image: np.array, name: str, frame_id: str = None) -> bool | tuple:
         """
         判断是否出现了某个图片
         :param image: 屏幕的截图
@@ -146,17 +147,22 @@ class RuleList:
         """
         if self.is_image and isinstance(name, str):
             self.target_check(name)
-            appear = self._target.match(image)
+            appear = self._target.match(image, frame_id=frame_id)
             if appear:
                 return self._target.coord()
             else:
                 return False
         elif self.is_image and isinstance(name, list):
             self.targets_check(name)
-            for item in name:
-                appear = self.targets[item].match(image)
-                if appear:
-                    return self.targets[item].coord()
+            rules = [self.targets[item] for item in name]
+            results = get_image_client().match_many(
+                rules_data=[rule.to_service_payload() for rule in rules],
+                image=image,
+                frame_id=frame_id,
+            )
+            for rule, result in zip(rules, results):
+                if rule._apply_match_result(result):
+                    return rule.coord()
             return False
 
         else:

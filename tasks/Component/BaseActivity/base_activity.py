@@ -1,25 +1,20 @@
-# This Python file uses the following encoding: utf-8
-# @author runhey
-# github https://github.com/runhey
-from tasks.Component.GeneralBattle.general_battle import GeneralBattle
-from abc import abstractmethod
+from collections.abc import Callable
 
-class BaseActivity(GeneralBattle):
-    @abstractmethod
-    def run(self) -> None:
-        pass
+from module.logger import logger
 
-    @abstractmethod
-    def home_main(self) -> bool:
-        """
-        从庭院到活动的爬塔界面
-        :return:
-        """
-        pass
 
-    @abstractmethod
-    def main_home(self) -> bool:
-        """
-        从活动的爬塔界面到庭院
-        :return:
-        """
+class BaseActivity:
+    """活动任务共享行为。"""
+
+    @staticmethod
+    def verify_zero_ticket(
+        ticket_name: str,
+        fallback_action: Callable[[], bool],
+    ) -> bool:
+        """门票 OCR 为零时执行一次真实入口操作确认门票是否耗尽。"""
+        logger.warning(f'{ticket_name} OCR is zero, try one fallback action')
+        if fallback_action():
+            logger.info(f'{ticket_name} fallback succeeded')
+            return True
+        logger.info(f'{ticket_name} confirmed unavailable')
+        return False

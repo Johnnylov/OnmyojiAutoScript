@@ -18,6 +18,7 @@ from module.device.method.droidcast import DroidCast
 from module.device.method.scrcpy import Scrcpy
 from module.device.method.nemu_ipc import NemuIpc
 from module.exception import RequestHumanTakeover, ScriptError
+from module.image.rpc import get_image_client
 from module.logger import logger
 
 
@@ -28,14 +29,19 @@ class Screenshot(Adb, DroidCast, Scrcpy, Window, NemuIpc):
     _screenshot_interval = Timer(0.1)
     _last_save_time = {}
     image: np.ndarray
+    image_frame_id: str | None = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        super(Window, self).__init__(*args, **kwargs)
+        if IS_WINDOWS:
+            # ConnectionAttr ends the cooperative init chain before Window.
+            # Windows still needs the Handle initializer behind Window; the
+            # Linux Window placeholder has no such base to initialize.
+            super(Window, self).__init__(*args, **kwargs)
 
     @cached_property
     def screenshot_methods(self):
-        return {
+        methods = {
             'ADB': self.screenshot_adb,
             'ADB_nc': self.screenshot_adb_nc,
             'uiautomator2': self.screenshot_uiautomator2,
@@ -44,9 +50,13 @@ class Screenshot(Adb, DroidCast, Scrcpy, Window, NemuIpc):
             'DroidCast': self.screenshot_droidcast,
             'DroidCast_raw': self.screenshot_droidcast_raw,
             'scrcpy': self.screenshot_scrcpy,
-            'window_background': self.screenshot_window_background if IS_WINDOWS else None,
-            'nemu_ipc': self.screenshot_nemu_ipc
         }
+        if IS_WINDOWS:
+            methods.update({
+                'window_background': self.screenshot_window_background,
+                'nemu_ipc': self.screenshot_nemu_ipc,
+            })
+        return methods
 
     def screenshot(self):
         """
@@ -62,6 +72,8 @@ class Screenshot(Adb, DroidCast, Scrcpy, Window, NemuIpc):
                 self.screenshot_adb  # 第二个参数默认的是screenshot_adb
             )
             self.image = method()
+            frame_info = get_image_client().register_frame(self.image, self.config.config_name)
+            self.image_frame_id = frame_info["frame_id"]
 
             # if self.config.Emulator_ScreenshotDedithering:
             #     # This will take 40-60ms

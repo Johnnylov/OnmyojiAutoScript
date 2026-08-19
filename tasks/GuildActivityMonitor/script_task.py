@@ -39,8 +39,7 @@ class ScriptTask(GameUi):
             raise TaskEnd('GuildActivityMonitor')
 
         # 构建关键字映射
-        self.ui_get_current_page()
-        self.ui_goto(page_main)
+        self.goto_page(page_main)
         guild_config = self.config.guild_activity_monitor.guild_activity
         KEYWORD_MAP = {
             '道馆': 'Dokan' if guild_config.Dokan else None,
@@ -67,39 +66,39 @@ class ScriptTask(GameUi):
         # 获取初始通知时间
         init_time, _ = self.get_notification_info()
 
-        # 监控任务属于长等待场景，加入长等待白名单，避免被全局卡死检测误判
-        self.device.stuck_record_add('PAUSE')
-
+        stuck_interval = Timer(280)
         # 主监控循环
-        try:
-            while True:
-                if check_timer.reached():
-                    logger.info("监控时间到，任务结束")
-                    raise TaskEnd('GuildActivityMonitor')
+        while True:
+            if not stuck_interval.started() or stuck_interval.reached():  # 重置等待间隔, 防止等待超时
+                self.device.stuck_record_clear()
+                self.device.stuck_record_add('PAUSE')
+                stuck_interval.reset()
 
-                if log_timer.reached():
-                    remaining = int(check_timer.remain() // 60)
-                    logger.info(f"监控中... 剩余时间: {remaining}分钟")
-                    log_timer.reset()
+            if check_timer.reached():
+                logger.info("监控时间到，任务结束")
+                raise TaskEnd('GuildActivityMonitor')
 
-                # 处理突发事件
-                self.screenshot()
+            if log_timer.reached():
+                remaining = int(check_timer.remain() // 60)
+                logger.info(f"监控中... 剩余时间: {remaining}分钟")
+                log_timer.reset()
 
-                # 检测新通知
-                current_time, notification_text = self.get_notification_info()
-                if current_time > init_time and notification_text:
-                    logger.info(f"检测到新通知: {notification_text}")
-                    for keyword, task_name in KEYWORD_MAP.items():
-                        if keyword in notification_text:
-                            logger.info(f"检测到关键字 '{keyword}'，启动任务: {task_name}")
-                            self.set_next_run(task=task_name, success=False, finish=False, server=False, target=datetime.now())
-                            recheck_interval = monitor_config.recheck_interval
-                            self.set_next_run(task='GuildActivityMonitor', success=False, finish=False, server=False, target=datetime.now() + timedelta(minutes=recheck_interval))
-                            raise TaskEnd('GuildActivityMonitor')
+            # 处理突发事件
+            self.screenshot()
 
-                time.sleep(interval)
-        finally:
-            self.device.stuck_record_clear()
+            # 检测新通知
+            current_time, notification_text = self.get_notification_info()
+            if current_time > init_time and notification_text:
+                logger.info(f"检测到新通知: {notification_text}")
+                for keyword, task_name in KEYWORD_MAP.items():
+                    if keyword in notification_text:
+                        logger.info(f"检测到关键字 '{keyword}'，启动任务: {task_name}")
+                        self.set_next_run(task=task_name, success=False, finish=False, server=False, target=datetime.now())
+                        recheck_interval = monitor_config.recheck_interval
+                        self.set_next_run(task='GuildActivityMonitor', success=False, finish=False, server=False, target=datetime.now() + timedelta(minutes=recheck_interval))
+                        raise TaskEnd('GuildActivityMonitor')
+
+            time.sleep(interval)
 
     def get_notification_info(self) -> tuple:
         try:
@@ -139,17 +138,6 @@ class ScriptTask(GameUi):
             logger.warning(f"获取通知失败: {e}")
             return 0, ""
 
-    '''
-    def clear_notifications(self):
-        """清理系统通知"""
-        try:
-            # 清理所有通知
-            self.device.adb_shell(['cmd', 'notification', 'remove-all'])
-            logger.info("已清理系统通知")
-        except Exception as e:
-            logger.warning(f"清理通知失败: {e}")
-    '''
-
 
 if __name__ == '__main__':
     from module.config.config import Config
@@ -159,3 +147,4 @@ if __name__ == '__main__':
     d = Device(c)
     t = ScriptTask(c, d)
     t.run()
+

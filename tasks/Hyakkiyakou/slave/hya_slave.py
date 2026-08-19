@@ -1,5 +1,3 @@
-import cv2
-
 from cached_property import cached_property
 from pathlib import Path
 from enum import Enum
@@ -48,7 +46,7 @@ class HyaSlave(HyaDevice, HyaColor, HyakkiyakouAssets):
     BUFF_ROI4: list[int] = [1100, 1, 140, 50]
 
     # 剩余豆子数量， 剩余式神数量， 一次砸豆子的数量， 第一个格子， 第二个格子， 第三个格子， 第四个格子
-    slave_state: tuple = [250, 36, 10,
+    slave_state: tuple = [250, 36, 5,
                           HyaBuff.BUFF_STATE0, HyaBuff.BUFF_STATE0, HyaBuff.BUFF_STATE0, HyaBuff.BUFF_STATE0]
 
     @cached_property
@@ -132,7 +130,10 @@ class HyaSlave(HyaDevice, HyaColor, HyakkiyakouAssets):
         return current
 
     def predict_bean(self, current: int):
-        possible_beans: list[int] = [current, current - 10, current - 20]
+        # 扩大搜索范围以应对快速抛豆导致的帧间大幅度变化
+        possible_beans: list[int] = [current, current - 10, current - 20, current - 30, current + 10]
+        # 过滤无效值
+        possible_beans = [b for b in possible_beans if 0 <= b <= 250]
         for bean in possible_beans:
             if bean >= 100:
                 decade = bean // 10 % 10
@@ -218,9 +219,10 @@ class HyaSlave(HyaDevice, HyaColor, HyakkiyakouAssets):
         logger.hr('Invite friend', 2)
         self.ui_click(self.I_HINVITE, self.I_CHECK_INVITATION, interval=4)
         logger.info('Entry check invitation')
-
+        self.screenshot()  # 回归活动标志后出现会导致上一帧截图可能并不包含召回活动标志
         # 是否有召回活动(星重聚阴阳师)
         if self.appear(self.I_ENSURE_RECALL):
+            logger.info('Recall activity detected')
             hya_recall_activity = True
             # 应该动态改roi而不是新开一个图
             friend_buttons1 = [self.I_FRIEND_SAME_1_RECALL, self.I_FRIEND_REMOTE_1_RECALL, ]
@@ -295,86 +297,7 @@ class HyaSlave(HyaDevice, HyaColor, HyakkiyakouAssets):
         return self.slave_state
 
     def reset_state(self):
-        self.slave_state = [250, 36, 10,
+        # 每局百鬼夜行始终从 250 豆、36 只式神开始（游戏机制规定，与上一局剩豆无关）
+        # 第一次 update_state() 调用会通过模板匹配/OCR 校正实际值
+        self.slave_state = [250, 36, 5,
                           HyaBuff.BUFF_STATE0, HyaBuff.BUFF_STATE0, HyaBuff.BUFF_STATE0, HyaBuff.BUFF_STATE0]
-
-
-def covert_rgb():
-    images_folders: Path = Path(r'E:\Project\OnmyojiAutoScript\tasks\Hyakkiyakou\temp\20240614T214216')
-    save_folders = images_folders.parent / 'save14'
-    save_folders.mkdir(parents=True, exist_ok=True)
-    for file in images_folders.iterdir():
-        if file.suffix != '.png':
-            continue
-        img = cv2.imread(str(file))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        cv2.imwrite(str(save_folders / file.name), img)
-
-
-def test_predict_res():
-    import timeit
-    from module.config.config import Config
-    from module.device.device import Device
-
-    c = Config('oas1')
-    d = Device(c)
-    hd = HyaSlave(c, d)
-    img = cv2.imread('D:/Project/OnmyojiAutoScript/tasks/Hyakkiyakou/temp/20240621T221325/all1718979259551.png')
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    hd.device.image = img
-    print(hd.predict_res(2))
-
-    # def do_test():
-    #     hd.predict_res(18)
-    # execution_time = timeit.timeit(do_test, number=100)
-    # print(f"执行总的时间: {execution_time * 1000} ms")
-    # total time is 36.2ms on my computer /cpu:AMD Ryzen 5 3550H with Radeon Vega Mobile
-    # 0.362ms per predict_res
-
-
-def test_predict_bean():
-    import timeit
-    from module.config.config import Config
-    from module.device.device import Device
-
-    c = Config('oas1')
-    d = Device(c)
-    hd = HyaSlave(c, d)
-    img = cv2.imread('./tasks/Hyakkiyakou/temp/20240621T221325/all1718979269677.png')
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    hd.device.image = img
-    print(hd.predict_bean(15))
-    # def do_test():
-    #     hd.predict_bean(180)
-    # execution_time = timeit.timeit(do_test, number=100)
-    # print(f"执行总的时间: {execution_time * 1000} ms")
-    # total time is 17.9ms on my computer in 100 times
-
-
-def test_predict_buff():
-    import timeit
-    from module.config.config import Config
-    from module.device.device import Device
-
-    c = Config('oas1')
-    d = Device(c)
-    hd = HyaSlave(c, d)
-    img = cv2.imread(r'E:\Project\OnmyojiAutoScript\tasks\Hyakkiyakou\temp\save14\all1718372600237.png')
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    hd.device.image = img
-    print(hd.predict_buff_state(1))
-
-
-if __name__ == '__main__':
-    from module.config.config import Config
-    from module.device.device import Device
-
-    c = Config('oas1')
-    d = Device(c)
-    hd = HyaSlave(c, d)
-    # hd.invite_friend(False)
-
-    # test_predict_res()
-    test_predict_bean()
-    # test_predict_buff()
-

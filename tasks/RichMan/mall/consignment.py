@@ -28,13 +28,10 @@ class Consignment(Buy, MallNavbar):
             logger.info('Consignment buy_sale_ticket is not enable')
             return
         self._enter_consignment()
-        # 等待页面加载
+        self.ui_click(self.I_CON_ENTER, self.I_CON_ENTER_CHECK)
         time.sleep(0.5)
         self.screenshot()
-        # 进入寄售屋兑换页面
-        self.ui_click(self.I_CON_ENTER, self.I_CON_ENTER_CHECK)
-        #检查勾玉是否足够
-        if not self.mall_check_money_legacy(1, 100):
+        if not self.mall_check_money(3, 100):
             logger.warning('Consignment money is not enough')
             return
         remain_number = self.O_CON_NUMBER.ocr(self.device.image)
@@ -46,10 +43,6 @@ class Consignment(Buy, MallNavbar):
         else:
             self.buy_one(self.I_CON_TICKET, remain_number)
         logger.info('Consignment buy_sale_ticket is success')
-
-
-
-
 
 
 if __name__ == '__main__':

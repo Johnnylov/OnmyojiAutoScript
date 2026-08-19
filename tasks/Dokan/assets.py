@@ -49,9 +49,9 @@ class DokanAssets:
 	# 是否已经成功进入道馆，上面中间的“道馆突破”文字 
 	I_RYOU_DOKAN_CHECK = RuleImage(roi_front=(567,15,144,42), roi_back=(567,15,144,42), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_check.png")
 	# 道馆内式神录 
-	I_RYOU_DOKAN_SHIKIGAMI = RuleImage(roi_front=(987,608,89,60), roi_back=(987,608,89,60), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_shikigami.png")
+	I_RYOU_DOKAN_SHIKIGAMI = RuleImage(roi_front=(995,602,77,72), roi_back=(960,580,140,120), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_shikigami.png")
 	# 优先攻击选项 
-	I_RYOU_DOKAN_ATTACK_PRIORITY = RuleImage(roi_front=(742,667,49,25), roi_back=(742,667,49,25), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_priority.png")
+	I_RYOU_DOKAN_ATTACK_PRIORITY = RuleImage(roi_front=(767,663,48,27), roi_back=(520,660,557,48), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_priority.png")
 	# 优先攻击: 见习 
 	I_RYOU_DOKAN_ATTACK_PRIORITY_0 = RuleImage(roi_front=(98,170,94,43), roi_back=(98,170,94,43), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_priority_0.png")
 	# 优先攻击: 初级 
@@ -79,7 +79,7 @@ class DokanAssets:
 	# 馆主战等待中 
 	I_DOKAN_BOSS_WAITING = RuleImage(roi_front=(460,140,370,80), roi_back=(460,140,370,80), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_dokan_boss_waiting.png")
 	# 馆主战 等待 或 进行中时 在寮境中出现的馆主图标 
-	I_RYOU_DOKAN_MASTER_BATTLE = RuleImage(roi_front=(640,0,640,360), roi_back=(640,0,640,360), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_master_battle.png")
+	I_RYOU_DOKAN_MASTER_BATTLE = RuleImage(roi_front=(862,69,41,89), roi_back=(640,0,640,360), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_master_battle.png")
 	# 放弃突破 
 	I_DOKAN_ABANDONED_TOPPA = RuleImage(roi_front=(0,550,180,170), roi_back=(0,550,180,170), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_abandoned_toppa.png")
 	# 放弃突破 确认按钮 
@@ -87,13 +87,13 @@ class DokanAssets:
 	# 放弃突破 
 	I_DOKAN_ABANDONED_TOPPA_TITLE = RuleImage(roi_front=(1020,160,260,80), roi_back=(1020,160,260,80), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_abandoned_toppa_title.png")
 	# 状态：道馆胜利 
-	I_RYOU_DOKAN_WIN = RuleImage(roi_front=(620,50,100,80), roi_back=(620,50,100,80), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_win.png")
+	I_RYOU_DOKAN_WIN = RuleImage(roi_front=(422,49,100,80), roi_back=(348,13,319,178), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_win.png")
 	# 状态：进入战斗，待开始，右下角图标。 
 	I_RYOU_DOKAN_IN_FIELD2 = RuleImage(roi_front=(1131,562,88,48), roi_back=(1131,562,88,48), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_in_field2.png")
 	# 馆主战,第一阵容 
-	I_RYOU_DOKAN_BATTLE_MASTER_FIRST = RuleImage(roi_front=(1080,180,160,70), roi_back=(1080,180,160,70), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_battle_master_first.png")
-	# 馆主战,第二阵容 # TODO 截图 
-	I_RYOU_DOKAN_BATTLE_MASTER_SECOND = RuleImage(roi_front=(1080,180,160,70), roi_back=(1080,180,160,70), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_battle_master_second.png")
+	I_RYOU_DOKAN_BATTLE_MASTER_FIRST = RuleImage(roi_front=(1113,205,50,28), roi_back=(1080,180,160,70), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_battle_master_first.png")
+	# 馆主战,第二阵容 
+	I_RYOU_DOKAN_BATTLE_MASTER_SECOND = RuleImage(roi_front=(1114,208,48,25), roi_back=(1080,180,160,70), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_battle_master_second.png")
 	# 状态：战斗结算，可能是打完小朋友了，也可能是失败了。 
 	I_RYOU_DOKAN_BATTLE_OVER = RuleImage(roi_front=(571,503,106,49), roi_back=(571,503,106,49), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_battle_over.png")
 	# 状态：战斗中，左上角的加油图标 
@@ -149,7 +149,7 @@ class DokanAssets:
 	# 查找道馆时,确认刷新道馆列表按钮 
 	I_REFRESH_ENSURE = RuleImage(roi_front=(0,0,1280,720), roi_back=(0,0,1280,720), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_refresh_ensure.png")
 	# 查找道馆时,右侧道馆赏金图标,为了定位该图右侧的 赏金金额 
-	I_RIGHTPAD_POINT_BOUNTY = RuleImage(roi_front=(1050,0,230,0), roi_back=(1050,0,230,50), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_rightpad_point_bounty.png")
+	I_RIGHTPAD_POINT_BOUNTY = RuleImage(roi_front=(1125,103,27,29), roi_back=(1077,0,171,602), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_rightpad_point_bounty.png")
 	# 寮境中上部的标志 
 	I_RYOU_DOKAN_CENTER_TOP = RuleImage(roi_front=(500,20,300,70), roi_back=(500,20,300,70), threshold=0.8, method="Template matching", file="./tasks/Dokan/res/res_ryou_dokan_center_top.png")
 	# 左上角退出按钮- 

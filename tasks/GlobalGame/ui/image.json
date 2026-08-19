@@ -3,7 +3,7 @@
     "itemName": "ui_confirm",
     "imageName": "ui_ui_confirm.png",
     "roiFront": "667,398,179,66",
-    "roiBack": "667,398,179,66",
+    "roiBack": "547,368,322,122",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "长一点的确认"
@@ -30,10 +30,10 @@
     "itemName": "ui_back_red",
     "imageName": "ui_ui_back_red.png",
     "roiFront": "1041,111,34,38",
-    "roiBack": "877,15,383,254",
+    "roiBack": "680,15,579,374",
     "method": "Template matching",
     "threshold": 0.8,
-    "description": "description"
+    "description": "右上角红色关闭按钮"
   },
   {
     "itemName": "ui_back_yellow",
@@ -75,7 +75,7 @@
     "itemName": "ui_cancel_samll",
     "imageName": "ui_ui_cancel_samll.png",
     "roiFront": "472,389,128,62",
-    "roiBack": "360,377,272,185",
+    "roiBack": "266,353,347,208",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "短一点的取消"
@@ -99,12 +99,12 @@
     "description": "勾选"
   },
   {
-    "itemName": "ui_gotit_small",
-    "imageName": "ui_ui_gotit_small.png",
-    "roiFront": "678,396,127,60",
-    "roiBack": "622,371,242,100",
+    "itemName": "ui_back_circle",
+    "imageName": "ui_ui_back_circle.png",
+    "roiFront": "24,21,36,39",
+    "roiBack": "0,0,95,101",
     "method": "Template matching",
     "threshold": 0.8,
-    "description": "知道了"
+    "description": "弯曲返回按钮"
   }
 ]

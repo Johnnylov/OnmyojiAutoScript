@@ -11,39 +11,39 @@ class SougenbiAssets:
 
 
 	# Click Rule Assets
-	# description 
-	C_C_GREED = RuleClick(roi_front=(87,99,138,51), roi_back=(87,99,138,51), name="c_greed")
-	# description 
-	C_C_ANGER = RuleClick(roi_front=(89,203,132,52), roi_back=(89,203,132,52), name="c_anger")
-	# description 
-	C_C_FOOLERY = RuleClick(roi_front=(95,313,142,41), roi_back=(95,313,142,41), name="c_foolery")
+	# 贪-位置 
+	C_C_GREED = RuleClick(roi_front=(96,110,121,37), roi_back=(96,110,121,37), name="c_greed")
+	# 嗔-位置 
+	C_C_ANGER = RuleClick(roi_front=(93,213,121,37), roi_back=(93,213,121,37), name="c_anger")
+	# 痴-位置 
+	C_C_FOOLERY = RuleClick(roi_front=(95,316,121,37), roi_back=(95,316,121,37), name="c_foolery")
 
 
 	# Image Rule Assets
 	# 进入业原火 
-	I_S_SOUGENBI = RuleImage(roi_front=(560,139,57,61), roi_back=(412,68,231,359), threshold=0.8, method="Template matching", file="./tasks/Sougenbi/s/s_s_sougenbi.png")
+	I_S_SOUGENBI = RuleImage(roi_front=(567,147,48,51), roi_back=(435,55,188,213), threshold=0.8, method="Template matching", file="./tasks/Sougenbi/s/s_s_sougenbi.png")
 	# description 
-	I_S_TEAM_LOCK = RuleImage(roi_front=(700,652,31,36), roi_back=(667,649,167,56), threshold=0.8, method="Template matching", file="./tasks/Sougenbi/s/s_s_team_lock.png")
+	I_S_TEAM_LOCK = RuleImage(roi_front=(703,657,23,28), roi_back=(688,648,52,54), threshold=0.8, method="Template matching", file="./tasks/Sougenbi/s/s_s_team_lock.png")
 	# description 
-	I_S_TEAM_UNLOCK = RuleImage(roi_front=(700,655,33,33), roi_back=(669,645,164,58), threshold=0.8, method="Template matching", file="./tasks/Sougenbi/s/s_s_team_unlock.png")
+	I_S_TEAM_UNLOCK = RuleImage(roi_front=(704,658,22,26), roi_back=(688,648,55,60), threshold=0.8, method="Template matching", file="./tasks/Sougenbi/s/s_s_team_unlock.png")
 	# 挑战 
-	I_S_FIRE = RuleImage(roi_front=(1051,598,100,43), roi_back=(1051,580,100,100), threshold=0.7, method="Template matching", file="./tasks/Sougenbi/s/s_s_fire.png")
+	I_S_FIRE = RuleImage(roi_front=(1054,597,95,47), roi_back=(1044,577,115,109), threshold=0.7, method="Template matching", file="./tasks/Sougenbi/s/s_s_fire.png")
 	# 确认进入业原火 
-	I_S_CHECK_SOUGENBI = RuleImage(roi_front=(933,103,176,68), roi_back=(915,80,341,134), threshold=0.8, method="Template matching", file="./tasks/Sougenbi/s/s_s_check_sougenbi.png")
-	# 贪 
-	I_S_FIRE_GREED = RuleImage(roi_front=(1071,641,21,33), roi_back=(1039,586,124,97), threshold=0.8, method="Template matching", file="./tasks/Sougenbi/s/s_s_fire_greed.png")
-	# description 
-	I_S_FIRE_ANGER = RuleImage(roi_front=(1070,642,21,30), roi_back=(1033,574,131,115), threshold=0.8, method="Template matching", file="./tasks/Sougenbi/s/s_s_fire_anger.png")
-	# 痴 
-	I_S_FIRE_FOOLERY = RuleImage(roi_front=(1071,641,22,31), roi_back=(1024,572,142,121), threshold=0.8, method="Template matching", file="./tasks/Sougenbi/s/s_s_fire_foolery.png")
+	I_S_CHECK_SOUGENBI = RuleImage(roi_front=(940,106,163,63), roi_back=(894,70,235,140), threshold=0.8, method="Template matching", file="./tasks/Sougenbi/s/s_s_check_sougenbi.png")
+	# 贪-标志 
+	I_S_FIRE_GREED = RuleImage(roi_front=(1071,642,21,33), roi_back=(1039,635,124,47), threshold=0.8, method="Template matching", file="./tasks/Sougenbi/s/s_s_fire_greed.png")
+	# 嗔-标志 
+	I_S_FIRE_ANGER = RuleImage(roi_front=(1071,642,21,33), roi_back=(1039,635,124,47), threshold=0.8, method="Template matching", file="./tasks/Sougenbi/s/s_s_fire_anger.png")
+	# 痴-标志 
+	I_S_FIRE_FOOLERY = RuleImage(roi_front=(1071,642,21,33), roi_back=(1039,635,124,47), threshold=0.8, method="Template matching", file="./tasks/Sougenbi/s/s_s_fire_foolery.png")
 
 
 	# Ocr Rule Assets
-	# Ocr-description 
-	O_S_GREED = RuleOcr(roi=(585,7,63,42), area=(585,7,63,42), mode="Single", method="Default", keyword="", name="s_greed")
-	# Ocr-description 
-	O_S_ANGER = RuleOcr(roi=(759,9,79,43), area=(759,9,79,43), mode="Digit", method="Default", keyword="", name="s_anger")
-	# Ocr-description 
-	O_S_FOOLERY = RuleOcr(roi=(955,10,68,36), area=(955,10,68,36), mode="Digit", method="Default", keyword="", name="s_foolery")
+	# 贪-票数 
+	O_S_GREED = RuleOcr(roi=(589,13,84,34), area=(589,13,84,34), mode="Digit", method="Default", keyword="", name="s_greed")
+	# 嗔-票数 
+	O_S_ANGER = RuleOcr(roi=(770,12,84,36), area=(770,12,84,36), mode="Digit", method="Default", keyword="", name="s_anger")
+	# 痴-票数 
+	O_S_FOOLERY = RuleOcr(roi=(951,12,86,34), area=(951,12,86,34), mode="Digit", method="Default", keyword="", name="s_foolery")
 
 
