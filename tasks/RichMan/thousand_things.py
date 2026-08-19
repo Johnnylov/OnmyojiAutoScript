@@ -28,6 +28,10 @@ class ThousandThings(GameUi, RichManAssets):
             logger.info('Start Earn Money')
             self.tt_earn_money()
 
+        if con.earn_money:
+            logger.info('Start Earn Money')
+            self.tt_earn_money()
+
         while 1:
             self.screenshot()
             if self.appear(self.I_TT_CHECK):
