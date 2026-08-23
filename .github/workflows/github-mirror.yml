@@ -38,7 +38,7 @@ jobs:
           dst: gitee/runheng
           dst_key: ${{ secrets.GITEE_PRIVATE_KEY }} # 复用公钥
           dst_token: ${{ secrets.GITEE_TOKEN }}
-          clone_style: ssh
+          clone_style: https # 源仓库公开，用 https 克隆；push 仍走 ssh(dst_key)
           static_list: "${{ steps.info.outputs.result }}"
           cache_path: /github/workspace/hub-mirror-cache
           account_type: user
@@ -52,7 +52,7 @@ jobs:
           dst: gitcode/OnmyojiAutoScript
           dst_key: ${{ secrets.GITEE_PRIVATE_KEY }} # 复用公钥
           dst_token: ${{ secrets.GITCODE_TOKEN }}
-          clone_style: ssh
+          clone_style: https # 源仓库公开，用 https 克隆；push 仍走 ssh(dst_key)
           static_list: "${{ steps.info.outputs.result }}"
           cache_path: /github/workspace/hub-mirror-cache
           src_account_type: user
