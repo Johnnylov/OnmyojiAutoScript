@@ -187,5 +187,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "胜利分享"
+  },
+  {
+    "itemName": "d_announce",
+    "imageName": "duel_d_announce.png",
+    "roiFront": "545,498,200,26",
+    "roiBack": "450,470,400,90",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "公告板(赛年公告等) 点击任意位置继续"
   }
 ]

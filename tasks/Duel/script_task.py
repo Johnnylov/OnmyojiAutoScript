@@ -46,6 +46,8 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
         while True:
             self.screenshot()
             self.check_and_get_reward()
+            if self.duel_popup_handle():
+                continue
             if not self.duel_main():
                 self.goto_page(page_duel)
                 continue
@@ -115,6 +117,12 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
         logger.hr('duel battle matching')
         while not self.is_in_battle_prepare():
             self.screenshot()
+            self.duel_popup_handle()
+            # 未识别到准备界面但战斗已经开始或结束(如准备界面识别失败、超时自动开战),
+            # 跳出交给 battle_prepare/wait_battle 接管, 避免静默空转直至 GameStuckError
+            if self.is_in_real_battle(is_screenshot=False) or self.is_battle_end():
+                logger.warning('Enter battle but not in prepare, skip to wait battle')
+                break
             # 战斗按钮
             self.ui_click_until_disappear(self.I_D_BATTLE, interval=1.2)
             self.ui_click_until_disappear(self.I_D_BATTLE2, interval=1.2)
@@ -278,6 +286,8 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
         click_count = 0  # 计数
         while 1:
             self.screenshot()
+            if self.duel_popup_handle():
+                continue
             if click_count >= 3:
                 break
             if self.appear_then_click(self.I_D_TEAM, interval=1):
@@ -295,6 +305,22 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
         if self.appear(self.I_REWARD) or self.appear(self.I_UI_REWARD):
             if self.click(random_click(ltrb=(True, True, False, True)), interval=0.6):
                 logger.info('get reward')
+
+    def duel_popup_handle(self) -> bool:
+        """处理斗技界面上的弹窗和残留结算界面, 避免素材被遮挡后静默空转直至 GameStuckError
+        :return: 是否有处理动作
+        """
+        # 赛年公告板等"点击任意位置继续"的公告板(遮挡斗技主界面素材)
+        if self.appear(self.I_D_ANNOUNCE):
+            logger.info('Duel announcement board appears, close it')
+            self.click(random_click(ltrb=(True, True, False, True)), interval=1.2)
+            return True
+        # 上一场战斗遗留的胜负结算界面(点击屏幕继续)
+        if self.is_battle_end():
+            logger.info('Duel leftover settlement appears, click to continue')
+            self.click(random_click(ltrb=(True, True, False, True)), interval=1.2)
+            return True
+        return False
 
     def is_in_battle_prepare(self, skip_screenshot=True) -> bool:
         """是否在战斗准备界面"""

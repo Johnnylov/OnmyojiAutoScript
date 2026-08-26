@@ -60,6 +60,8 @@ class DuelAssets:
 	I_DUEL_HONOR = RuleImage(roi_front=(211,636,20,20), roi_back=(200,601,130,100), threshold=0.8, method="Template matching", file="./tasks/Duel/duel/duel_duel_honor.png")
 	# 胜利分享 
 	I_D_WIN_SHARE = RuleImage(roi_front=(1123,608,82,73), roi_back=(1123,608,82,73), threshold=0.8, method="Template matching", file="./tasks/Duel/duel/d_win_share.png")
+	# 公告板(赛年公告等) 点击任意位置继续 
+	I_D_ANNOUNCE = RuleImage(roi_front=(545,498,200,26), roi_back=(450,470,400,90), threshold=0.8, method="Template matching", file="./tasks/Duel/duel/duel_d_announce.png")
 
 
 	# Ocr Rule Assets
