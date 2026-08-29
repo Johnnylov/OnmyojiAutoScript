@@ -42,14 +42,20 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
                 return True
         return False
 
-    def ensure_private(self) -> bool:
+    def ensure_private(self, timeout: float = 15) -> bool:
         """
         确认私人房间, 不公开仅邀请
+        :param timeout: 超时秒数, 超时未识别到开关则返回False,
+                        避免不在创建队伍界面时陷入死循环(如已进入房间后误调用)
         :return:
         """
         logger.info('Ensure private')
+        timer = Timer(timeout).start()
         while 1:
             self.screenshot()
+            if timer.reached():
+                logger.warning('Ensure private timeout, maybe not in create team ui')
+                return False
             if self.appear(self.I_ENSURE_PRIVATE):
                 return True
             if self.appear(self.I_ENSURE_PRIVATE_2):
@@ -60,14 +66,20 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
                 continue
         return False
 
-    def ensure_public(self) -> bool:
+    def ensure_public(self, timeout: float = 15) -> bool:
         """
         确认公开房间， 允许任何人加入
+        :param timeout: 超时秒数, 超时未识别到开关则返回False,
+                        避免不在创建队伍界面时陷入死循环(如已进入房间后误调用)
         :return:
         """
         logger.info('Ensure public')
+        timer = Timer(timeout).start()
         while 1:
             self.screenshot()
+            if timer.reached():
+                logger.warning('Ensure public timeout, maybe not in create team ui')
+                return False
             if self.appear(self.I_ENSURE_PUBLIC):
                 return True
             if self.appear(self.I_ENSURE_PUBLIC_2):
@@ -76,6 +88,7 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
                 continue
             if self.appear_then_click(self.I_ENSURE_PUBLIC_FALSE_2, interval=1):
                 continue
+        return False
 
     def create_ensure(self) -> bool:
         """

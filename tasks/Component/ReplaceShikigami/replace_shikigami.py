@@ -95,6 +95,7 @@ class ReplaceShikigami(BaseTask, ReplaceShikigamiAssets):
         click_interval_timer = Timer(1.5).start()  # 点击选择式神间隔
         clicked = False
         confirm_count = 0  # 确认按钮点击次数, 成功寄养后坑位消失会跳出循环, 连续点击说明寄养一直失败
+        select_count = 0  # 连续选择式神但未出现确认按钮的次数
         while 1:
             # ——1. 先做超时检查——
             if time.time() - start_time > TIMEOUT_SEC:
@@ -107,6 +108,7 @@ class ReplaceShikigami(BaseTask, ReplaceShikigamiAssets):
             if self.appear_then_click(self.I_U_CONFIRM_SMALL, interval=0.5):
                 clicked = False  # 点击了确认, 恢复选式神的操作
                 confirm_count += 1
+                select_count = 0  # 确认流程正常, 重置选择计数
                 if confirm_count >= 4:
                     # 寄养成功坑位会消失并跳出循环, 连续点确认说明寄养一直失败
                     # (如坑位同时被别人寄养/已寄养其他式神), 退出避免死循环
@@ -119,11 +121,21 @@ class ReplaceShikigami(BaseTask, ReplaceShikigamiAssets):
             # 与下方点击第7个式神操作互斥, 防止确认按钮还没有出现被下方取消掉
             if not clicked and self.click(click_match, interval=1.5):
                 clicked = True
+                select_count += 1
+                if select_count >= 5:
+                    # 连续点了多次式神都没弹出确认框, 该位置的式神无法寄养
+                    # (已被育成/寄养到别处), 退出避免重复点击触发 GameTooManyClickError
+                    logger.warning('连续选择式神未出现确认按钮, 该位置式神可能已被育成或占用, 退出寄养')
+                    return False
                 continue
             if not clicked and self.click(_click_match[6], interval=4.5):
                 # 有的时候第七个格子被占用到寄养上去了
                 # 导致一直无法选上
                 clicked = True
+                select_count += 1
+                if select_count >= 5:
+                    logger.warning('连续选择式神未出现确认按钮, 该位置式神可能已被育成或占用, 退出寄养')
+                    return False
                 continue
             if self.appear_then_click(self.I_U_CIRCLE_ALTERNATE, interval=2.5):
                 self.appear_then_click(self.I_U_CONFIRM_ALTERNATE, interval=1.5)
