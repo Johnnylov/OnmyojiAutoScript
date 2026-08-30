@@ -1,8 +1,14 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
+import os
+import re
+import time
+
 from module.base.timer import Timer
+from module.base.utils import save_image
 from module.exception import RequestHumanTakeover, GameTooManyClickError, GameStuckError
+from module.handler.sensitive_info import handle_sensitive_image
 from module.logger import logger
 from tasks.GameUi.assets import GameUiAssets
 from tasks.Restart.assets import RestartAssets
@@ -11,6 +17,7 @@ from tasks.base_task import BaseTask
 
 class LoginService(BaseTask, RestartAssets, GameUiAssets):
     character: str
+    LOGIN_RETRY_COUNT = 3
 
     def __init__(self, *wargs, **kwargs):
         super().__init__(*wargs, **kwargs)
@@ -129,19 +136,40 @@ class LoginService(BaseTask, RestartAssets, GameUiAssets):
         return login_success
 
     def app_handle_login(self) -> bool:
-        self.device.stuck_record_clear()
-        self.device.click_record_clear()
-        try:
-            self._app_handle_login()
-            return True
-        except (GameTooManyClickError, GameStuckError) as e:
-            logger.warning(e)
-            self.device.app_stop()
-            self.device.app_start()
+        for attempt in range(self.LOGIN_RETRY_COUNT + 1):
+            self.device.stuck_record_clear()
+            self.device.click_record_clear()
+            try:
+                self._app_handle_login()
+                return True
+            except (GameTooManyClickError, GameStuckError) as e:
+                logger.warning(e)
+                self._save_login_error_screenshot(attempt + 1)
+                if attempt >= self.LOGIN_RETRY_COUNT:
+                    break
+                logger.warning(
+                    f'Login failed, restart game and retry current task '
+                    f'({attempt + 1}/{self.LOGIN_RETRY_COUNT})'
+                )
+                self.device.app_stop()
+                self.device.app_start()
 
         logger.critical('Login failed')
         logger.critical('Onmyoji server may be under maintenance, or you may lost network connection')
         raise RequestHumanTakeover
+
+    def _save_login_error_screenshot(self, attempt: int) -> None:
+        """保存登录失败时的当前画面，截图失败不影响后续重试。"""
+        try:
+            os.makedirs('./log/error', exist_ok=True)
+            config_name = re.sub(r'[^0-9A-Za-z._-]+', '_', self.config.config_name).strip('._') or 'oas'
+            timestamp_ms = int(time.time() * 1000)
+            file = f'./log/error/{config_name}_login_{attempt}_{timestamp_ms}.png'
+            image = handle_sensitive_image(self.device.image)
+            save_image(image, file)
+            logger.warning(f'Saving login error screenshot: {file}')
+        except Exception as e:
+            logger.warning(f'Failed to save login error screenshot: {e}')
 
     def set_specific_usr(self, character: str):
         self.character = character
