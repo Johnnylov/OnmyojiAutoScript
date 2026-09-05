@@ -187,6 +187,17 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
             func = Function(key, value)
             if not func.enable:
                 continue
+            if key == 'mystery_shop':
+                # OASX 可重写通用 next_run，商店队列以账号独立记录为准。
+                from tasks.MysteryShop.schedule import MysteryShopSchedule
+                try:
+                    next_run = MysteryShopSchedule(self.config_name).resolve_next_run(self.scheduler_update_dt)
+                except (OSError, ValueError) as exc:
+                    # 队列仍可生成；商店入口会再次校验并安全停止脚本。
+                    logger.warning(f'Cannot resolve MysteryShop independent schedule: {exc}')
+                else:
+                    if next_run is not None:
+                        func.next_run = next_run
             if not isinstance(func.next_run, datetime):
                 error.append(func)
             elif func.next_run < self.scheduler_update_dt:
