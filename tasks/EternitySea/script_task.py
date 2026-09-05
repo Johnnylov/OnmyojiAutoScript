@@ -3,7 +3,8 @@
 # github https://github.com/runhey
 from datetime import datetime, timedelta
 
-from module.exception import TaskEnd
+from module.base.timer import Timer
+from module.exception import GamePageUnknownError, TaskEnd
 from module.logger import logger
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.EternitySea.config import EternitySea
@@ -19,6 +20,7 @@ from tasks.Component.GeneralInvite.general_invite import GeneralInvite
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.EternitySea.assets import EternitySeaAssets
 from tasks.GameUi.matcher import any_of
+from tasks.GameUi.default_pages import handle_battle_reward_page
 from tasks.Orochi.config import UserStatus
 from module.exception import RequestHumanTakeover
 from tasks.GameUi.page import page_main, page_reward, page_soul_zones, page_shikigami_records
@@ -126,7 +128,7 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
                 if self.run_invite(config=self._task_config.invite_config):
                     self.run_general_battle(
                         config=self._task_config.general_battle_config,
-                        exit_matcher=self.I_GI_EMOJI_1,
+                        exit_matcher=self._room_exit_matcher(),
                     )
                 else:
                     # 邀请失败，退出任务
@@ -143,11 +145,45 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
                     is_first = False
                     self.run_general_battle(
                         config=self._task_config.general_battle_config,
-                        exit_matcher=self.I_GI_EMOJI_1,
+                        exit_matcher=self._room_exit_matcher(),
                     )
-        self.exit_room()
-        self.exit_team()
+        self._wait_room_stable()
+        if not self.exit_room() or self.is_in_room():
+            raise GamePageUnknownError('Unable to leave EternitySea room after settlement')
+        # 选层页没有 HOME 按钮，交给有超时保护的导航器从永生之海返回箭头恢复。
+        self.navigator.add_unknown_closer(self.I_BACK_YELLOW_SEA, self.I_GR_BACK_YELLOW)
+        self.goto_page(page_soul_zones, skip_first_screenshot=False)
         return success
+
+    def _room_exit_matcher(self):
+        return any_of(self.I_GI_EMOJI_1, self.I_GI_EMOJI_2, self.I_GI_SPEAK)
+
+    def _wait_room_stable(self) -> None:
+        """队长收尾前清掉残留结算，等可退出页面稳定，避免金币动画遮挡房间标志。"""
+        timeout = Timer(10).start()
+        stable = Timer(1, count=2)
+        reward_page = self.navigator.resolve_page(page_reward)
+        while not timeout.reached():
+            self.screenshot()
+            # 本轮已经结束，不再通过确认按钮邀请队友进入下一轮。
+            if self.appear(self.I_GI_SURE):
+                stable.clear()
+                self.appear_then_click(self.I_GI_CANCEL, interval=0.8)
+                continue
+            if self.match_page_once(reward_page):
+                stable.clear()
+                handle_battle_reward_page(self)
+                continue
+            if (self.is_in_room(False) or self.appear(self.I_CHECK_TEAM)
+                    or self.appear(self.I_FORM_TEAM) or self.appear(self.I_CHECK_SOUL_ZONES)
+                    or self.appear(self.I_CHECK_MAIN) or self.appear(self.I_CHECK_EXPLORATION)):
+                if not stable.started():
+                    stable.start()
+                elif stable.reached():
+                    return
+            else:
+                stable.clear()
+        raise GamePageUnknownError('EternitySea settlement did not reach a stable exit page')
 
     def run_member(self):
         logger.info('Start run member')
@@ -168,7 +204,7 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
                 if self.wait_battle(wait_time=self._task_config.invite_config.wait_time):
                     self.run_general_battle(
                         config=self._member_general_battle_config(),
-                        exit_matcher=any_of(self.I_GI_EMOJI_1, self.I_CHECK_MAIN),
+                        exit_matcher=any_of(self._room_exit_matcher(), self.I_CHECK_MAIN),
                     )
                 else:
                     break
@@ -176,7 +212,7 @@ class ScriptTask(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, SwitchSoul, 
             if self.is_in_battle(False):
                 self.run_general_battle(
                     config=self._member_general_battle_config(),
-                    exit_matcher=any_of(self.I_GI_EMOJI_1, self.I_CHECK_MAIN),
+                    exit_matcher=any_of(self._room_exit_matcher(), self.I_CHECK_MAIN),
                 )
         self.exit_room()
         self.exit_team()

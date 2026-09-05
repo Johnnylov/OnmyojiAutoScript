@@ -97,6 +97,8 @@ class GeneralInviteAssets:
 	I_I_ACCEPT_JY = RuleImage(roi_front=(248,258,46,25), roi_back=(231,205,75,326), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralInvite/gi/gi_i_accept_jy.png")
 	# 师徒邀请图标 
 	I_I_ACCEPT_APPRENTICE = RuleImage(roi_front=(115,229,55,45), roi_back=(107,209,69,296), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralInvite/gi/gi_i_accept_apprentice.png")
+	# 永生之海房间左下角发言按钮
+	I_GI_SPEAK = RuleImage(roi_front=(23,503,82,85), roi_back=(23,503,82,85), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralInvite/gi/gi_gi_speak.png")
 
 
 	# Image Rule Assets
@@ -129,5 +131,4 @@ class GeneralInviteAssets:
 	O_FRIEND_NAME_2 = RuleOcr(roi=(729,184,196,346), area=(729,184,196,346), mode="Full", method="Default", keyword="", name="friend_name_2")
 	# Ocr-description 
 	O_ONLINE = RuleOcr(roi=(790,102,124,42), area=(0,0,100,100), mode="Single", method="Default", keyword="", name="online")
-
 

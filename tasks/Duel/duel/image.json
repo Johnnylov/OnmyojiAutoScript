@@ -196,5 +196,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "公告板(赛年公告等) 点击任意位置继续"
+  },
+  {
+    "itemName": "d_try",
+    "imageName": "duel_d_try.png",
+    "roiFront": "667,356,111,30",
+    "roiBack": "667,356,111,30",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "队伍试用"
   }
 ]

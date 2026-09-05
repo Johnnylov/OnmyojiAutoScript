@@ -385,5 +385,14 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "师徒邀请图标"
+  },
+  {
+    "itemName": "gi_speak",
+    "imageName": "gi_gi_speak.png",
+    "roiFront": "23,503,82,85",
+    "roiBack": "23,503,82,85",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "永生之海房间左下角发言按钮"
   }
 ]

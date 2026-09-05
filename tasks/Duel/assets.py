@@ -62,6 +62,8 @@ class DuelAssets:
 	I_D_WIN_SHARE = RuleImage(roi_front=(1123,608,82,73), roi_back=(1123,608,82,73), threshold=0.8, method="Template matching", file="./tasks/Duel/duel/d_win_share.png")
 	# 公告板(赛年公告等) 点击任意位置继续 
 	I_D_ANNOUNCE = RuleImage(roi_front=(545,498,200,26), roi_back=(450,470,400,90), threshold=0.8, method="Template matching", file="./tasks/Duel/duel/duel_d_announce.png")
+	# 队伍试用
+	I_D_TRY = RuleImage(roi_front=(667,356,111,30), roi_back=(667,356,111,30), threshold=0.8, method="Template matching", file="./tasks/Duel/duel/duel_d_try.png")
 
 
 	# Ocr Rule Assets
@@ -73,5 +75,4 @@ class DuelAssets:
 	O_D_CELEB_STAR = RuleOcr(roi=(625,454,77,37), area=(625,454,77,37), mode="Digit", method="Default", keyword="", name="d_celeb_star")
 	# 被办式神名称 
 	O_D_BAN_NAME = RuleOcr(roi=(92,97,82,25), area=(92,97,82,25), mode="Single", method="Default", keyword="", name="d_ban_name")
-
 

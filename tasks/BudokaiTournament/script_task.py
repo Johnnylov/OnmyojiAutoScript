@@ -325,10 +325,21 @@ class ScriptTask(Foot):
                 # self.put_status()
                 if cnt_scout >= self.conf.daily_training.limit_cultivation_drills:
                     raise LimitCountOut
-                if self.ui_click(self.I_IMG1, stop=self.I_IMG3, interval=1.5, timeout=10):
-                    logger.info(f'Cultivation drill done, for next time {cnt_scout}')
-                    cnt_scout += 1
-                    pass
+                if not self.check_tickets_enough():
+                    logger.warning('No tickets left, skip cultivation drill search')
+                    break
+                # 搜寻只点击一次；等待动画结束，避免连续点击消耗额外门票。
+                if self.appear_then_click(self.I_IMG1, interval=1.5):
+                    transition_timer = Timer(10).start()
+                    while True:
+                        self.screenshot()
+                        if self.appear(self.I_IMG3) or self.appear(self.I_IMG4):
+                            cnt_scout += 1
+                            logger.info(f'Cultivation drill search done: {cnt_scout}')
+                            break
+                        if transition_timer.reached():
+                            logger.warning('Cultivation drill search transition timeout, recheck page')
+                            break
                 continue
             if not (self.appear(self.I_IMG3) or self.appear(self.I_IMG4)):
                 continue
@@ -385,5 +396,4 @@ if __name__ == '__main__':
     t = ScriptTask(c, d)
 
     t.run()
-
 

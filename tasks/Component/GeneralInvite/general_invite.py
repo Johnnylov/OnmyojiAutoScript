@@ -191,6 +191,8 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
             return True
         if self.appear(GeneralInviteAssets.I_GI_EMOJI_2):
             return True
+        if self.appear(GeneralInviteAssets.I_GI_SPEAK):
+            return True
         return False
 
     def exit_room(self) -> bool:
@@ -208,7 +210,7 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
                 break
             if not self.is_in_room() and \
                     not self.appear_then_click(GeneralInviteAssets.I_GI_SURE, interval=0.8) and \
-                    not self.appear(self.I_BACK_YELLOW):
+                    not self.appear(self.I_BACK_YELLOW) and not self.appear(self.I_BACK_YELLOW_SEA):
                 return True
             if self.appear_then_click(GeneralInviteAssets.I_GI_SURE, interval=0.5):
                 continue

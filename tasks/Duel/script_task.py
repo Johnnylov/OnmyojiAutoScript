@@ -117,12 +117,13 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
         logger.hr('duel battle matching')
         while not self.is_in_battle_prepare():
             self.screenshot()
-            self.duel_popup_handle()
             # 未识别到准备界面但战斗已经开始或结束(如准备界面识别失败、超时自动开战),
             # 跳出交给 battle_prepare/wait_battle 接管, 避免静默空转直至 GameStuckError
             if self.is_in_real_battle(is_screenshot=False) or self.is_battle_end():
                 logger.warning('Enter battle but not in prepare, skip to wait battle')
                 break
+            if self.duel_popup_handle():
+                continue
             # 战斗按钮
             self.ui_click_until_disappear(self.I_D_BATTLE, interval=1.2)
             self.ui_click_until_disappear(self.I_D_BATTLE2, interval=1.2)
@@ -310,6 +311,10 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
         """处理斗技界面上的弹窗和残留结算界面, 避免素材被遮挡后静默空转直至 GameStuckError
         :return: 是否有处理动作
         """
+        # 队伍试用提示只在实际出现时处理，点击后由下一帧继续识别。
+        if self.appear_then_click(self.I_D_TRY, interval=1.2):
+            logger.info('Duel team trial prompt handled')
+            return True
         # 赛年公告板等"点击任意位置继续"的公告板(遮挡斗技主界面素材)
         if self.appear(self.I_D_ANNOUNCE):
             logger.info('Duel announcement board appears, close it')
@@ -356,4 +361,3 @@ if __name__ == '__main__':
     t = ScriptTask(c, d)
 
     t.run()
-

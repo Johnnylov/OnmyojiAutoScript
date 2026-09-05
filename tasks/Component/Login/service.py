@@ -24,6 +24,16 @@ class LoginService(BaseTask, RestartAssets, GameUiAssets):
         self.character = self.config.restart.login_character_config.character
         self.O_LOGIN_SPECIFIC_SERVE.keyword = self.character
 
+    def _login_screenshot(self) -> bool:
+        """仅在当前帧为游戏横屏时处理邀请和登录识别。"""
+        # 保留 Device.screenshot 的卡死检查，竖屏持续不恢复时仍交给登录重试。
+        self.device.screenshot()
+        if getattr(self.device.image, 'shape', None) != (720, 1280, 3):
+            return False
+        self._burst()
+        # 邀请处理可能再次截图，调用方必须使用处理后的最新有效帧。
+        return getattr(self.device.image, 'shape', None) == (720, 1280, 3)
+
     def _app_handle_login(self) -> bool:
         """
         最终是在庭院界面
@@ -43,7 +53,9 @@ class LoginService(BaseTask, RestartAssets, GameUiAssets):
                 self.device.get_orientation()
                 orientation_timer.reset()
 
-            self.screenshot()
+            if not self._login_screenshot():
+                confirm_timer.reset()
+                continue
             if self.appear_then_click(self.I_CANCEL_BATTLE, interval=0.8):
                 logger.info('Cancel continue battle')
                 continue
@@ -85,7 +97,8 @@ class LoginService(BaseTask, RestartAssets, GameUiAssets):
                 continue
             if self.appear_then_click(self.I_LOGIN_LOGIN_GOTO_BIND_PHONE):
                 while 1:
-                    self.screenshot()
+                    if not self._login_screenshot():
+                        continue
                     if self.appear_then_click(self.I_LOGIN_LOGIN_CANCEL_BIND_PHONE):
                         logger.info("Close bind phone")
                         break
@@ -100,7 +113,8 @@ class LoginService(BaseTask, RestartAssets, GameUiAssets):
             if self.appear(self.I_LOGIN_SPECIFIC_SERVE, interval=0.6) \
                     and self.ocr_appear_click(self.O_LOGIN_SPECIFIC_SERVE, interval=0.6):
                 while True:
-                    self.screenshot()
+                    if not self._login_screenshot():
+                        continue
                     if self.appear(self.I_LOGIN_SPECIFIC_SERVE):
                         self.click(self.C_LOGIN_ENSURE_LOGIN_CHARACTER_IN_SAME_SVR, interval=2)
                         continue
@@ -130,7 +144,14 @@ class LoginService(BaseTask, RestartAssets, GameUiAssets):
 
             if self.ocr_appear_click(self.O_LOGIN_ENTER_GAME_ORIGIN, interval=3) or self.ocr_appear_click(self.O_LOGIN_ENTER_GAME, interval=3):
                 skip_login_animation = False  # 进入登录页面后不再处理登录动画逻辑
-                self.wait_until_appear(self.I_LOGIN_SPECIFIC_SERVE, True, wait_time=5)
+                wait_timer = Timer(5).start()
+                while not wait_timer.reached():
+                    if not self._login_screenshot():
+                        continue
+                    if self.appear(self.I_LOGIN_SPECIFIC_SERVE):
+                        break
+                else:
+                    logger.warning(f"Wait until appear {self.I_LOGIN_SPECIFIC_SERVE.name} timeout")
                 continue
 
         return login_success

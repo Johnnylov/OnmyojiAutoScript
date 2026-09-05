@@ -64,7 +64,7 @@ class ScriptTask(GameUi):
         log_timer.start()
 
         # 获取初始通知时间
-        init_time, _ = self.get_notification_info()
+        init_time, _ = self.get_notification_info(monitored_activities)
 
         stuck_interval = Timer(280)
         # 主监控循环
@@ -87,7 +87,7 @@ class ScriptTask(GameUi):
             self.screenshot()
 
             # 检测新通知
-            current_time, notification_text = self.get_notification_info()
+            current_time, notification_text = self.get_notification_info(monitored_activities)
             if current_time > init_time and notification_text:
                 logger.info(f"检测到新通知: {notification_text}")
                 for keyword, task_name in KEYWORD_MAP.items():
@@ -100,40 +100,23 @@ class ScriptTask(GameUi):
 
             time.sleep(interval)
 
-    def get_notification_info(self) -> tuple:
+    def get_notification_info(self, keywords: list) -> tuple:
+        """返回最新已启用活动通知的时间戳和关键字，忽略其他通知。"""
         try:
             output = self.device.adb_shell(['dumpsys', 'notification', '--noredact'])
-
-            # 通知时间提取逻辑 - 只获取最新的通知
-            notification_time = 0
-            notification_text = ""
-
             # 查找所有通知块，每个块包含时间戳和文本
             notification_blocks = re.findall(r'(when=(\d+)[\s\S]*?(?=when=|\Z))', output)
-            
-            if notification_blocks:
-                # 找到最新的通知块
-                latest_block_time = 0
-                latest_text = ""
-                
-                for block, time_str in notification_blocks:
-                    current_time = float(time_str)
-                    if current_time > latest_block_time:
-                        latest_block_time = current_time
-                        # 在当前块中查找活动类型
-                        if re.search(r'宴会[^\w]', block) or '寮宴会' in block:
-                            latest_text = '宴会'
-                        elif re.search(r'狭间[^\w]', block) or '狭间暗域' in block:
-                            latest_text = '狭间'
-                        elif re.search(r'退治[^\w]', block) or '首领退治' in block:
-                            latest_text = '退治'
-                        elif re.search(r'道馆[^\w]', block) or '道馆突破' in block:
-                            latest_text = '道馆'
-                
-                notification_time = latest_block_time
-                notification_text = latest_text
-
-            return notification_time, notification_text
+            latest_time = 0
+            latest_text = ""
+            for block, time_str in notification_blocks:
+                current_time = float(time_str)
+                for keyword in keywords:
+                    if keyword in block and current_time > latest_time:
+                        # 时间和活动必须来自同一条有效通知，避免无关通知遮住活动。
+                        latest_time = current_time
+                        latest_text = keyword
+                        break
+            return latest_time, latest_text
         except Exception as e:
             logger.warning(f"获取通知失败: {e}")
             return 0, ""

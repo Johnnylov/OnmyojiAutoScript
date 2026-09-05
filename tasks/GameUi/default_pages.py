@@ -16,6 +16,7 @@ from module.atom.click import RuleClick
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
 from tasks.Component.Login.service import LoginService
 from tasks.DailyTrifles.assets import DailyTriflesAssets
+from tasks.Duel.assets import DuelAssets
 from tasks.GlobalGame.assets import GlobalGameAssets
 from tasks.GameUi.assets import GameUiAssets
 from tasks.GameUi.matcher import any_of, all_of
@@ -167,6 +168,8 @@ page_main.connect(page_town, GameUiAssets.I_MAIN_GOTO_TOWN, key="page_main->page
 
 # 町中区域页面。
 page_duel = Page(GameUiAssets.I_CHECK_DUEL, category="global")
+page_duel.add_enter_success_hooks(DuelAssets.I_D_TRY)
+page_duel.add_enter_failure_hooks(DuelAssets.I_D_TRY)
 page_duel.connect(page_town, GlobalGameAssets.I_UI_BACK_YELLOW, key="page_duel->page_town")
 page_town.connect(page_duel, GameUiAssets.I_TOWN_GOTO_DUEL, key="page_town->page_duel")
 
@@ -349,7 +352,7 @@ page_reward.add_enter_success_hooks(handle_battle_reward_page)
 
 page_battle_team_exit = Page(GeneralBattleAssets.I_GB_CHECK_TEAM_EXIT, priority=75)
 page_battle_team = Page(any_of(GeneralInviteAssets.I_GI_EMOJI_1, GeneralInviteAssets.I_GI_EMOJI_2,
-                               GeneralInviteAssets.I_FIRE),
+                               GeneralInviteAssets.I_FIRE, GeneralInviteAssets.I_GI_SPEAK),
                         category="global", priority=25)
 page_battle_team_exit.connect(page_battle_team, GlobalGameAssets.I_UI_CANCEL, key="page_battle_team_exit->page_battle_team")
 page_battle_team.connect(page_battle_team_exit, GlobalGameAssets.I_UI_BACK_YELLOW, key="page_battle_team->page_battle_team_exit")

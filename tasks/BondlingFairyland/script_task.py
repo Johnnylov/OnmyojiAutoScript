@@ -663,7 +663,7 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, 
                 success = False
                 break
 
-            if self.appear(self.I_EXIT):
+            if self.is_in_battle(False):
                 success = True
                 logger.info("契灵：已经在战斗场景中")
                 break
