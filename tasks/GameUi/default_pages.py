@@ -338,6 +338,9 @@ def handle_battle_reward_page(task) -> bool:
     Returns:
         bool: 执行结果
     """
+    # 活动说明可能覆盖在奖励页上，先按实际出现的关闭图标关窗。
+    if task.appear_then_click(GlobalGameAssets.I_UI_BACK_RED, interval=0.8):
+        return True
     if task.appear_then_click(GeneralBattleAssets.I_OVER_GHOST, interval=0.8):
         return True
     return task.click(random_click(), interval=0.8)

@@ -687,6 +687,9 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         context.reward_no_battle_ts = None
         # TODO: 部分副本奖励界面不一定是战斗成功, 需要重写
         context.is_win = True
+        # 时运加成等活动弹窗会遮住奖励页；仅在关闭图标出现时点击，下一帧再结算。
+        if self.appear_then_click(self.I_UI_BACK_RED, interval=0.8):
+            return BattleAction.CONTINUE
         self.appear_then_click(self.I_OVER_GHOST, interval=0.8)
         self.appear_then_click(self.I_GB_SKIN_CONFIRM, interval=0.8)
         if context.last_page != page_reward:
