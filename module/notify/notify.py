@@ -19,6 +19,11 @@ class Notifier:
     def __init__(self, _config: str, enable: bool=False) -> None:
         self.config_name: str = ""
         self.enable: bool = enable
+        self.config: dict = {}
+        self.provider_name: str | None = None
+        self.notifier: Provider | None = None
+        self.required: list[str] = []
+        self._ready = False
 
         if not self.enable:
             return
@@ -46,9 +51,13 @@ class Notifier:
         except Exception as e:
             logger.exception(e)
             return
+        self._ready = True
 
     def push(self, **kwargs) -> bool:
         if not self.enable:
+            return False
+        if not self._ready:
+            logger.warning('Notifier was not initialized, skip notification and preserve the original task error')
             return False
         # 更新配置
         kwargs["title"] = f"{self.config_name} {kwargs['title']}"
@@ -104,6 +113,5 @@ class Notifier:
 
         logger.info("Push notify success")
         return True
-
 
 

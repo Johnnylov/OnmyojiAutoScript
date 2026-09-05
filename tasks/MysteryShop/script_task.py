@@ -2,6 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 import random
+from copy import deepcopy
 from time import sleep
 from datetime import timedelta, datetime
 from cached_property import cached_property
@@ -20,6 +21,7 @@ from tasks.RichMan.mall.friendship_points import FriendshipPoints
 from tasks.MysteryShop.config import MysteryShop, ShopConfig
 from tasks.MysteryShop.assets import MysteryShopAssets
 from tasks.MysteryShop.schedule import MysteryShopSchedule
+from tasks.MysteryShop.share_state import MysteryShopShareState
 from tasks.Component.GeneralInvite.general_invite import GeneralInvite
 from tasks.Component.GeneralInvite.config_invite import InviteConfig
 
@@ -118,7 +120,7 @@ class ScriptTask(FriendshipPoints, MysteryShopAssets, GeneralInvite):
             moved = self._swipe_shop(self.S_MS_DOWN)
             unchanged = 0 if moved else unchanged + 1
             if unchanged >= self.SHOP_BOUNDARY_CONFIRMATIONS:
-                logger.info('MysteryShop shelf bottom confirmed, current shop scan complete')
+                logger.info('MysteryShop 已确认本店底部，仅本店扫描结束，继续检查下一家')
                 return
 
     @cached_property
@@ -170,8 +172,7 @@ class ScriptTask(FriendshipPoints, MysteryShopAssets, GeneralInvite):
                 ) if self.appear(marker)), None)
                 if popup is not None:
                     reason = f'popup {popup.name}'
-                elif not (self.appear(self.I_MS_SHARE) or self.appear(self.I_MS_BEFORE)
-                          or self.appear(self.I_MS_NEXT)):
+                elif not self._shop_page_visible():
                     reason = 'shop anchor not visible'
                 else:
                     reason = 'shelf still moving'
@@ -186,6 +187,16 @@ class ScriptTask(FriendshipPoints, MysteryShopAssets, GeneralInvite):
             stable_count = 0
             sleep(0.2)
         raise GameStuckError(f'MysteryShop shelf wait timeout: {reason}')
+
+    def _shop_page_visible(self) -> bool:
+        if (self.appear(self.I_MS_SHARE) or self.appear(self.I_MS_BEFORE)
+                or self.appear(self.I_MS_NEXT)):
+            return True
+        # 最后一家好友商店没有分享/下一家按钮；上一家箭头发光时也会漏检。
+        # 要求多个固定奖励图标高分同时匹配，不降低箭头阈值，也不单凭货架静止放行。
+        return sum(self.appear(marker, threshold=0.9) for marker in (
+            self.I_MS_REWARD_3, self.I_MS_REWARD_5, self.I_MS_REWARD_10
+        )) >= 2
 
     def _shop_template(self):
         """内缩模板留出 4px 搜索余量，容忍货架轻微摆动。"""
@@ -216,10 +227,13 @@ class ScriptTask(FriendshipPoints, MysteryShopAssets, GeneralInvite):
         sleep(self.SHOP_SWIPE_WAIT)
         self._wait_shop_stable()
         moved = not self._shop_frame_matches(before, threshold=0.985)
-        logger.info(f'MysteryShop {swipe.name}: shelf moved={moved}')
+        phase = '回顶' if swipe.name == self.S_MS_TO_TOP.name else '向下检查'
+        observation = '货架已移动' if moved else '画面未变化（手势已发出，等待边界确认）'
+        logger.info(f'MysteryShop [{phase}] {observation}')
         return moved
 
     def _rewind_shop(self):
+        logger.info('MysteryShop 回顶：先确认顶部，再向下逐屏检查')
         unchanged = 0
         for _ in range(self.MAX_SHOP_SWIPES):
             moved = self._swipe_shop(self.S_MS_TO_TOP)
@@ -251,13 +265,50 @@ class ScriptTask(FriendshipPoints, MysteryShopAssets, GeneralInvite):
             raise TaskEnd('MysteryShop')
         self._ensure_shop_open()
 
+    @cached_property
+    def _daily_share_state(self):
+        return MysteryShopShareState(self.config.config_name)
+
     def share(self, invite_config: InviteConfig = None):
         logger.hr('Share', 3)
-        if len(invite_config.friend_list_v) == 0:
+        if invite_config is None:
+            invite_config = self.config.mystery_shop.invite_config
+        if not invite_config.friend_list_v:
             logger.info('Share is disabled')
             return
-        self.ui_click(self.I_MS_SHARE, self.I_INVITE_ENSURE)
-        self.invite_friends(invite_config, False, self.I_INVITE_ENSURE)
+        # 每位好友单独确认并记录，避免批量部分成功后重试时再次分享给已成功的人。
+        for friend in dict.fromkeys(invite_config.friend_list_v):
+            self._ensure_shop_open()
+            day = datetime.now().date()
+            try:
+                reserved = self._daily_share_state.reserve(friend, day)
+            except (OSError, ValueError) as exc:
+                raise RequestHumanTakeover(f'Cannot reserve MysteryShop daily share: {exc}') from exc
+            if not reserved:
+                logger.info(f'MysteryShop 今日已分享或结果待确认，跳过好友：{friend}')
+                continue
+            single_friend = deepcopy(invite_config)
+            single_friend.friend_list = friend
+            try:
+                self.ui_click(self.I_MS_SHARE, self.I_INVITE_ENSURE)
+                self.screenshot()
+                if self.I_SELECTED.match_all_any(self.device.image, frame_id=self.device.image_frame_id):
+                    raise RequestHumanTakeover('MysteryShop share panel has preselected friends; refuse to resend')
+                shared = self.invite_friends(single_friend, False, self.I_INVITE_ENSURE)
+            except Exception:
+                # 可能已经点过发送，保留 pending，避免重启后重复打扰同一好友。
+                logger.warning(f'MysteryShop 分享结果不确定，今天不自动重发：{friend}')
+                raise
+            try:
+                if shared:
+                    self._daily_share_state.complete(friend, day)
+                    logger.info(f'MysteryShop 今日分享已记录：{friend}')
+                else:
+                    self._daily_share_state.release(friend, day)
+                    logger.warning(f'MysteryShop 未选中目标好友，本次未完成分享：{friend}')
+            except (OSError, ValueError) as exc:
+                raise RequestHumanTakeover(f'Cannot save MysteryShop daily share result: {exc}') from exc
+            self._wait_shop_stable()
 
     def shop_reward(self):
         logger.info('Shop reward')
@@ -295,6 +346,8 @@ class ScriptTask(FriendshipPoints, MysteryShopAssets, GeneralInvite):
                     raise RequestHumanTakeover(f'Cannot save MysteryShop independent schedule: {exc}') from exc
                 logger.info(f'MysteryShop saved independent next run: {candidate}')
             self.set_next_run(task='MysteryShop', target=candidate, server=False, finish=True)
+            if success:
+                logger.info(f'MysteryShop 本轮成功完成，下次运行：{candidate}')
             raise TaskEnd('MysteryShop')
 
 
@@ -308,4 +361,3 @@ if __name__ == '__main__':
 
     # t.run_shop(t.config.mystery_shop.shop_config)
     t.run()
-

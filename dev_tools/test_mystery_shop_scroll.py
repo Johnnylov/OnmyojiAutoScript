@@ -10,6 +10,7 @@ separated by the platform path separator. Account screenshots are never copied.
 import ast
 import os
 import operator
+from copy import deepcopy
 from datetime import datetime, timedelta, time
 from functools import cached_property
 from hashlib import sha256
@@ -121,6 +122,7 @@ class ShopWorld:
             "time": time,
             "Path": Path,
             "cached_property": cached_property,
+            "deepcopy": deepcopy,
             "sleep": self.sleep,
             "RuleImage": Rule,
             "RuleSwipe": Rule,
@@ -478,6 +480,45 @@ class MysteryShopScrollTests(unittest.TestCase):
             world.run(mystery_amulet=True)
         world.task.device.swipe_adb.assert_not_called()
         world.task.buy_one.assert_not_called()
+
+    def test_multiple_reward_markers_confirm_friend_shop_without_arrows(self):
+        world = ShopWorld([{}])
+        frame = world.frames[0].copy()
+        for marker in (world.task.I_MS_REWARD_3, world.task.I_MS_REWARD_5):
+            place_rule_template(frame, marker)
+        world.frames[0] = frame
+        world.use_real_recognition()
+        world.screenshot()
+        self.assertFalse(world.task.appear(world.task.I_MS_SHARE))
+        self.assertFalse(world.task.appear(world.task.I_MS_BEFORE))
+        self.assertFalse(world.task.appear(world.task.I_MS_NEXT))
+        self.assertTrue(world.task._shop_page_visible())
+        self.assertFalse(world.task._swipe_shop(world.task.S_MS_DOWN))
+        world.task.device.swipe_adb.assert_called_once()
+
+    def test_single_reward_marker_cannot_confirm_a_shop(self):
+        world = ShopWorld([{}])
+        frame = world.frames[0].copy()
+        place_rule_template(frame, world.task.I_MS_REWARD_3)
+        world.frames[0] = frame
+        world.use_real_recognition()
+        world.screenshot()
+        self.assertFalse(world.task._shop_page_visible())
+        with self.assertRaises(world.namespace["GameStuckError"]):
+            world.task._swipe_shop(world.task.S_MS_DOWN)
+        world.task.device.swipe_adb.assert_not_called()
+
+    def test_reward_fallback_does_not_override_modal_protection(self):
+        world = ShopWorld([{}])
+        frame = world.frames[0].copy()
+        for marker in (world.task.I_MS_REWARD_3, world.task.I_MS_REWARD_5,
+                       world.task.I_INVITE_ENSURE):
+            place_rule_template(frame, marker)
+        world.frames[0] = frame
+        world.use_real_recognition()
+        with self.assertRaises(world.namespace["GameStuckError"]):
+            world.task._swipe_shop(world.task.S_MS_DOWN)
+        world.task.device.swipe_adb.assert_not_called()
 
     def test_currency_symbol_on_shelf_does_not_block_real_recognition(self):
         world = ShopWorld([{}])
