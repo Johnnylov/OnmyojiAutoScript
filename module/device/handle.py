@@ -18,6 +18,8 @@ from win32con import (SRCCOPY, DESKTOPHORZRES, DESKTOPVERTRES, WM_LBUTTONUP,
                       WM_NCHITTEST, WM_SETCURSOR, HTCLIENT, WM_MOUSEMOVE)
 from module.config.config import Config
 from module.logger import logger
+from module.device.window_selector import resolve_emulator_window
+from module.exception import RequestHumanTakeover
 
 
 def handle_title2num(title: str) -> int:
@@ -179,23 +181,17 @@ class Handle:
         self.root_handle_title = ''
         self.root_handle_num = 0
         self.root_handle = self.config.script.device.handle
-        if self.root_handle == "auto":
-            logger.info('Handle is auto. oas will find window emulator')
-            window_list = Handle.all_windows()
-            self.root_handle_title = self.auto_handle_title(window_list)
-            self.root_handle_num = handle_title2num(self.root_handle_title)
-        if isinstance(self.root_handle, str):
-            try:
-                self.root_handle_num = int(self.root_handle)
-                logger.info('Handle is handle num. oas use it as root handle num')
-                if is_handle_valid(self.root_handle_num):
-                    logger.info(f'Handle number {self.root_handle_num} is valid')
-                    self.root_handle_title = handle_num2title(self.root_handle_num)
-            except ValueError:
-                logger.info('Handle is handle string. oas use it as root handle title')
-                if handle_title2num(self.root_handle) != 0:
-                    self.root_handle_num = handle_title2num(self.root_handle)
-                    self.root_handle_title = self.root_handle
+        window = resolve_emulator_window(self.root_handle, self.config.script.device.serial)
+        if window is None:
+            # ADB/IPC/minitouch do not require a desktop window. Do not bind the
+            # desktop (HWND 0) or a manager as a fallback when discovery fails.
+            if (self.config.script.device.screenshot_method == 'window_background'
+                    or self.config.script.device.control_method == 'window_message'):
+                raise RequestHumanTakeover('Cannot identify a unique emulator game window')
+            logger.warning('No verified game window; continue without Windows handle')
+            return
+        self.root_handle_num = window.hwnd
+        self.root_handle_title = window.title
         logger.info(f'The root handle title is {self.root_handle_title} and num is {self.root_handle_num}')
 
         # 获取句柄树
@@ -342,6 +338,8 @@ class Handle:
         """
         if self.emulator_family == EmulatorFamily.FAMILY_MUMU:
             # 使用正则匹配12 来判定是不是mumu12这并不是一个好的方法
+            if not self.root_node.children:
+                raise RequestHumanTakeover('MuMu render window disappeared')
             name = self.root_node.children[0].name
             num = self.root_node.children[0].num
             if name == 'MuMuPlayer':

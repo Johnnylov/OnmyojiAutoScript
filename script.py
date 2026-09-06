@@ -427,10 +427,9 @@ class Script:
             from module.device.platform2.platform_windows import minimize_by_name, show_window_by_name
             target_window_name = self.config.script.device.handle  # 在这里输入你的具体窗口名称
             if self.config.script.device.emulator_window_minimize:
-                minimize_by_name(target_window_name)
-                logger.info(f'重新显示: {target_window_name}')
+                minimize_by_name(target_window_name, serial=self.config.script.device.serial)
             else:
-                show_window_by_name(target_window_name)
+                show_window_by_name(target_window_name, serial=self.config.script.device.serial)
                 
         while 1:
             if date.today() > start_day:

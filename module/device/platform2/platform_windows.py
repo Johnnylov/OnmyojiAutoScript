@@ -11,75 +11,26 @@ from filelock import FileLock
 from deploy.utils import DataProcessInfo
 from module.base.timer import Timer
 from module.device.handle import Handle
+from module.device.window_selector import resolve_emulator_window, change_emulator_window
 from module.device.platform2.platform_base import PlatformBase
 from module.device.platform2.emulator_windows import EmulatorInstance, EmulatorManager
 from module.logger import logger
-
-from ctypes import wintypes
-
 
 class EmulatorUnknown(Exception):
     pass
 
 
-def minimize_by_name(window_name, convert_hidden=True):
-    """
-    按名称处理窗口状态
-    Args:
-        window_name (str): 窗口名称（支持部分匹配）
-        convert_hidden (bool): 是否将隐藏窗口改为最小化
-    """
-    def callback(hwnd, lParam):
-        title = get_window_title(hwnd)
-        if window_name.lower() in title.lower():
-            # 检查窗口当前状态
-            is_visible = ctypes.windll.user32.IsWindowVisible(hwnd)
-            
-            if is_visible:
-                # 可见窗口 → 最小化
-                minimize_window(hwnd)
-                logger.info(f'最小化可见窗口: {title}')
-            elif convert_hidden:
-                # 隐藏窗口 → 改为最小化不激活
-                ctypes.windll.user32.ShowWindow(hwnd, 6)  # SW_SHOWMINNOACTIVE
-                logger.info(f'隐藏窗口改为最小化: {title}')
-        return True
-    
-    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, ctypes.POINTER(ctypes.c_int))
-    ctypes.windll.user32.EnumWindows(WNDENUMPROC(callback), None)
+def minimize_by_name(window_name, convert_hidden=True, serial=''):
+    return change_emulator_window(window_name, serial, 'minimize', convert_hidden)
 
 
-def find_hwnd_by_name(window_name):
-    """
-    枚举所有窗口，返回第一个匹配名称的 hwnd
-    """
-    target = None
-    def callback(hwnd, lParam):
-        title = get_window_title(hwnd)
-        if window_name.lower() in title.lower():
-            nonlocal target
-            target = hwnd
-            return False  # 停止枚举
-        return True
-
-    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, ctypes.POINTER(ctypes.c_int))
-    ctypes.windll.user32.EnumWindows(WNDENUMPROC(callback), None)
-    return target
+def find_hwnd_by_name(window_name, serial=''):
+    window = resolve_emulator_window(window_name, serial)
+    return window.hwnd if window else None
 
 
-def show_window_by_name(window_name):
-    """
-    显示指定名称的窗口
-    Args:
-        window_name (str): 窗口名称（支持部分匹配）
-    """
-    hwnd = find_hwnd_by_name(window_name)
-    if hwnd:
-        ctypes.windll.user32.ShowWindow(hwnd, 5)  # SW_SHOW
-        set_focus_window(hwnd)
-        logger.info(f'显示窗口: {window_name}')
-    else:
-        logger.info(f'没有找到窗口: {window_name}')
+def show_window_by_name(window_name, serial=''):
+    return change_emulator_window(window_name, serial, 'show')
 
 
 def get_focused_window():
@@ -355,11 +306,8 @@ class PlatformWindows(PlatformBase, EmulatorManager):
         target_window_name = self.config.script.device.handle
         if not target_window_name:
             return
-        hwnd = find_hwnd_by_name(target_window_name)
-        if not hwnd:
+        if not change_emulator_window(target_window_name, state.serial, 'hide'):
             return
-
-        hide_window(hwnd)
         self._log_emulator_watch_once(
             state,
             'hidden_window',
@@ -532,8 +480,7 @@ class PlatformWindows(PlatformBase, EmulatorManager):
         logger.info(f'Waiting {sleep_time} seconds before minimizing window')
         Timer(sleep_time).wait()
         target_window_name = self.config.script.device.handle
-        minimize_by_name(target_window_name)
-        logger.info(f'最小化窗口: {target_window_name}')
+        minimize_by_name(target_window_name, serial=state.serial)
 
     def _emulator_start(self, instance: EmulatorInstance):
         """
