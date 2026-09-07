@@ -4,16 +4,18 @@ Run: toolkit/python.exe -m unittest discover -s dev_tools -p test_raid_transitio
 """
 
 import ast
+from datetime import date, datetime, timedelta
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 PREPARE, BATTLE, RESULT, REWARD = 'prepare', 'battle', 'result', 'reward'
 
 
-class Stopped(Exception):
+class TransitionTimeout(Exception):
     pass
 
 
@@ -42,7 +44,7 @@ class World:
         namespace = dict(time=SimpleNamespace(monotonic=lambda: self.now), logger=Mock(),
                          page_battle_prepare=PREPARE, page_battle=BATTLE,
                          page_battle_result=RESULT, page_reward=REWARD,
-                         RequestHumanTakeover=Stopped, BattleAction=self.actions,
+                         BattleTransitionTimeout=TransitionTimeout, BattleAction=self.actions,
                          QUICK_EXIT_WAIT_TIMEOUT=30,
                          GameUi=SimpleNamespace(detect_page_in=self.detect))
         if kind == 'raid':
@@ -90,25 +92,25 @@ class RaidEntryTests(unittest.TestCase):
 
     def test_disappearing_person_marker_is_not_entry_success(self):
         world = World([frame('raid', 'I_RR_PERSON'), frame()])
-        with self.assertRaises(Stopped):
+        with self.assertRaises(TransitionTimeout):
             world.task.fire(1)
         self.assertEqual(world.clicks, ['target_1'])
 
     def test_lingering_challenge_is_not_clicked_or_reselected_after_submission(self):
         world = World([frame('raid', 'I_RR_PERSON', 'I_FIRE')])
-        with self.assertRaises(Stopped):
+        with self.assertRaises(TransitionTimeout):
             world.task.fire(1)
         self.assertEqual(world.clicks, ['I_FIRE'])
 
     def test_target_selection_has_a_finite_budget(self):
         world = World([frame('raid', 'I_RR_PERSON')])
-        with self.assertRaises(Stopped):
+        with self.assertRaises(TransitionTimeout):
             world.task.fire(1)
         self.assertEqual(world.clicks, ['target_1'] * 3)
 
     def test_unknown_page_with_false_challenge_match_is_not_clicked(self):
         world = World([frame(None, 'I_FIRE')])
-        with self.assertRaises(Stopped):
+        with self.assertRaises(TransitionTimeout):
             world.task.fire(1)
         self.assertEqual(world.clicks, [])
 
@@ -121,7 +123,7 @@ class RaidEntryTests(unittest.TestCase):
 
     def test_settlement_is_not_mistaken_for_new_battle(self):
         world = World([frame(RESULT)])
-        with self.assertRaises(Stopped):
+        with self.assertRaises(TransitionTimeout):
             world.task.fire(1)
         self.assertEqual(world.clicks, [])
 
@@ -135,13 +137,13 @@ class RaidRetryTests(unittest.TestCase):
 
     def test_missing_retry_marker_is_not_success(self):
         world = World([frame(RESULT, 'I_FIRE_AGAIN'), frame()])
-        with self.assertRaises(Stopped):
+        with self.assertRaises(TransitionTimeout):
             world.task.fire_again()
         self.assertEqual(world.clicks, ['I_FIRE_AGAIN'])
 
     def test_lingering_retry_is_submitted_only_once_without_prompt(self):
         world = World([frame(RESULT, 'I_FIRE_AGAIN')])
-        with self.assertRaises(Stopped):
+        with self.assertRaises(TransitionTimeout):
             world.task.fire_again()
         self.assertEqual(world.clicks, ['I_FIRE_AGAIN'])
 
@@ -162,20 +164,20 @@ class RaidRetryTests(unittest.TestCase):
     def test_persistent_prompt_is_not_confirmed_repeatedly(self):
         world = World([frame(RESULT, 'I_FIRE_AGAIN'),
                        frame(None, 'I_FRESH_ENSURE', 'I_SHOW_AGAIN', 'I_FIRE_AGAIN')])
-        with self.assertRaises(Stopped):
+        with self.assertRaises(TransitionTimeout):
             world.task.fire_again()
         self.assertEqual(world.clicks, ['I_FIRE_AGAIN', 'I_SHOW_AGAIN', 'I_FRESH_ENSURE'])
 
     def test_unrelated_confirmation_is_not_clicked_without_retry_request(self):
         world = World([frame(None, 'I_FRESH_ENSURE', 'I_SHOW_AGAIN')])
-        with self.assertRaises(Stopped):
+        with self.assertRaises(TransitionTimeout):
             world.task.fire_again()
         self.assertEqual(world.clicks, [])
 
     def test_retry_budget_stops_after_second_submission(self):
         world = World([frame(RESULT, 'I_FIRE_AGAIN'), frame(None, 'I_FRESH_ENSURE'),
                        frame(RESULT, 'I_FIRE_AGAIN')])
-        with self.assertRaises(Stopped):
+        with self.assertRaises(TransitionTimeout):
             world.task.fire_again()
         self.assertEqual(world.clicks, ['I_FIRE_AGAIN', 'I_FRESH_ENSURE', 'I_FIRE_AGAIN'])
 
@@ -210,16 +212,16 @@ class BattleExitTests(unittest.TestCase):
         self.assertTrue(world.task.exit_battle())
         self.assertEqual(world.clicks, ['I_EXIT', 'I_EXIT_ENSURE'])
 
-    def test_stalled_confirmation_stops_instead_of_restarting_click_loop(self):
+    def test_stalled_confirmation_ends_the_current_click_loop(self):
         world = self.world([frame(BATTLE, 'I_EXIT'), frame(BATTLE, 'I_EXIT'),
                             frame(None, 'I_EXIT_ENSURE')])
-        with self.assertRaises(Stopped):
+        with self.assertRaises(TransitionTimeout):
             world.task.exit_battle()
         self.assertEqual(world.clicks, ['I_EXIT', 'I_EXIT_ENSURE'])
 
     def test_exit_button_without_confirmation_is_not_repeated(self):
         world = self.world([frame(BATTLE, 'I_EXIT')])
-        with self.assertRaises(Stopped):
+        with self.assertRaises(TransitionTimeout):
             world.task.exit_battle()
         self.assertEqual(world.clicks, ['I_EXIT'])
 
@@ -242,12 +244,105 @@ class BattleExitTests(unittest.TestCase):
         self.assertEqual(world.index, -1)
         self.assertEqual(world.clicks, [])
 
-    def test_outer_quick_exit_timeout_requires_takeover(self):
+    def test_outer_quick_exit_timeout_is_recoverable(self):
         world = self.world([frame()])
         world.task.exit_battle = Mock(return_value=False)
         context = SimpleNamespace(quick_exit_timer=SimpleNamespace(reached=lambda: True))
-        with self.assertRaises(Stopped):
+        with self.assertRaises(TransitionTimeout):
             world.task._resolve_action(world.actions.QUICK_EXIT, context)
+
+
+class TimeoutSchedulerTests(unittest.TestCase):
+    def setUp(self):
+        namespace = dict(logger=Mock(), TaskEnd=type('TaskEnd', (Exception,), {}),
+                         BattleTransitionTimeout=TransitionTimeout,
+                         datetime=datetime, timedelta=timedelta, date=date,
+                         _log_switch_lock=nullcontext(), IS_WINDOWS=False,
+                         ScriptRuntimeDecision=SimpleNamespace(RESCHEDULE='reschedule', FAILED='failed'),
+                         del_cached_property=Mock(), inflection=SimpleNamespace(camelize=lambda name: name),
+                         convert_to_underscore=lambda _: 'realm_raid')
+        cls = methods_from_source('script.py', 'Script',
+                                  ['_handle_task_exception', 'loop'], namespace)
+        self.script = cls()
+        self.script.save_error_log = Mock()
+        self.script._set_task_runtime_outcome = Mock()
+        self.schedule = SimpleNamespace(next_run=datetime.now() + timedelta(hours=8))
+        self.script.config = SimpleNamespace(
+            model=SimpleNamespace(realm_raid=SimpleNamespace(scheduler=self.schedule)),
+            task_delay=Mock(), task_call=Mock(),
+        )
+
+    def test_transition_timeout_defers_and_continues_without_fatal_exit(self):
+        with patch('builtins.exit', side_effect=AssertionError('Must keep scheduler running')):
+            self.assertTrue(self.script._handle_task_exception(
+                TransitionTimeout('entry timed out'), 'RealmRaid'))
+        self.script.config.task_delay.assert_called_once_with(task='RealmRaid', success=False)
+        self.script.config.task_call.assert_called_once_with('Restart')
+        self.script.save_error_log.assert_called_once()
+        self.script._set_task_runtime_outcome.assert_called_once_with(
+            task='RealmRaid', status='skipped', wait_until=self.schedule.next_run)
+
+    def test_expired_failure_interval_is_clamped_to_future(self):
+        self.schedule.next_run = datetime.now() - timedelta(seconds=1)
+        before = datetime.now().replace(microsecond=0)
+        self.assertTrue(self.script._handle_task_exception(
+            TransitionTimeout('exit timed out'), 'RealmRaid'))
+        calls = self.script.config.task_delay.call_args_list
+        self.assertEqual(len(calls), 2)
+        target = calls[1].kwargs['target']
+        self.assertGreaterEqual(target, before + timedelta(minutes=1))
+        self.assertEqual(calls[1].kwargs, dict(task='RealmRaid', target=target, server=False))
+        self.script._set_task_runtime_outcome.assert_called_once_with(
+            task='RealmRaid', status='skipped', wait_until=target)
+
+    def test_actual_loop_runs_recovery_and_next_task_after_timeout(self):
+        class EndLoop(BaseException):
+            pass
+
+        pending = ['RealmRaid', 'SoulsTidy']
+        executed = []
+        self.script.config_name = 'offline'
+        self.script.config.script = SimpleNamespace(
+            device=SimpleNamespace(run_background_only=True),
+            error=SimpleNamespace(handle_error=False),
+        )
+        self.script.anti_ban_guard = Mock()
+        self.script.device = Mock()
+        self.script.runtime = SimpleNamespace(prepare_task_execution=Mock(return_value='ready'))
+        self.script.is_first_task = False
+        self.script.failure_record = {'RealmRaid': 2}
+        self.script.config.task_call = Mock(side_effect=lambda name: pending.insert(0, name))
+
+        def get_next_task():
+            if not pending:
+                raise EndLoop()
+            return pending.pop(0)
+
+        def run(command):
+            executed.append(command)
+            if command == 'RealmRaid':
+                return self.script._handle_task_exception(TransitionTimeout('timed out'), command)
+            return True
+
+        self.script.get_next_task = get_next_task
+        self.script.run = run
+        with patch('builtins.exit', side_effect=AssertionError('Must not terminate scheduler')):
+            with self.assertRaises(EndLoop):
+                self.script.loop()
+        self.assertEqual(executed, ['RealmRaid', 'Restart', 'SoulsTidy'])
+        self.assertEqual(self.script.failure_record['RealmRaid'], 0)
+
+    def test_click_timeout_reaches_scheduler_as_a_skip(self):
+        world = World([frame('raid', 'I_RR_PERSON', 'I_FIRE')])
+        try:
+            world.task.fire(1)
+        except TransitionTimeout as error:
+            self.assertTrue(self.script._handle_task_exception(error, 'RealmRaid'))
+        else:
+            self.fail('Unconfirmed battle must end the current task')
+        self.assertEqual(world.clicks, ['I_FIRE'])
+        self.script.config.task_delay.assert_called_once_with(task='RealmRaid', success=False)
+        self.script.config.task_call.assert_called_once_with('Restart')
 
 
 if __name__ == '__main__':

@@ -524,6 +524,23 @@ class Script:
             self._capture_task_runtime_outcome(command)
             return True
 
+        if isinstance(e, BattleTransitionTimeout):
+            logger.warning(f'{command}: {e}; skip current task and continue scheduling')
+            self.save_error_log()
+            self.config.task_delay(task=command, success=False)
+            task_config = getattr(self.config.model, convert_to_underscore(command))
+            next_run = task_config.scheduler.next_run
+            # A zero/expired failure interval must not immediately select this task again.
+            earliest_retry = datetime.now().replace(microsecond=0) + timedelta(minutes=1)
+            if next_run < earliest_retry:
+                self.config.task_delay(task=command, target=earliest_retry, server=False)
+                next_run = earliest_retry
+            # Clear a possibly stuck battle/popup before the next gameplay task.
+            self.config.task_call('Restart')
+            self._set_task_runtime_outcome(task=command, status='skipped', wait_until=next_run)
+            # A handled skip must not accumulate toward the scheduler's three-failure stop.
+            return True
+
         if isinstance(e, GameNotRunningError):
             logger.warning(e)
             self.exception_handler(e=e, command=command)

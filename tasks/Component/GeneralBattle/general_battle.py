@@ -16,7 +16,7 @@ from module.atom.image import RuleImage
 from module.atom.ocr import RuleOcr
 from module.base.timer import Timer
 from module.base.utils import color_similar, get_color
-from module.exception import GameStuckError, RequestHumanTakeover
+from module.exception import GameStuckError, BattleTransitionTimeout
 from module.logger import logger
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig, GreenMarkType, GreenMarkEnum
@@ -773,7 +773,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 context.quick_exit_timer = None
                 return None
             if context.quick_exit_timer.reached():
-                raise RequestHumanTakeover(
+                raise BattleTransitionTimeout(
                     f"Quick exit requested but exit button not found within {QUICK_EXIT_WAIT_TIMEOUT}s",
                 )
         return None
@@ -882,8 +882,8 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             if page in (page_battle_prepare, page_battle) and self.appear(self.I_EXIT):
                 self.click(self.I_EXIT)
                 exit_clicked = True
-        raise RequestHumanTakeover(
-            'Battle exit unconfirmed after 30s; stop clicking instead of restarting',
+        raise BattleTransitionTimeout(
+            'Battle exit unconfirmed after 30s; skip the current task',
         )
 
     def green_mark(self, enable: bool = False, mark_mode: GreenMarkType = GreenMarkType.GREEN_MAIN,

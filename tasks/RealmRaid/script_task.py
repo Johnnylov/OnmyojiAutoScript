@@ -18,7 +18,7 @@ from tasks.RealmRaid.page import page_shikigami_records
 
 
 from module.logger import logger
-from module.exception import TaskEnd, RequestHumanTakeover
+from module.exception import TaskEnd, BattleTransitionTimeout
 from module.atom.image_grid import ImageGrid
 from module.atom.image import RuleImage
 from module.atom.click import RuleClick
@@ -463,9 +463,9 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 self.click(click)
                 selected += 1
                 next_select = time.monotonic() + 2
-        raise RequestHumanTakeover(
+        raise BattleTransitionTimeout(
             f'Realm raid entry unconfirmed after 30s (target={order}, '
-            f'selections={selected}, submitted={submitted}); stop clicking',
+            f'selections={selected}, submitted={submitted}); skip the current task',
         )
 
     def fire_again(self) -> bool:
@@ -500,9 +500,9 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
             if self.appear(self.I_FIRE_AGAIN):
                 self.click(self.I_FIRE_AGAIN)
                 submitted += 1
-        raise RequestHumanTakeover(
+        raise BattleTransitionTimeout(
             f'Realm raid retry unconfirmed after 30s (submissions={submitted}, '
-            f'prompt_confirmed={confirmed}); stop clicking',
+            f'prompt_confirmed={confirmed}); skip the current task',
         )
 
     @cached_property

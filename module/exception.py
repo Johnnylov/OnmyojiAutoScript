@@ -31,6 +31,10 @@ class GameStuckError(Exception):
     pass
 
 
+class BattleTransitionTimeout(Exception):
+    """A battle transition timed out; defer this task and continue scheduling."""
+
+
 class GameBugError(Exception):
     # An error has occurred in Azur Lane game client. Alas is unable to handle.
     # A restart should fix it.
