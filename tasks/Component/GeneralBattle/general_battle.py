@@ -16,7 +16,7 @@ from module.atom.image import RuleImage
 from module.atom.ocr import RuleOcr
 from module.base.timer import Timer
 from module.base.utils import color_similar, get_color
-from module.exception import GameStuckError
+from module.exception import GameStuckError, RequestHumanTakeover
 from module.logger import logger
 from tasks.Component.GeneralBattle.assets import GeneralBattleAssets
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig, GreenMarkType, GreenMarkEnum
@@ -773,7 +773,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 context.quick_exit_timer = None
                 return None
             if context.quick_exit_timer.reached():
-                raise GameStuckError(
+                raise RequestHumanTakeover(
                     f"Quick exit requested but exit button not found within {QUICK_EXIT_WAIT_TIMEOUT}s",
                 )
         return None
@@ -853,30 +853,38 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             self.device.screenshot_interval_set()
 
     def exit_battle(self, skip_first: bool = False) -> bool:
-        """
-        在战斗的时候强制退出战斗。
-
-        Args:
-            skip_first: 是否跳过第一次截图，直接复用当前帧判断。
-
-        Returns:
-            bool: 是否识别到可退出的战斗页面并执行了退出流程。
-        """
-        if skip_first:
+        """Submit exit and confirmation once; stop immediately on a settlement page."""
+        if not skip_first:
             self.screenshot()
-        if not self.appear(self.I_EXIT):
+        if GameUi.detect_page_in(self, page_battle_result, page_reward, include_global=False):
+            return True
+        page = GameUi.detect_page_in(self, page_battle_prepare, page_battle, include_global=False)
+        if page not in (page_battle_prepare, page_battle) or not self.appear(self.I_EXIT):
             return False
-        while True:
+
+        deadline = time.monotonic() + 30
+        exit_clicked = False
+        confirm_clicked = False
+        while time.monotonic() < deadline:
             self.screenshot()
-            if self.appear_then_click(self.I_EXIT_ENSURE, interval=0.8):
+            # Check settlement separately so overlapping battle markers cannot win.
+            if GameUi.detect_page_in(self, page_battle_result, page_reward, include_global=False):
+                logger.info('Exit battle success')
+                return True
+            if confirm_clicked:
                 continue
-            if GameUi.get_current_page(self) in (page_battle_result, page_reward):
-                break
-            if self.appear_then_click(self.I_EXIT, interval=6):
+            if exit_clicked:
+                if self.appear(self.I_EXIT_ENSURE):
+                    self.click(self.I_EXIT_ENSURE)
+                    confirm_clicked = True
                 continue
-        self.ui_click_until_disappear(self.I_EXIT_ENSURE, interval=0.8)
-        logger.info('Exit battle success')
-        return True
+            page = GameUi.detect_page_in(self, page_battle_prepare, page_battle, include_global=False)
+            if page in (page_battle_prepare, page_battle) and self.appear(self.I_EXIT):
+                self.click(self.I_EXIT)
+                exit_clicked = True
+        raise RequestHumanTakeover(
+            'Battle exit unconfirmed after 30s; stop clicking instead of restarting',
+        )
 
     def green_mark(self, enable: bool = False, mark_mode: GreenMarkType = GreenMarkType.GREEN_MAIN,
                    green_mark_type: GreenMarkEnum = GreenMarkEnum.CHOOSE, green_mark_name: str = ''):

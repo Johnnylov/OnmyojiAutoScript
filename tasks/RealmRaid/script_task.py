@@ -10,7 +10,7 @@ from tasks.base_task import BaseTask
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.GeneralBattle.general_battle import BattleAction, BattleContext, ExitMatcher, GeneralBattle
 from tasks.GameUi.game_ui import GameUi
-from tasks.GameUi.page import page_realm_raid
+from tasks.GameUi.page import page_realm_raid, page_battle_prepare, page_battle
 from tasks.RealmRaid.assets import RealmRaidAssets
 from tasks.RealmRaid.config import RealmRaid, AttackNumber, WhenAttackFail
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
@@ -18,7 +18,7 @@ from tasks.RealmRaid.page import page_shikigami_records
 
 
 from module.logger import logger
-from module.exception import TaskEnd
+from module.exception import TaskEnd, RequestHumanTakeover
 from module.atom.image_grid import ImageGrid
 from module.atom.image import RuleImage
 from module.atom.click import RuleClick
@@ -435,44 +435,75 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 continue
         return False
 
+    def _raid_battle_started(self) -> bool:
+        # A missing raid marker also occurs during loading or an unrelated popup.
+        return GameUi.detect_page_in(
+            self, page_battle_prepare, page_battle, include_global=False,
+        ) is not None
+
     def fire(self, order: int) -> bool:
-        """
-        挑战
-        :param order:  第几个
-        :return: 是否点击进攻成功
-        """
+        """Select a target, submit once, and require a confirmed battle page."""
         click = self.partition[order - 1]
-        self.wait_until_appear(self.I_RR_PERSON)
-        self.device.click_record_clear()
-        while True:
+        deadline = time.monotonic() + 30
+        selected = 0
+        next_select = 0.0
+        submitted = False
+        while time.monotonic() < deadline:
             self.screenshot()
-            if not self.appear(self.I_RR_PERSON):
+            if self._raid_battle_started():
                 return True
-            if self.appear_then_click(self.I_FIRE, interval=1):
+            # After submission, never click the target or challenge again while loading.
+            if submitted or not self.appear(self.I_RR_PERSON):
                 continue
-            if self.click(click, interval=2):
+            if self.appear(self.I_FIRE):
+                self.click(self.I_FIRE)
+                submitted = True
                 continue
-        logger.info(f'Click fire {order} success')
-        return False
+            if selected < 3 and time.monotonic() >= next_select:
+                self.click(click)
+                selected += 1
+                next_select = time.monotonic() + 2
+        raise RequestHumanTakeover(
+            f'Realm raid entry unconfirmed after 30s (target={order}, '
+            f'selections={selected}, submitted={submitted}); stop clicking',
+        )
 
     def fire_again(self) -> bool:
-        """
-        失败界面再次挑战
-        :return: 是否再战成功
-        """
-        self.wait_until_appear(self.I_FIRE_AGAIN)
-        while True:
+        """Handle one retry prompt and require a confirmed battle before continuing."""
+        deadline = time.monotonic() + 30
+        submitted = 0
+        prompt_seen = False
+        checkbox_clicked = False
+        confirmed = False
+        next_submit = 0.0
+        while time.monotonic() < deadline:
             self.screenshot()
-            if not self.appear(self.I_FIRE_AGAIN):
-                logger.info(f'Click fire again success')
+            if self._raid_battle_started():
                 return True
-            if self.appear_then_click(self.I_SHOW_AGAIN, interval=2):
+            # These prompt controls are only valid after requesting another battle.
+            if submitted and not confirmed and self.appear(self.I_FRESH_ENSURE):
+                prompt_seen = True
+                if not checkbox_clicked and self.appear(self.I_SHOW_AGAIN):
+                    self.click(self.I_SHOW_AGAIN)
+                    checkbox_clicked = True
+                    continue
+                self.click(self.I_FRESH_ENSURE)
+                confirmed = True
+                next_submit = time.monotonic() + 2
                 continue
-            if self.appear_then_click(self.I_FRESH_ENSURE, interval=2):
+            # A prompt may consume the first request. Allow one more submission only
+            # after that prompt was confirmed and has disappeared on a fresh frame.
+            if submitted and not (prompt_seen and confirmed and submitted == 1):
                 continue
-            if self.appear_then_click(self.I_FIRE_AGAIN, interval=2):
+            if time.monotonic() < next_submit or self.appear(self.I_FRESH_ENSURE):
                 continue
-        return False
+            if self.appear(self.I_FIRE_AGAIN):
+                self.click(self.I_FIRE_AGAIN)
+                submitted += 1
+        raise RequestHumanTakeover(
+            f'Realm raid retry unconfirmed after 30s (submissions={submitted}, '
+            f'prompt_confirmed={confirmed}); stop clicking',
+        )
 
     @cached_property
     def false_roi(self) -> list:
