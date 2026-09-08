@@ -3,6 +3,8 @@
 # github https://github.com/runhey
 import time
 import re
+import random
+from copy import copy
 from cached_property import cached_property
 from tasks.GameUi.default_pages import page_exploration
 
@@ -39,6 +41,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         return self.I_BACK_RED
 
     def run(self):
+        self._reset_raid_progress()
         con = self.config.realm_raid
         # 直接进入个人突破页面
         self.goto_page(page_realm_raid)
@@ -88,7 +91,10 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
             if not self.check_ticket(con.raid_config.number_base):
                 break
             # ----------------------------------------开始进攻
-            medal, index = self.find_one(False)
+            medal, index = self._select_exit_four_target()
+            exit_four = index is not None
+            if not exit_four:
+                medal, index = self.find_one(False)
             if not medal and not index:
                 # 已经没有可以挑战的了，只能刷新
                 if con.raid_config.when_attack_fail == WhenAttackFail.CONTINUE:
@@ -102,36 +108,16 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                     logger.info('No one can attack, break')
                     success = False
                     break
-            # 判断是不是左上角第一个
             lock_before = con.general_battle_config.lock_team_enable
-            handled_first_target = False
-            if index == 1:
-                logger.info('Now is the first one')
-                if con.raid_config.exit_four:
-                    logger.info('Exit four enable')
-                    if not self.fire(index):
-                        # 没有成功进入战斗则重新检查票数和其他条件
-                        continue
-                    self.run_general_battle(config=self.build_quick_exit_config(con.general_battle_config))
-                    self.fire_again()
-                    self.run_general_battle(config=self.build_quick_exit_config(con.general_battle_config))
-                    self.fire_again()
-                    self.run_general_battle(config=self.build_quick_exit_config(con.general_battle_config))
-                    self.fire_again()
-                    self.run_general_battle(config=self.build_quick_exit_config(con.general_battle_config))
-                    self.fire_again()
-                    last_battle = self.run_general_battle(con.general_battle_config)
-                    handled_first_target = True
-            elif self.check_medal_is_frog(frog, medal, index):
-                # 如果挑战的这只是呱太的话，就要把锁定改为不锁定
-                con.general_battle_config.lock_team_enable = False
-            if not handled_first_target:
-                if not self.fire(index):
-                    # 没有成功进入战斗则重新检查票数和其他条件
-                    continue
-                last_battle = self.run_general_battle(con.general_battle_config)
-            if lock_before:
+            try:
+                if self.check_medal_is_frog(frog, medal, index):
+                    con.general_battle_config.lock_team_enable = False
+                last_battle = self._attack_target(
+                    index, con.general_battle_config, exit_four=exit_four)
+            finally:
                 con.general_battle_config.lock_team_enable = lock_before
+            if last_battle is None:
+                continue
             # 检查是否每三次领一个奖励
             if self.reward_detect_click(False):
                 logger.info('Rewards of three wins')
@@ -160,6 +146,94 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         self.goto_page(page_exploration)
         self.set_next_run(task='RealmRaid', success=success, finish=True)
         raise TaskEnd
+
+    def _reset_raid_progress(self) -> None:
+        # Progress belongs to one task run, not one refreshed board.
+        self.init_tickets = -1
+        self._raid_attack_count = 0
+        self._exit_four_checked = set()
+        self._clear_raid_board()
+
+    def _clear_raid_board(self) -> None:
+        self._raid_attempted = set()
+        self._raid_won_indices = set()
+
+    @cached_property
+    def exit_four_medals(self) -> ImageGrid:
+        # Retreat targets are independent of the normal medal priority/filter.
+        return ImageGrid([self.I_MEDAL_0, self.I_MEDAL_1, self.I_MEDAL_2,
+                          self.I_MEDAL_3, self.I_MEDAL_4, self.I_MEDAL_5])
+
+    def _find_unattacked_targets(self) -> list[tuple]:
+        matches = self.exit_four_medals.find_everyone(
+            self.device.image, frame_id=self.device.image_frame_id) or []
+        by_index = {}
+        scores = {}
+        for medal, score, (x, y, w, h) in matches:
+            center_x, center_y = x + w / 2, y + h / 2
+            for index, cell in enumerate(self.partition, 1):
+                left, top, width, height = cell.roi_front
+                if left <= center_x < left + width and top <= center_y < top + height:
+                    # Multiple medal templates can match one cell; give each
+                    # opponent exactly one place in the random-choice pool.
+                    if index not in scores or score > scores[index]:
+                        scores[index] = score
+                        by_index[index] = (medal, index)
+                    break
+
+        failed = set()
+        marker = copy(self.false_image)
+        for index in by_index:
+            marker.roi_back = self.false_roi[index - 1]
+            if self.appear(marker):
+                failed.add(index)
+
+        # A previously defeated cell becoming challengeable again means the
+        # board has refreshed. It may already be partly beaten by this node.
+        if (set(by_index) - failed) & self._raid_won_indices:
+            self._clear_raid_board()
+        return [by_index[index] for index in sorted(by_index)
+                if index not in failed and index not in self._raid_attempted]
+
+    def _select_exit_four_target(self) -> tuple:
+        count = self._raid_attack_count
+        if (not self.config.realm_raid.raid_config.exit_four
+                or count not in (0, 9, 18, 27)
+                or count in self._exit_four_checked):
+            return None, None
+        # Consume the decision even when skipped, so refreshes/retries cannot
+        # repeatedly draw at the same normal-attack count.
+        self._exit_four_checked.add(count)
+        if random.random() >= 0.5:
+            logger.info(f'Exit four skipped at normal attack count {count}')
+            return None, None
+        candidates = self._find_unattacked_targets()
+        if not candidates:
+            logger.info(f'Exit four skipped at count {count}: no unattacked target')
+            return None, None
+        medal, index = random.choice(candidates)
+        logger.info(f'Exit four selected at normal attack count {count}, target {index}')
+        return medal, index
+
+    def _attack_target(self, index: int, config: GeneralBattleConfig,
+                       exit_four: bool = False) -> bool | None:
+        if not self.fire(index):
+            return None
+        self._raid_attempted.add(index)
+        if exit_four:
+            for attempt in range(4):
+                logger.info(f'Exit four: target {index}, retreat {attempt + 1}/4')
+                self.run_general_battle(config=self.build_quick_exit_config(config))
+                if not self.fire_again():
+                    raise BattleTransitionTimeout('Realm raid retry did not enter battle')
+        result = self.run_general_battle(config)
+        # Only a completed normal battle advances milestones; the four
+        # deliberate retreats do not. Both normal wins and losses count.
+        self._raid_attack_count += 1
+        if result:
+            self._raid_won_indices.add(index)
+        logger.info(f'Realm raid normal attacks completed: {self._raid_attack_count}')
+        return result
 
     def is_ticket(self) -> bool:
         """
@@ -329,7 +403,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         """
         if screenshot:
             self.screenshot()
-        image = self.device.image
+        image = self.device.image.copy()
         # https://github.com/runhey/OnmyojiAutoScript/issues/71
         # 如果开始失败后继挑战剩下的
         if self.config.realm_raid.raid_config.when_attack_fail == WhenAttackFail.CONTINUE:
@@ -430,6 +504,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         while 1:
             self.screenshot()
             if not self.appear(self.I_FRESH_ENSURE):
+                self._clear_raid_board()
                 return True
             if self.appear_then_click(self.I_FRESH_ENSURE, interval=1):
                 continue

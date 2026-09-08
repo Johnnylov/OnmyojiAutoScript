@@ -570,13 +570,13 @@ mode_3策略是刷到五个契灵后开始结契，选择高级、中级盘来�
 <context>
     <name>Args</name>
 	<message><source>Number Attack</source><translation>挑战次数</translation></message>	
-	<message><source>Exit Four</source><translation>当进攻到左上角第一个的时候先退四次再进攻</translation></message>	
+	<message><source>Exit Four</source><translation>随机退四</translation></message>
 	<message><source>Order Attack</source><translation>挑战顺序</translation></message>
 	<message><source>WhenAttackFail</source><translation>挑战失败时</translation></message>
 	<message><source>Three Refresh</source><translation>每三次就刷新</translation></message>
 	<message><source>Number Base</source><translation>突破卷数量大于等于 X 时才会挑战</translation></message>
 	<message><source>number_attack_help</source><translation>默认30，可选范围[1~30]，没有挑战卷自动退出任务（标记为成功）</translation></message>
-	<message><source>exit_four_help</source><translation>为了支持打九退四，保证稳定57级</translation></message>	
+	<message><source>exit_four_help</source><translation>本次任务正常挑战完成 0、9、18、27 次时，各以 50% 概率触发一次；随机选择九宫格中未攻打的对手，退出四次后正常挑战。正常挑战胜负都计数，主动退四不计数；刷新不重置计数，同一节点不重复抽签，无未攻打目标则跳过。</translation></message>
 	<message><source>order_attack_help</source><translation>使用过滤器，保持默认即可</translation></message>
 	<message><source>when_attack_fail_help</source><translation>Exit：直接退出任务，标记为失败
 Continue：挑战其他的直至没有可挑战的才刷新
