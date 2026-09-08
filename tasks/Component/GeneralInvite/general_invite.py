@@ -10,6 +10,7 @@ from datetime import timedelta, time
 from module.atom.image import RuleImage
 
 from module.base.timer import Timer
+from module.base.random_click import monte_carlo_click_point
 from tasks.GameUi.assets import GameUiAssets
 from tasks.base_task import BaseTask
 from tasks.Component.GeneralInvite.assets import GeneralInviteAssets
@@ -369,17 +370,7 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
     @staticmethod
     def _random_point_in_area(area: tuple[int, int, int, int]) -> tuple[int, int]:
         x, y, w, h = area
-        w = max(1, int(w))
-        h = max(1, int(h))
-        if w == 1:
-            click_x = x
-        else:
-            click_x = int(np.random.randint(x, x + w))
-        if h == 1:
-            click_y = y
-        else:
-            click_y = int(np.random.randint(y, y + h))
-        return click_x, click_y
+        return monte_carlo_click_point((x, y, max(1, int(w)), max(1, int(h))))
 
     def _wait_selected_appear(self, pre_cnt: int, timeout: float = 2) -> bool:
         """

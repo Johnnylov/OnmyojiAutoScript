@@ -4,7 +4,7 @@
 import numpy as np
 
 from module.base.decorator import cached_property
-from module.base.utils.utils import random_normal_distribution_int
+from module.base.random_click import monte_carlo_click_point
 from module.logger import logger
 
 
@@ -28,20 +28,14 @@ class RuleClick:
         获取坐标, 从roi_front随机获取坐标
         :return:
         """
-        x, y, w, h = self.roi_front
-        x = random_normal_distribution_int(x, x + w)
-        y = random_normal_distribution_int(y, y + h)
-        return x, y
+        return monte_carlo_click_point(self.roi_front)
 
     def coord_more(self) -> tuple:
         """
         从roi_back随机获取坐标
         :return:
         """
-        x, y, w, h = self.roi_back
-        x = random_normal_distribution_int(x, x + w)
-        y = random_normal_distribution_int(y, y + h)
-        return x, y
+        return monte_carlo_click_point(self.roi_back)
 
     @property
     def center(self) -> tuple:
