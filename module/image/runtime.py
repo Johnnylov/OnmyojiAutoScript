@@ -687,7 +687,7 @@ class ImageRuntime:
         source = self._crop(image, roi_back)
         if self._template_image_invalid(template):
             logger.error(f"Template image is invalid: {None if template is None else template.shape}")
-            return True, 1.0, [int(v) for v in roi_back]
+            return False, -1.0, None
         if source.shape[0] < template.shape[0] or source.shape[1] < template.shape[1]:
             return False, -1.0, None
         result = cv2.matchTemplate(source, template, cv2.TM_CCOEFF_NORMED)
@@ -722,7 +722,7 @@ class ImageRuntime:
         source = self._crop(image, roi_back)
         if self._template_image_invalid(template):
             logger.error(f"Template image is invalid: {None if template is None else template.shape}")
-            return True, 1.0, [int(v) for v in roi_back]
+            return False, -1.0, None
 
         min_scale, max_scale, step = self._get_multi_scale_range(scale_range, scale_step)
         best_val = -1.0

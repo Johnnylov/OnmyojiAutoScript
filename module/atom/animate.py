@@ -57,7 +57,7 @@ class RuleAnimate(RuleImage):
         @return:
         """
         if self._last_image is None:
-            self._last_image = self.corp(image, self.roi_back)
+            self._last_image = self.corp(image, self.roi_front)
             return False
 
         result = get_image_client().match_dynamic_template(
@@ -69,7 +69,7 @@ class RuleAnimate(RuleImage):
             name=self.name,
         )
         matched = self._apply_match_result(result)
-        self._last_image = self.corp(image, self.roi_front if matched else self.roi_back)
+        self._last_image = self.corp(image, self.roi_front)
 
         if matched:
             if refresh_after_stable:

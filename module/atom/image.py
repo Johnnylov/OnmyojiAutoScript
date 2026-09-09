@@ -190,7 +190,9 @@ class RuleImage:
         mat = self.image
 
         if self._template_image_invalid(mat):
-            return True  # 如果模板图像无效，直接返回 True
+            return False
+        if mat.shape[0] > source.shape[0] or mat.shape[1] > source.shape[1]:
+            return False
 
         res = cv2.matchTemplate(source, mat, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, max_loc = cv2.minMaxLoc(res)
@@ -225,7 +227,7 @@ class RuleImage:
         mat = self.image
 
         if self._template_image_invalid(mat):
-            return True  # 如果模板图像无效，直接返回 True
+            return False
 
         min_scale, max_scale, step = self._get_multi_scale_range()
         best_val = -1.0
