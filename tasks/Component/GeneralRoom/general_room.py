@@ -42,11 +42,11 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
                 return True
         return False
 
-    def ensure_private(self, timeout: float = 15) -> bool:
+    def ensure_private(self, timeout: float = 15, room_mark: RuleImage = None) -> bool:
         """
         确认私人房间, 不公开仅邀请
-        :param timeout: 超时秒数, 超时未识别到开关则返回False,
-                        避免不在创建队伍界面时陷入死循环(如已进入房间后误调用)
+        :param timeout: 超时秒数，未识别到开关或已建房标记时返回 False，避免空转。
+        :param room_mark: 可选的已建房界面标记，识别到时结束创建阶段的等待。
         :return:
         """
         logger.info('Ensure private')
@@ -64,6 +64,10 @@ class GeneralRoom(BaseTask, GeneralRoomAssets):
                 continue
             if self.appear_then_click(self.I_ENSURE_PRIVATE_FALSE_2, interval=1):
                 continue
+            # 弹窗上的开关匹配不到但房间已经建成: 私人设置此前已生效(或沿用上次设置), 直接放行
+            if room_mark is not None and self.appear(room_mark):
+                logger.info('Room already created, private ensured')
+                return True
         return False
 
     def ensure_public(self, timeout: float = 15) -> bool:

@@ -156,8 +156,8 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, 
                     if self.appear_then_click(self.I_UI_CONFIRM, interval=1):
                         continue
                     if self.appear(self.I_CREATE_TEAM, interval=1):
-                        self.ensure_private()
-                        # 确保私人房间期间可能已进入房间(创建成功), 直接返回避免误点其他按钮
+                        self.ensure_private(room_mark=self.I_GI_IN_ROOM)
+                        # 建房过渡中已进入房间时直接返回，避免再次点击创建按钮。
                         if self.appear(self.I_GI_IN_ROOM):
                             return True
                         self.appear_then_click(self.I_CREATE_TEAM, interval=2)
