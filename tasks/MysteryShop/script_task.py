@@ -22,6 +22,7 @@ from tasks.MysteryShop.config import MysteryShop, ShopConfig
 from tasks.MysteryShop.assets import MysteryShopAssets
 from tasks.MysteryShop.schedule import MysteryShopSchedule
 from tasks.MysteryShop.share_state import MysteryShopShareState
+from tasks.MysteryShop.purchase import buy_shop_one
 from tasks.Component.GeneralInvite.general_invite import GeneralInvite
 from tasks.Component.GeneralInvite.config_invite import InviteConfig
 
@@ -59,6 +60,9 @@ class ScriptTask(FriendshipPoints, MysteryShopAssets, GeneralInvite):
 
 
         self.next_time(True)
+
+    def buy_one(self, start_click, check_image):
+        return buy_shop_one(self, start_click, check_image)
 
     def next_one(self):
         """
