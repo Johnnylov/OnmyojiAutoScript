@@ -19,6 +19,7 @@ from tasks.DailyTrifles.assets import DailyTriflesAssets
 from tasks.Duel.assets import DuelAssets
 from tasks.GlobalGame.assets import GlobalGameAssets
 from tasks.GameUi.assets import GameUiAssets
+from tasks.GameUi.mall import is_mall_page
 from tasks.GameUi.matcher import any_of, all_of
 from tasks.GameUi.page_definition import Page
 from tasks.KekkaiUtilize.assets import KekkaiUtilizeAssets
@@ -102,7 +103,7 @@ page_courtyard_affairs.connect(page_main, GlobalGameAssets.I_UI_BACK_YELLOW, key
 page_courtyard_affairs.add_leave_failure_hooks(GlobalGameAssets.I_UI_CANCEL_SAMLL, GlobalGameAssets.I_UI_BACK_RED,
                                                ActivityShikigamiAssets.I_SKIP_BUTTON, GlobalGameAssets.I_UI_BACK_YELLOW)
 
-page_mall = Page(GameUiAssets.I_CHECK_MALL, category="global")
+page_mall = Page(is_mall_page, category="global")
 page_mall.add_enter_failure_hooks(conditional_action(condition=GameUiAssets.I_CHECK_MAIN,
                                                      action=RestartAssets.C_LOGIN_SCROLL_CLOSE_AREA))
 page_mall.add_enter_success_hooks(GameUiAssets.I_AD_CLOSE_RED, GlobalGameAssets.I_UI_BACK_RED, GlobalGameAssets.I_UI_CANCEL_SAMLL)
