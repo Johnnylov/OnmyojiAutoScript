@@ -2,6 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 import time
+from copy import copy
 
 import random
 import re
@@ -335,11 +336,20 @@ class ScriptTask(KU, KekkaiActivationAssets):
         收卡的经验
         :return:
         """
-        self.appear_then_click(self.I_A_HARVEST_EXP)  # 如果到最后没有领的话有下面的一些图片
-        self.appear_then_click(self.I_A_HARVEST_FISH4)  # 斗鱼4/5区别不大 斗鱼的如果一直没有领的话
-        self.appear_then_click(self.I_A_HARVEST_KAIKO_4)  # 太鼓4
-        self.appear_then_click(self.I_A_HARVEST_KAIKO_3)  # 太鼓3
-        self.appear_then_click(self.I_A_HARVEST_KAIKO_6)  # 太鼓6
-        self.appear_then_click(self.I_A_HARVEST_FISH_6)  # 斗鱼6
-        self.appear_then_click(self.I_A_HARVEST_MOON_3)  # 太阴3
-        self.appear_then_click(self.I_A_HARVEST_FISH_3)  # 斗鱼三
+        cards = [self.I_A_HARVEST_EXP, self.I_A_HARVEST_FISH4,
+                 self.I_A_HARVEST_KAIKO_4, self.I_A_HARVEST_KAIKO_3,
+                 self.I_A_HARVEST_KAIKO_6, self.I_A_HARVEST_FISH_6,
+                 self.I_A_HARVEST_MOON_3, self.I_A_HARVEST_FISH_3]
+        rules = []
+        for card in cards:
+            rule = copy(card)
+            rule.roi_front = list(card.roi_front)
+            rule.roi_back = list(card.roi_back)
+            rule.method = RuleImage.METHOD_MULTI_SCALE_TEMPLATE_MATCH
+            rules.append(rule)
+        for _ in range(5):
+            self.screenshot()
+            for rule in rules:
+                if self.appear_then_click(rule, threshold=0.7):
+                    return True
+        return False

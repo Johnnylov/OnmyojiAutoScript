@@ -36,14 +36,36 @@ class Guild(Buy, GameUi, RichManAssets):
         mystery_ret, scrap_ret, skin_ret, gift_ret = False, False, False, False
         while swipe_cnt <= max_swipe:
             self.screenshot()
+            bought_this_round = False
             if con.honor_gift and self.appear(self.I_GUILD_HONOR_GIFT, interval=1.5) and not gift_ret:  # 功勋礼包
                 gift_ret = self._guild_honor_gift()
+                bought_this_round = gift_ret
+            if bought_this_round:
+                time.sleep(1)
+                continue
             if con.mystery_amulet and self.appear(self.I_GUILD_BLUE, interval=1.5) and not mystery_ret:  # 蓝票
                 mystery_ret = self._guild_mystery_amulet()
+                bought_this_round = mystery_ret
+            if bought_this_round:
+                time.sleep(1)
+                continue
             if con.black_daruma_scrap and self.appear(self.I_GUILD_SCRAP, interval=1.5) and not scrap_ret:  # 黑碎
                 scrap_ret = self._guild_black_daruma_scrap()
+                bought_this_round = scrap_ret
+            if bought_this_round:
+                time.sleep(1)
+                continue
             if con.skin_ticket and self.appear(self.I_GUILD_SKIN, interval=1.5) and not skin_ret:  # 皮肤券
                 skin_ret = self._guild_skin_ticket()
+                bought_this_round = skin_ret
+            if bought_this_round:
+                time.sleep(1)
+                continue
+            if ((not con.honor_gift or gift_ret)
+                    and (not con.mystery_amulet or mystery_ret)
+                    and (not con.black_daruma_scrap or scrap_ret)
+                    and (not con.skin_ticket or skin_ret)):
+                break
             self.swipe(self.S_GUILD_STORE, interval=1.5)
             time.sleep(2)
             logger.attr(max_swipe - swipe_cnt, 'remain swipe times')
@@ -140,4 +162,3 @@ if __name__ == '__main__':
 
     # t._guild_skin_ticket(5)
     t._guild_honor_gift()
-

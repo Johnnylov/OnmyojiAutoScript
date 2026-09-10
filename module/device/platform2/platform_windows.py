@@ -517,7 +517,10 @@ class PlatformWindows(PlatformBase, EmulatorManager):
         cmd = handler.build_stop_command(instance)
         if cmd is None:
             raise EmulatorUnknown(f'Handler returned no stop command for: {instance}')
-        self.execute(cmd)
+        process = self.execute(cmd)
+        timeout = handler.stop_command_timeout(instance)
+        if timeout is not None:
+            process.wait(timeout=timeout)
         return True
 
     def _emulator_function_wrapper(self, func: callable, instance: EmulatorInstance = None):

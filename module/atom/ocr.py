@@ -57,11 +57,11 @@ class RuleOcr(Digit, DigitCounter, Duration, Single, Full, Quantity):
             case _:
                 return result
 
-    def ocr(self, image, keyword=None):
+    def ocr(self, image, keyword=None, exact: bool = False):
 
         match self.mode:
             case OcrMode.FULL:
-                return Full.ocr_full(self, image, keyword)
+                return Full.ocr_full(self, image, keyword, exact=exact)
             case OcrMode.SINGLE:
                 return Single.ocr_single(self, image)
             case OcrMode.DIGIT:

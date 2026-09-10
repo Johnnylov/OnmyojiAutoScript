@@ -85,6 +85,10 @@ class EmulatorHandler(ABC):
         """构建停止命令字符串，返回 None 表示使用 kill 方式停止。"""
         return None
 
+    def stop_command_timeout(self, instance) -> t.Optional[float]:
+        """需要等待关闭命令完成时返回超时秒数，否则保持异步关闭。"""
+        return None
+
     def stop_by_kill(self, instance) -> t.Optional[str]:
         """返回需要 kill 的进程正则，返回 None 表示使用命令方式停止。"""
         return None

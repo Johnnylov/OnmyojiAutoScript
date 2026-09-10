@@ -99,6 +99,13 @@ class MuMu12Handler(EmulatorHandler):
         # MuMu12 通过 MuMuManager 启动，命令本身不需要窗口
         return False
 
+    @staticmethod
+    def _uses_android15(instance) -> bool:
+        return re.fullmatch(r'MuMuPlayer(?:Global)?-15\.0-\d+', instance.name) is not None
+
+    def stop_command_timeout(self, instance) -> t.Optional[float]:
+        return 30 if self._uses_android15(instance) else None
+
     def build_start_command(self, instance) -> t.Optional[str]:
         mumu_id = self.get_instance_id(instance)
         if mumu_id is None:
@@ -108,7 +115,8 @@ class MuMu12Handler(EmulatorHandler):
         if console is None:
             return None
         # MuMuManager.exe control -v 0 launch
-        return f'"{console}" control -v {mumu_id} launch'
+        version = ' --version 15' if self._uses_android15(instance) else ''
+        return f'"{console}" control -v {mumu_id}{version} launch'
 
     def build_stop_command(self, instance) -> t.Optional[str]:
         mumu_id = self.get_instance_id(instance)
@@ -119,4 +127,5 @@ class MuMu12Handler(EmulatorHandler):
         if console is None:
             return None
         # MuMuManager.exe control -v 1 shutdown
-        return f'"{console}" control -v {mumu_id} shutdown'
+        version = ' --version 15' if self._uses_android15(instance) else ''
+        return f'"{console}" control -v {mumu_id}{version} shutdown'
