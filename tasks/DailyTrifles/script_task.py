@@ -16,13 +16,12 @@ from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_summon, page_guild, page_mall, page_friends, page_courtyard_affairs
 from tasks.DailyTrifles.config import DailyTriflesConfig
 from tasks.DailyTrifles.assets import DailyTriflesAssets
-from tasks.Component.Summon.summon import Summon
+from tasks.Component.Summon.summon import FreeSummonResult, Summon
 
 from module.logger import logger
 from module.exception import TaskEnd
 from module.base.timer import Timer
 from tasks.DailyTrifles.config import SummonType
-import re
 from typing import Any, Optional, List, Callable
 
 
@@ -52,17 +51,26 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
     def run_one_summon(self):
         logger.hr('daily summon', 2)
         if self.config.daily_trifles.today_is_done('summon'):
-            logger.info('Today is done, skip')
-            return
+            logger.info('Summon recorded done today; recheck free quota for event attempts')
         self.goto_page(page_summon)
         config = self.config.daily_trifles.trifles_config
         if config.summon_type == SummonType.default:
-            self.summon_one(draw_mystery_pattern=config.draw_mystery_pattern)
-            self.check_time()
+            result = self.summon_one(draw_mystery_pattern=config.draw_mystery_pattern)
+            if result.completed:
+                self.check_time()
+            main_marker = self.I_BLUE_TICKET
         elif config.summon_type == SummonType.recall:
-            self.summon_recall()
-        self.back_summon_main()
-        self.config.daily_trifles.done_record.summon_dt = datetime.now()
+            result = self.summon_recall()
+            main_marker = self.I_RECALL_TICKET
+        else:
+            logger.warning(f'Unsupported daily summon type: {config.summon_type}')
+            return
+        returned = self.back_summon_main(main_marker=main_marker)
+        if result.exhausted and returned:
+            self.config.daily_trifles.done_record.summon_dt = datetime.now()
+            self.config.save()
+        else:
+            logger.warning('Daily free summons not verified exhausted; leave completion unchanged')
 
     def check_time(self):
         config = self.config.daily_trifles.trifles_config
@@ -80,10 +88,9 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
             config.draw_mystery_pattern = False
         self.config.save()
 
-    def summon_recall(self):
+    def summon_recall(self) -> FreeSummonResult:
         """
-        确保在召唤界面,每日召唤一次
-        召唤结束后回到 召唤主界面
+        进入今忆召唤，使用经过确认的剩余免费次数。
         :return:
         """
         list = [self.O_SELECT_SM2, self.O_SELECT_SM3, self.O_SELECT_SM4]
@@ -108,55 +115,15 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
                 break
             if count >= 3:
                 self.config.notifier.push(title='今忆召唤抽卡失败', content='每日任务,今忆召唤抽卡失败!!!')
-                return
+                return FreeSummonResult()
 
-        logger.info('Summon one RECALL')
-        self.wait_until_appear(self.I_RECALL_TICKET)
-        while True:
-            ticket_info = self.O_RECALL_TICKET_AREA.ocr(self.device.image)
-            # 处理 None 和空字符串
-            if ticket_info is None or ticket_info == '':
-                ticket_info = 0
-            else:
-                # 使用正则表达式提取字符串中的数字
-                match = re.search(r'\d+', ticket_info)
-                if match:
-                    ticket_info = int(match.group())
-                else:
-                    logger.warning(f'Invalid ticket_info value: {ticket_info}, expected a numeric string')
-                    ticket_info = 0  # 将无效值设置为默认值 0
-            if ticket_info <= 0:
-                logger.warning('There is no any one RECALL ticket')
-                return
-            # 某些情况下滑动异常
-            self.S_RANDOM_SWIPE_1.name = 'S_RANDOM_SWIPE'
-            self.S_RANDOM_SWIPE_2.name = 'S_RANDOM_SWIPE'
-            self.S_RANDOM_SWIPE_3.name = 'S_RANDOM_SWIPE'
-            self.S_RANDOM_SWIPE_4.name = 'S_RANDOM_SWIPE'
-            while 1:
-                self.screenshot()
-                if self.appear(self.I_RECALL_ONE_TICKET):
-                    break
-                if self.appear_then_click(self.I_RECALL_TICKET, interval=1):
-                    continue
-
-            # 画一张票
-            sleep(1)
-            while 1:
-                self.screenshot()
-                if self.appear(self.I_RECALL_SM_CONFIRM, interval=0.6):
-                    self.ui_click_until_disappear(self.I_RECALL_SM_CONFIRM)
-                    break
-                if self.appear(self.I_SM_CONFIRM_2, interval=0.6):
-                    self.ui_click_until_disappear(self.I_SM_CONFIRM_2)
-                    break
-                if self.appear(self.I_RECALL_ONE_TICKET, interval=1):
-                    # 某些时候会点击到 “语言召唤”
-                    if self.appear_then_click(self.I_UI_CANCEL, interval=0.8):
-                        continue
-                    self.summon()
-                    continue
-            logger.info('Summon one success')
+        logger.info('Free summon RECALL')
+        for swipe in (self.S_RANDOM_SWIPE_1, self.S_RANDOM_SWIPE_2,
+                      self.S_RANDOM_SWIPE_3, self.S_RANDOM_SWIPE_4):
+            swipe.name = 'S_RANDOM_SWIPE'
+        return self._summon_free_until_empty(
+            self.O_RECALL_TICKET_AREA, self.I_RECALL_TICKET, self.I_RECALL_ONE_TICKET,
+            (self.I_RECALL_SM_CONFIRM, self.I_SM_CONFIRM_2))
 
     def run_guild_donate(self):
         logger.hr('guild donate', 2)
@@ -555,4 +522,3 @@ if __name__ == '__main__':
     t = ScriptTask(c, d)
 
     t.run_guild_donate()
-

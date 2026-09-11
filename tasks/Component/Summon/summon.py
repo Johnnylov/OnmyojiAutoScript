@@ -4,11 +4,20 @@
 import time
 
 import random
+import unicodedata
+from dataclasses import dataclass
 
 from tasks.Component.Summon.assets import SummonAssets
 from tasks.base_task import BaseTask
 from module.logger import logger
 import re
+
+
+@dataclass(frozen=True)
+class FreeSummonResult:
+    completed: int = 0
+    exhausted: bool = False
+
 
 class Summon(BaseTask, SummonAssets):
 
@@ -76,75 +85,138 @@ class Summon(BaseTask, SummonAssets):
 
 
 
-    def summon_one(self,draw_mystery_pattern=False):
-        """
-        确保在召唤界面,每日召唤一次
-        召唤结束后回到 召唤主界面
-        :return:
-        """
-        logger.info('Summon one')
-        self.wait_until_appear(self.I_BLUE_TICKET)
-        while True:
-            ticket_info = self.O_ONE_TICKET.ocr(self.device.image)
-            # 处理 None 和空字符串
-            if ticket_info is None or ticket_info == '':
-                ticket_info = 0
-            else:
-                # 使用正则表达式提取字符串中的数字
-                match = re.search(r'\d+', ticket_info)
-                if match:
-                    ticket_info = int(match.group())
-                else:
-                    logger.warning(f'Invalid ticket_info value: {ticket_info}, expected a numeric string')
-                    ticket_info = 0  # 将无效值设置为默认值 0
-            if ticket_info <= 0:
-                logger.warning('There is no any one blue ticket')
-                return
-            # 某些情况下滑动异常
-            self.S_RANDOM_SWIPE_1.name = 'S_RANDOM_SWIPE'
-            self.S_RANDOM_SWIPE_2.name = 'S_RANDOM_SWIPE'
-            self.S_RANDOM_SWIPE_3.name = 'S_RANDOM_SWIPE'
-            self.S_RANDOM_SWIPE_4.name = 'S_RANDOM_SWIPE'
-            while 1:
-                self.screenshot()
-                if self.appear(self.I_ONE_TICKET):
-                    break
-                if self.appear_then_click(self.I_BLUE_TICKET, interval=1):
-                    continue
+    @staticmethod
+    def _parse_free_summon_count(text) -> int | None:
+        """Read remaining/total, never infer free attempts from owned tickets.
 
-            # 画一张票
-            time.sleep(0.5)
-            while 1:
-                self.screenshot()
-                if self.appear(self.I_SM_CONFIRM, interval=0.6):
-                    self.ui_click_until_disappear(self.I_SM_CONFIRM)
-                    break
-                if self.appear(self.I_SM_CONFIRM_2, interval=0.6):
-                    self.ui_click_until_disappear(self.I_SM_CONFIRM_2)
-                    break
-                if self.appear(self.I_ONE_TICKET, interval=1):
-                    # 某些时候会点击到 “语言召唤”
-                    if self.appear_then_click(self.I_UI_CANCEL, interval=0.8):
-                        continue
-                    if draw_mystery_pattern:
-                        self.summon_mystery_pattern()
-                    else:
-                        self.summon()
-                    continue
-            logger.info('Summon one success')
-
-
-    def back_summon_main(self):
+        The existing narrow counter ROI may return only ``1/2`` instead of
+        the full caption ``剩余免费次数 1/2``. The numerator is remaining.
+        A bare positive number is ambiguous and must not authorize a draw.
         """
-        返回召唤主界面
-        :return:
-        """
-        while 1:
+        if not isinstance(text, str):
+            return None
+        text = re.sub(r'\s+', '', unicodedata.normalize('NFKC', text))
+        prefix = r'(?:(?:今日|每日)?(?:剩余)?免费(?:召唤)?(?:次数|机会)?(?:剩余)?[:：]?)'
+        fraction = re.fullmatch(prefix + r'?(\d{1,2})/(\d{1,2})(?:次)?', text)
+        if fraction:
+            remaining, total = map(int, fraction.groups())
+            if 0 <= remaining <= total <= 10 and total > 0:
+                return remaining
+            return None
+        number = re.fullmatch(prefix + r'(\d{1,2})(?:次)?', text)
+        if number and 0 <= int(number.group(1)) <= 10:
+            return int(number.group(1))
+        if re.fullmatch(prefix + r'(?:已用完|已耗尽|用尽)', text):
+            return 0
+        return None
+
+    def _read_free_summon_count(self, counter, main_marker, previous=None) -> int | None:
+        """Require two matching fresh menu frames; tolerate quota update lag."""
+        last_count = None
+        for _ in range(8):
             self.screenshot()
-            if self.appear(self.I_BLUE_TICKET):
-                break
-            if self.appear_then_click(self.I_UI_BACK_BLUE):
-                continue
-            if self.appear_then_click(self.I_UI_BACK_YELLOW):
-                continue
+            count = None
+            if self.appear(main_marker):
+                raw = counter.ocr(self.device.image)
+                logger.info(f'Free summon quota: {raw!r}')
+                count = self._parse_free_summon_count(raw)
+            # After a draw, an unchanged caption is not permission for another.
+            if count is not None and (previous is None or count < previous):
+                if count == last_count:
+                    return count
+                last_count = count
+            else:
+                last_count = None
+            time.sleep(0.25)
+        logger.warning('Free summon quota is unknown or has not decreased; stop drawing')
+        return None
 
+    def _perform_free_summon(self, main_marker, single_marker, confirmations,
+                             draw_mystery_pattern=False) -> bool:
+        """Perform one authorized draw and confirm its result with bounded waits."""
+        deadline = time.monotonic() + 30
+        entered = False
+        while time.monotonic() < deadline:
+            self.screenshot()
+            if self.appear(single_marker):
+                break
+            if not entered and self.appear(main_marker):
+                self.click(main_marker)
+                entered = True
+        else:
+            logger.warning('Free summon entry timed out')
+            return False
+
+        # Keep the canvas-settling delay used by the original single draw.
+        time.sleep(0.5)
+        deadline = time.monotonic() + 90
+        drawn = False
+        confirmed = False
+        while time.monotonic() < deadline:
+            self.screenshot()
+            result = next((marker for marker in confirmations if self.appear(marker)), None)
+            if confirmed:
+                if result is None:
+                    return True
+                continue
+            if drawn and result is not None:
+                self.click(result)
+                confirmed = True
+                continue
+            if not drawn and self.appear(single_marker):
+                if self.appear_then_click(self.I_UI_CANCEL, interval=0.8):
+                    continue
+                if draw_mystery_pattern:
+                    self.summon_mystery_pattern()
+                else:
+                    self.summon()
+                drawn = True
+        logger.warning('Free summon result was not confirmed; stop drawing')
+        return False
+
+    def _summon_free_until_empty(self, counter, main_marker, single_marker,
+                                 confirmations, draw_mystery_pattern=False) -> FreeSummonResult:
+        completed = 0
+        previous = None
+        # Quotas are capped at ten and must decrease after each confirmed draw.
+        for _ in range(11):
+            if not self.back_summon_main(main_marker=main_marker):
+                return FreeSummonResult(completed)
+            remaining = self._read_free_summon_count(counter, main_marker, previous)
+            if remaining is None:
+                return FreeSummonResult(completed)
+            if remaining == 0:
+                logger.info(f'Free summons exhausted, completed {completed} this run')
+                return FreeSummonResult(completed, exhausted=True)
+            if not self._perform_free_summon(
+                    main_marker, single_marker, confirmations,
+                    draw_mystery_pattern=draw_mystery_pattern and completed == 0):
+                return FreeSummonResult(completed)
+            completed += 1
+            previous = remaining
+            logger.info(f'Free summon {completed} confirmed; return to menu and recheck quota')
+        return FreeSummonResult(completed)
+
+    def summon_one(self, draw_mystery_pattern=False) -> FreeSummonResult:
+        """Consume verified free summons, including multiple event attempts."""
+        for swipe in (self.S_RANDOM_SWIPE_1, self.S_RANDOM_SWIPE_2,
+                      self.S_RANDOM_SWIPE_3, self.S_RANDOM_SWIPE_4):
+            swipe.name = 'S_RANDOM_SWIPE'
+        return self._summon_free_until_empty(
+            self.O_ONE_TICKET, self.I_BLUE_TICKET, self.I_ONE_TICKET,
+            (self.I_SM_CONFIRM, self.I_SM_CONFIRM_2), draw_mystery_pattern)
+
+    def back_summon_main(self, main_marker=None) -> bool:
+        """Return to the selected summon menu before reading its free quota."""
+        main_marker = self.I_BLUE_TICKET if main_marker is None else main_marker
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            self.screenshot()
+            if self.appear(main_marker):
+                return True
+            if self.appear_then_click(self.I_UI_BACK_BLUE, interval=1):
+                continue
+            if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=1):
+                continue
+        logger.warning('Could not return to summon menu; quota remains unverified')
+        return False
