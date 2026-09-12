@@ -112,7 +112,7 @@ class Summon(BaseTask, SummonAssets):
         return None
 
     def _read_free_summon_count(self, counter, main_marker, previous=None) -> int | None:
-        """Require two matching fresh menu frames; tolerate quota update lag."""
+        """Require two matching fresh quota frames; tolerate update lag."""
         # Image matching moves the normal ticket's roi_front on event menus.
         # Keep the calibrated caption offset from that matched ticket instead
         # of reading its old absolute screen position. Do not mutate shared
@@ -140,14 +140,25 @@ class Summon(BaseTask, SummonAssets):
         logger.warning('Free summon quota is unknown or has not decreased; stop drawing')
         return None
 
+    def _event_summon_canvas_appear(self) -> bool:
+        """Recognize the event skin without replacing the legacy ticket UI."""
+        if not self.appear(self.I_EVENT_ONE_TICKET):
+            return False
+        text = self.O_EVENT_DRAW_PROMPT.ocr(self.device.image)
+        return isinstance(text, str) and re.sub(r'\s+', '', text) == '画出轨迹召唤式神'
+
     def _perform_free_summon(self, main_marker, single_marker, confirmations,
                              draw_mystery_pattern=False) -> bool:
         """Perform one authorized draw and confirm its result with bounded waits."""
         deadline = time.monotonic() + 30
         entered = False
+        event_canvas = False
         while time.monotonic() < deadline:
             self.screenshot()
             if self.appear(single_marker):
+                break
+            if main_marker is self.I_BLUE_TICKET and self._event_summon_canvas_appear():
+                event_canvas = True
                 break
             if not entered and self.appear(main_marker):
                 self.click(main_marker)
@@ -155,6 +166,18 @@ class Summon(BaseTask, SummonAssets):
         else:
             logger.warning('Free summon entry timed out')
             return False
+
+        if event_canvas:
+            # Both single and ten-draw buttons are visible on this skin. Select
+            # single explicitly, then verify its own free caption before drawing.
+            logger.info('Event summon canvas: select single and verify free quota')
+            self.click(self.I_EVENT_ONE_TICKET)
+            time.sleep(0.5)
+            remaining = self._read_free_summon_count(
+                self.O_EVENT_FREE_QUOTA, self.I_EVENT_ONE_TICKET)
+            if remaining is None or remaining <= 0:
+                logger.warning('Event single summon has no verified free attempt; stop drawing')
+                return False
 
         # Keep the canvas-settling delay used by the original single draw.
         time.sleep(0.5)
@@ -172,7 +195,9 @@ class Summon(BaseTask, SummonAssets):
                 self.click(result)
                 confirmed = True
                 continue
-            if not drawn and self.appear(single_marker):
+            canvas_ready = not drawn and (
+                self._event_summon_canvas_appear() if event_canvas else self.appear(single_marker))
+            if canvas_ready:
                 if self.appear_then_click(self.I_UI_CANCEL, interval=0.8):
                     continue
                 if draw_mystery_pattern:
@@ -203,6 +228,13 @@ class Summon(BaseTask, SummonAssets):
                 return FreeSummonResult(completed)
             completed += 1
             previous = remaining
+            if remaining == 1:
+                # The last free draw restores the ordinary menu caption on
+                # some skins, rather than showing 0/2. A confirmed result has
+                # consumed that verified last attempt; only require returning.
+                returned = self.back_summon_main(main_marker=main_marker)
+                logger.info(f'Last verified free summon confirmed; completed {completed} this run')
+                return FreeSummonResult(completed, exhausted=returned)
             logger.info(f'Free summon {completed} confirmed; return to menu and recheck quota')
         return FreeSummonResult(completed)
 

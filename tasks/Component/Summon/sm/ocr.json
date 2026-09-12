@@ -7,5 +7,23 @@
     "method": "Default",
     "keyword": "",
     "description": "Ocr-description"
+  },
+  {
+    "itemName": "event_draw_prompt",
+    "roiFront": "545,605,195,32",
+    "roiBack": "545,605,195,32",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": "画出轨迹召唤式神",
+    "description": "活动召唤画线提示"
+  },
+  {
+    "itemName": "event_free_quota",
+    "roiFront": "580,650,130,38",
+    "roiBack": "580,650,130,38",
+    "mode": "Single",
+    "method": "Default",
+    "keyword": "",
+    "description": "活动单抽画线界面的免费次数"
   }
 ]

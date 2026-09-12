@@ -17,6 +17,8 @@ class SummonAssets:
 	I_LOW_TICKET = RuleImage(roi_front=(436,605,63,65), roi_back=(378,577,157,99), threshold=0.8, method="Template matching", file="./tasks/Component/Summon/sm/sm_low_ticket.png")
 	# 单抽 
 	I_ONE_TICKET = RuleImage(roi_front=(396,599,76,76), roi_back=(396,599,76,76), threshold=0.8, method="Template matching", file="./tasks/Component/Summon/sm/sm_one_ticket.png")
+	# 活动召唤画线界面的单抽按钮
+	I_EVENT_ONE_TICKET = RuleImage(roi_front=(420,577,72,77), roi_back=(390,550,140,140), threshold=0.8, method="Template matching", file="./tasks/Component/Summon/sm/sm_event_one_ticket.png")
 	# description 
 	I_SM_CONFIRM = RuleImage(roi_front=(419,617,174,61), roi_back=(419,617,174,61), threshold=0.8, method="Template matching", file="./tasks/Component/Summon/sm/sm_sm_confirm.png")
 	# 抽到的时候出现的 
@@ -26,6 +28,10 @@ class SummonAssets:
 	# Ocr Rule Assets
 	# Ocr-description 
 	O_ONE_TICKET = RuleOcr(roi=(574,681,100,32), area=(574,681,100,32), mode="Single", method="Default", keyword="", name="one_ticket")
+	# 活动召唤画线提示
+	O_EVENT_DRAW_PROMPT = RuleOcr(roi=(545,605,195,32), area=(545,605,195,32), mode="Single", method="Default", keyword="画出轨迹召唤式神", name="event_draw_prompt")
+	# 活动单抽画线界面的免费次数
+	O_EVENT_FREE_QUOTA = RuleOcr(roi=(580,650,130,38), area=(580,650,130,38), mode="Single", method="Default", keyword="", name="event_free_quota")
 
 
 	# Swipe Rule Assets

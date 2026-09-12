@@ -27,6 +27,15 @@
     "description": "单抽"
   },
   {
+    "itemName": "event_one_ticket",
+    "imageName": "sm_event_one_ticket.png",
+    "roiFront": "420,577,72,77",
+    "roiBack": "390,550,140,140",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "活动召唤画线界面的单抽按钮"
+  },
+  {
     "itemName": "sm_confirm",
     "imageName": "sm_sm_confirm.png",
     "roiFront": "419,617,174,61",

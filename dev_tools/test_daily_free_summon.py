@@ -25,13 +25,14 @@ class Marker(str):
 
 
 class Counter:
-    def __init__(self, world, roi):
+    def __init__(self, world, roi, state='menu'):
         self.world = world
         self.roi = roi
+        self.state = state
 
     def ocr(self, image):
         self.world.read_rois.append(list(self.roi))
-        return self.world.ocr(image)
+        return self.world.ocr(image, self.state)
 
 
 def load_subject(namespace):
@@ -39,7 +40,7 @@ def load_subject(namespace):
     result = next(node for node in source.body if isinstance(node, ast.ClassDef)
                   and node.name == 'FreeSummonResult')
     parent = next(node for node in source.body if isinstance(node, ast.ClassDef) and node.name == 'Summon')
-    names = {'_parse_free_summon_count', '_read_free_summon_count', '_perform_free_summon',
+    names = {'_parse_free_summon_count', '_read_free_summon_count', '_event_summon_canvas_appear', '_perform_free_summon',
              '_summon_free_until_empty', 'summon_one', 'back_summon_main'}
     selected = [node for node in parent.body if isinstance(node, ast.FunctionDef) and node.name in names]
     assert {node.name for node in selected} == names
@@ -56,11 +57,14 @@ def load_subject(namespace):
 
 
 class World:
-    def __init__(self, quota=2, *, mode='normal', raw=None, fault=None, recorded=False):
+    def __init__(self, quota=2, *, mode='normal', raw=None, fault=None, recorded=False, layout='legacy'):
         self.now = 0.0
         self.quota = quota
         self.total = max(quota, 2)
         self.mode = mode
+        self.layout = layout
+        self.selection = 'ten'
+        self.canvas_raw = None
         self.state = 'menu'
         self.raw = raw
         self.fault = fault
@@ -77,7 +81,7 @@ class World:
         task = self.task = load_subject(namespace)()
         for marker in ('I_BLUE_TICKET', 'I_ONE_TICKET', 'I_SM_CONFIRM', 'I_SM_CONFIRM_2',
                        'I_UI_CANCEL', 'I_UI_BACK_BLUE', 'I_UI_BACK_YELLOW', 'I_UI_BACK_RED',
-                       'I_RECALL_TICKET', 'I_RECALL_ONE_TICKET', 'I_RECALL_SM_CONFIRM'):
+                       'I_RECALL_TICKET', 'I_RECALL_ONE_TICKET', 'I_RECALL_SM_CONFIRM', 'I_EVENT_ONE_TICKET'):
             setattr(task, marker, Marker(marker))
         for index in range(1, 5):
             setattr(task, 'S_RANDOM_SWIPE_' + str(index), SimpleNamespace(name='swipe'))
@@ -92,6 +96,8 @@ class World:
         task.summon_mystery_pattern = lambda: self.draw('pattern')
         task.O_ONE_TICKET = Counter(self, [574, 681, 100, 32])
         task.O_RECALL_TICKET_AREA = Counter(self, [590, 660, 100, 32])
+        task.O_EVENT_FREE_QUOTA = Counter(self, [580, 650, 130, 38], 'draw')
+        task.O_EVENT_DRAW_PROMPT = SimpleNamespace(ocr=Mock(return_value='画出轨迹召唤式神'))
         task.goto_page = Mock()
         task.check_time = Mock()
         self.record = SimpleNamespace(summon_dt=datetime(2026, 9, 10))
@@ -114,6 +120,8 @@ class World:
         if self.state == 'menu':
             return marker == ('I_BLUE_TICKET' if self.mode == 'normal' else 'I_RECALL_TICKET')
         if self.state == 'draw':
+            if self.layout == 'event':
+                return marker == 'I_EVENT_ONE_TICKET'
             return marker == ('I_ONE_TICKET' if self.mode == 'normal' else 'I_RECALL_ONE_TICKET')
         if self.state == 'result':
             return marker == self.result_marker
@@ -126,6 +134,8 @@ class World:
         if marker in ('I_BLUE_TICKET', 'I_RECALL_TICKET'):
             if self.fault != 'entry':
                 self.state = 'draw'
+        elif marker == 'I_EVENT_ONE_TICKET':
+            self.selection = 'single'
         elif marker in ('I_SM_CONFIRM', 'I_SM_CONFIRM_2', 'I_RECALL_SM_CONFIRM'):
             if self.fault != 'confirm':
                 self.state = 'after_result'
@@ -139,11 +149,13 @@ class World:
             return True
         return False
 
-    def ocr(self, image):
+    def ocr(self, image, state='menu'):
         self.read_states.append(image)
         # Reproduce the original failure: the post-result frame has no quota.
-        if image[1] != 'menu':
+        if image[1] != state:
             return ''
+        if state == 'draw' and self.canvas_raw is not None:
+            return self.canvas_raw() if callable(self.canvas_raw) else self.canvas_raw
         if callable(self.raw):
             return self.raw()
         if self.raw is not None:
@@ -153,6 +165,8 @@ class World:
     def draw(self, kind):
         if self.quota <= 0:
             raise AssertionError('Would spend a paid ticket')
+        if self.layout == 'event' and self.selection != 'single':
+            raise AssertionError('Would draw with ten selected')
         self.quota -= 1
         self.draws.append(kind)
         if self.fault != 'draw':
@@ -214,7 +228,7 @@ class SummonFlowTests(unittest.TestCase):
         self.assertEqual(world.clicks.count('I_UI_BACK_BLUE'), 2)
         self.assertEqual(world.state, 'menu')
         self.assertTrue(all(state == 'menu' for _, state in world.read_states))
-        self.assertEqual(len({number for number, _ in world.read_states}), 6)
+        self.assertEqual(len({number for number, _ in world.read_states}), 4)
 
     def test_one_remaining_does_not_use_the_total_as_draw_count(self):
         world = World(quota=1)
@@ -292,6 +306,81 @@ class SummonFlowTests(unittest.TestCase):
         result = world.task._read_free_summon_count(world.task.O_ONE_TICKET, 'I_BLUE_TICKET')
         self.assertIsNone(result)
         self.assertEqual(world.read_states, [])
+
+
+class EventCanvasTests(unittest.TestCase):
+    def test_last_confirmed_attempt_finishes_when_free_caption_disappears(self):
+        world = World(quota=1, layout='event')
+        world.raw = lambda: '免费1/2' if not world.draws else '神秘召唤'
+        result = world.task.summon_one()
+        self.assertTrue(result.exhausted)
+        self.assertEqual(result.completed, 1)
+        self.assertEqual(world.state, 'menu')
+
+    def test_last_attempt_still_requires_result_confirmation_and_return(self):
+        for fault in ('draw', 'confirm', 'back'):
+            with self.subTest(fault=fault):
+                world = World(quota=1, layout='event', fault=fault)
+                result = world.task.summon_one()
+                self.assertFalse(result.exhausted)
+                self.assertEqual(len(world.draws), 1)
+
+    def test_event_skin_draws_each_verified_free_attempt(self):
+        world = World(layout='event')
+        result = world.task.summon_one()
+        self.assertTrue(result.exhausted)
+        self.assertEqual(result.completed, 2)
+        self.assertEqual(world.draws, ['normal', 'normal'])
+        self.assertEqual(world.clicks.count('I_EVENT_ONE_TICKET'), 2)
+        self.assertEqual(world.clicks.count('I_BLUE_TICKET'), 2)
+        self.assertEqual(sum(state == 'draw' for _, state in world.read_states), 4)
+
+    def test_already_open_event_canvas_selects_single_and_draws_once(self):
+        world = World(quota=1, layout='event')
+        world.state = 'draw'
+        self.assertTrue(world.task._perform_free_summon(
+            world.task.I_BLUE_TICKET, world.task.I_ONE_TICKET,
+            (world.task.I_SM_CONFIRM, world.task.I_SM_CONFIRM_2)))
+        self.assertNotIn('I_BLUE_TICKET', world.clicks)
+        self.assertEqual(world.clicks.count('I_EVENT_ONE_TICKET'), 1)
+        self.assertEqual(world.draws, ['normal'])
+        self.assertEqual(world.quota, 0)
+
+    def test_no_drawing_when_event_canvas_quota_is_unknown_zero_or_paid(self):
+        for raw in ('', '免费', '0/2', '21', None):
+            with self.subTest(raw=raw):
+                world = World(layout='event')
+                world.canvas_raw = lambda: raw
+                result = world.task.summon_one()
+                self.assertFalse(result.exhausted)
+                self.assertEqual(world.draws, [])
+                self.assertEqual(world.clicks.count('I_EVENT_ONE_TICKET'), 1)
+
+    def test_event_button_without_drawing_prompt_cannot_authorize_drawing(self):
+        world = World(layout='event')
+        world.task.O_EVENT_DRAW_PROMPT.ocr.return_value = '确定召唤十次'
+        result = world.task.summon_one()
+        self.assertFalse(result.exhausted)
+        self.assertEqual(world.draws, [])
+        self.assertNotIn('I_EVENT_ONE_TICKET', world.clicks)
+
+    def test_event_prompt_without_single_button_is_not_a_canvas(self):
+        world = World(layout='event')
+        world.task.appear = Mock(return_value=False)
+        self.assertFalse(world.task._event_summon_canvas_appear())
+        world.task.O_EVENT_DRAW_PROMPT.ocr.assert_not_called()
+
+    def test_event_skin_keeps_the_mystery_pattern_option(self):
+        world = World(layout='event')
+        world.task.summon_one(draw_mystery_pattern=True)
+        self.assertEqual(world.draws, ['pattern', 'normal'])
+
+    def test_legacy_skin_never_selects_event_button_or_reads_event_prompt(self):
+        world = World()
+        result = world.task.summon_one()
+        self.assertTrue(result.exhausted)
+        self.assertNotIn('I_EVENT_ONE_TICKET', world.clicks)
+        world.task.O_EVENT_DRAW_PROMPT.ocr.assert_not_called()
 
 
 class DailyCompletionTests(unittest.TestCase):
