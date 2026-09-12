@@ -115,6 +115,8 @@
   "ap100_limit": "100体爬塔次数限制",
   "boss_limit": "首领爬塔次数限制",
   "run_sequence": "运行顺序",
+  "auto_select_souls": "按日期自选御魂",
+  "auto_select_souls_help": "进入虚无精锐后，按图示9月9日至29日当天推荐随机选择四种御魂；推荐不足四种时，从当天其余御魂随机补齐。每日首次爬塔挑战前提交，跨日重新选择。",
   "random_sleep": "随机休息",
   "collect_paper_reward": "是否收取小纸人奖励",
   "collect_paper_reward_help": "关闭则不收取直接退出",

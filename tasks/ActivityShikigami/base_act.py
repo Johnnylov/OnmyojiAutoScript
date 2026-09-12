@@ -218,6 +218,10 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, ActivityShikigami
                 battle_key=f"act_{self.climb_type}",
             )
 
+    def _before_challenge(self):
+        """Activity-specific preparation immediately before each challenge attempt."""
+        pass
+
     def enter_battle(self):
         click_times, max_times = 0, random.randint(3, 5)
         while True:
@@ -238,6 +242,7 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, ActivityShikigami
                 self.I_UI_CONFIRM_SAMLL, interval=1
             ) or self.appear_then_click(self.I_UI_CONFIRM, interval=1):
                 continue
+            self._before_challenge()
             if self.ocr_appear_click(self.O_FIRE, interval=1.5):
                 self.device.click_record_clear()
                 click_times += 1

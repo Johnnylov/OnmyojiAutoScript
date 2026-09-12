@@ -939,6 +939,7 @@
       "boss_limit": 20,
       "ap100_limit": 20,
       "run_sequence": "pass,ap,ap100,boss",
+      "auto_select_souls": false,
       "active_souls_clean": false,
       "random_sleep": false
     },
@@ -946,6 +947,11 @@
       "buy_ap": false,
       "buy_reward": false,
       "buy_ticket": false
+    },
+    "soul_selection_record": {
+      "date": "",
+      "slots": [],
+      "owner": ""
     },
     "switch_soul_config": {
       "enable_switch_pass": false,
