@@ -3,6 +3,7 @@
 Run: toolkit/python.exe -m unittest discover -s dev_tools -p test_daily_free_summon.py -v
 """
 import ast
+import copy
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -14,6 +15,23 @@ from unittest.mock import Mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class Marker(str):
+    def __new__(cls, value):
+        marker = super().__new__(cls, value)
+        marker.roi_front = [595, 586, 65, 76]
+        return marker
+
+
+class Counter:
+    def __init__(self, world, roi):
+        self.world = world
+        self.roi = roi
+
+    def ocr(self, image):
+        self.world.read_rois.append(list(self.roi))
+        return self.world.ocr(image)
 
 
 def load_subject(namespace):
@@ -49,9 +67,10 @@ class World:
         self.draws = []
         self.clicks = []
         self.read_states = []
+        self.read_rois = []
         self.frames = 0
         self.result_marker = 'I_SM_CONFIRM' if mode == 'normal' else 'I_RECALL_SM_CONFIRM'
-        namespace = dict(__name__=__name__, dataclass=dataclass, re=re, unicodedata=unicodedata,
+        namespace = dict(__name__=__name__, copy=copy, dataclass=dataclass, re=re, unicodedata=unicodedata,
                          logger=Mock(), time=SimpleNamespace(monotonic=lambda: self.now, sleep=self.sleep),
                          sleep=self.sleep, datetime=SimpleNamespace(now=lambda: datetime(2026, 9, 11, 12)),
                          SummonType=SimpleNamespace(default='normal', recall='recall'), page_summon='menu')
@@ -59,7 +78,7 @@ class World:
         for marker in ('I_BLUE_TICKET', 'I_ONE_TICKET', 'I_SM_CONFIRM', 'I_SM_CONFIRM_2',
                        'I_UI_CANCEL', 'I_UI_BACK_BLUE', 'I_UI_BACK_YELLOW', 'I_UI_BACK_RED',
                        'I_RECALL_TICKET', 'I_RECALL_ONE_TICKET', 'I_RECALL_SM_CONFIRM'):
-            setattr(task, marker, marker)
+            setattr(task, marker, Marker(marker))
         for index in range(1, 5):
             setattr(task, 'S_RANDOM_SWIPE_' + str(index), SimpleNamespace(name='swipe'))
         for index in range(2, 5):
@@ -71,8 +90,8 @@ class World:
         task.appear_then_click = self.appear_then_click
         task.summon = lambda: self.draw('normal')
         task.summon_mystery_pattern = lambda: self.draw('pattern')
-        task.O_ONE_TICKET = SimpleNamespace(ocr=self.ocr)
-        task.O_RECALL_TICKET_AREA = SimpleNamespace(ocr=self.ocr)
+        task.O_ONE_TICKET = Counter(self, [574, 681, 100, 32])
+        task.O_RECALL_TICKET_AREA = Counter(self, [590, 660, 100, 32])
         task.goto_page = Mock()
         task.check_time = Mock()
         self.record = SimpleNamespace(summon_dt=datetime(2026, 9, 10))
@@ -159,6 +178,32 @@ class CounterTests(unittest.TestCase):
 
 
 class SummonFlowTests(unittest.TestCase):
+    def test_quota_follows_matched_ticket_on_every_frame(self):
+        world = World()
+        original_appear = world.appear
+
+        def appear(marker):
+            if marker is world.task.I_BLUE_TICKET:
+                marker.roi_front = [630 + world.frames, 577, 65, 76]
+            return original_appear(marker)
+
+        world.task.appear = appear
+        self.assertEqual(world.task._read_free_summon_count(
+            world.task.O_ONE_TICKET, world.task.I_BLUE_TICKET), 2)
+        self.assertEqual(world.read_rois, [[610, 672, 100, 32], [611, 672, 100, 32]])
+        self.assertEqual(world.task.O_ONE_TICKET.roi, [574, 681, 100, 32])
+
+    def test_default_ticket_position_preserves_calibrated_caption_roi(self):
+        world = World()
+        world.task._read_free_summon_count(world.task.O_ONE_TICKET, world.task.I_BLUE_TICKET)
+        self.assertEqual(world.read_rois, [[574, 681, 100, 32]] * 2)
+
+    def test_recall_keeps_its_own_counter_roi(self):
+        world = World(mode='recall')
+        world.task._read_free_summon_count(
+            world.task.O_RECALL_TICKET_AREA, world.task.I_RECALL_TICKET)
+        self.assertEqual(world.read_rois, [[590, 660, 100, 32]] * 2)
+
     def test_two_free_summons_return_to_menu_between_draws(self):
         world = World()
         result = world.task.summon_one(draw_mystery_pattern=True)

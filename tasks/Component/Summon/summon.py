@@ -1,6 +1,7 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
+import copy
 import time
 
 import random
@@ -112,13 +113,21 @@ class Summon(BaseTask, SummonAssets):
 
     def _read_free_summon_count(self, counter, main_marker, previous=None) -> int | None:
         """Require two matching fresh menu frames; tolerate quota update lag."""
+        # Image matching moves the normal ticket's roi_front on event menus.
+        # Keep the calibrated caption offset from that matched ticket instead
+        # of reading its old absolute screen position. Do not mutate shared
+        # OCR assets: other accounts and the recall menu have their own ROI.
+        counter = copy.copy(counter)
         last_count = None
         for _ in range(8):
             self.screenshot()
             count = None
             if self.appear(main_marker):
+                if main_marker is self.I_BLUE_TICKET:
+                    x, y, _, _ = main_marker.roi_front
+                    counter.roi = [x - 21, y + 95, 100, 32]
                 raw = counter.ocr(self.device.image)
-                logger.info(f'Free summon quota: {raw!r}')
+                logger.info(f'Free summon quota: {raw!r}, ROI: {counter.roi}')
                 count = self._parse_free_summon_count(raw)
             # After a draw, an unchanged caption is not permission for another.
             if count is not None and (previous is None or count < previous):
