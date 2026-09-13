@@ -135,6 +135,14 @@ class GeneralBattleAssets:
 	I_DISABLE_7DAYS_DIFF_SOUL = RuleImage(roi_front=(547,342,27,36), roi_back=(524,325,70,71), threshold=0.8, method="Template matching", file="./tasks/Component/GeneralBattle/gb/gb_disable_7days_diff_soul.png")
 
 
+	# Image Rule Assets
+	# 结算物品详情
+	I_END_FIX_1 = RuleImage(roi_front=(721,119,89,58), roi_back=(119,66,1136,620), threshold=0.85, method="Template matching", file="./tasks/Component/GeneralBattle/gw/gw_end_fix_1.png")
+	# 结算物品详情
+	I_END_FIX_2 = RuleImage(roi_front=(800,251,100,33), roi_back=(32,90,1137,547), threshold=0.85, method="Template matching", file="./tasks/Component/GeneralBattle/gw/gw_end_fix_2.png")
+	# 结算物品详情
+	I_END_FIX_3 = RuleImage(roi_front=(871,278,150,49), roi_back=(119,66,1136,620), threshold=0.85, method="Template matching", file="./tasks/Component/GeneralBattle/gw/gw_end_fix_3.png")
+
 	# Ocr Rule Assets
 	# 准备 
 	O_BATTLE_PREPARE = RuleOcr(roi=(1122,546,92,51), area=(1122,546,92,51), mode="Single", method="Default", keyword="准备", name="battle_prepare")

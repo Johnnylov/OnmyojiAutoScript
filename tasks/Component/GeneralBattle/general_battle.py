@@ -674,6 +674,17 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         self.click(random_click(), interval=0.8)
         return BattleAction.CONTINUE
 
+    def _handle_reward_detail_popup(self, context: BattleContext) -> bool:
+        """确认并关闭结算物品详情；刷新过截图后本轮不再执行其他动作。"""
+        markers = (self.I_END_FIX_1, self.I_END_FIX_2, self.I_END_FIX_3)
+        if not any(self.appear(marker) for marker in markers):
+            return False
+        context.reward_no_battle_ts = None
+        self.screenshot()
+        if any(self.appear(marker) for marker in markers):
+            self.click(random_click(), interval=2.5)
+        return True
+
     def _handle_reward(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
         """处理奖励页面逻辑。
 
@@ -687,6 +698,8 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         context.reward_no_battle_ts = None
         # TODO: 部分副本奖励界面不一定是战斗成功, 需要重写
         context.is_win = True
+        if self._handle_reward_detail_popup(context):
+            return BattleAction.CONTINUE
         # 时运加成等活动弹窗会遮住奖励页；仅在关闭图标出现时点击，下一帧再结算。
         if self.appear_then_click(self.I_UI_BACK_RED, interval=0.8):
             return BattleAction.CONTINUE
@@ -710,6 +723,9 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         Returns:
             BattleAction: 根据结算收尾状态推导出的动作决策。
         """
+        # 详情可能遮住全部奖励特征，先处理弹窗再判断是否已离开结算。
+        if context.last_page in {page_battle_result, page_reward} and self._handle_reward_detail_popup(context):
+            return BattleAction.CONTINUE
         # 非连战且设置了退出检测器, 则根据退出检测器检测是否已经退出
         if not config.continuous_battle and exit_matcher is not None and self._evaluate_exit_matcher(exit_matcher):
             logger.info("Exit matcher hit")

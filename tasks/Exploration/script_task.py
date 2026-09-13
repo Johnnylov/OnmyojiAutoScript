@@ -72,7 +72,17 @@ class ScriptTask(BaseExploration):
                 logger.warning(e)
                 break
 
+    def _handle_confirmation_popup(self) -> bool:
+        """先关闭探索确认框；点击被节流时也等待下一帧，避免操作被遮挡页面。"""
+        for confirm in (self.I_UI_CONFIRM, self.I_UI_CONFIRM_SAMLL):
+            if self.appear(confirm):
+                self.click(confirm, interval=1)
+                return True
+        return False
+
     def run_on_exp_main(self):
+        if self._handle_confirmation_popup():
+            return
         if self.pre_page and self.pre_page != pages.page_exp_main:
             # 防止因延迟过大, 一直在主界面和奖励页面切换导致too many click
             self.device.click_record_clear()
@@ -143,6 +153,8 @@ class ScriptTask(BaseExploration):
                 self.goto_page(pages.page_exp_main)
 
     def run_on_exp_settings(self):
+        if self._handle_confirmation_popup():
+            return
         if self._config.exploration_config.auto_rotate == AutoRotate.no:
             self.goto_page(pages.page_exp_main)
             return
