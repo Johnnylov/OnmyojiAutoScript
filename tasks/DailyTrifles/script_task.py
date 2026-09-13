@@ -51,7 +51,8 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
     def run_one_summon(self):
         logger.hr('daily summon', 2)
         if self.config.daily_trifles.today_is_done('summon'):
-            logger.info('Summon recorded done today; recheck free quota for event attempts')
+            logger.info('Today is done, skip')
+            return
         self.goto_page(page_summon)
         config = self.config.daily_trifles.trifles_config
         if config.summon_type == SummonType.default:

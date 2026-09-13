@@ -6,6 +6,7 @@ import ast
 import copy
 from dataclasses import dataclass
 from datetime import datetime
+import json
 from pathlib import Path
 import re
 from types import SimpleNamespace
@@ -51,14 +52,24 @@ def load_subject(namespace):
                and node.name in {'run_one_summon', 'summon_recall'}]
     child = ast.ClassDef(name='Subject', bases=[ast.Name(id='Summon', ctx=ast.Load())],
                         keywords=[], body=methods, decorator_list=[])
-    module = ast.Module(body=[result, parent, child], type_ignores=[])
+    source = ast.parse((ROOT / 'tasks/DailyTrifles/config.py').read_text(encoding='utf-8'))
+    daily = next(node for node in source.body if isinstance(node, ast.ClassDef)
+                 and node.name == 'DailyTrifles')
+    today_is_done = next(node for node in daily.body if isinstance(node, ast.FunctionDef)
+                         and node.name == 'today_is_done')
+    daily = ast.ClassDef(name='DailyStatus', bases=[], keywords=[],
+                        body=[today_is_done], decorator_list=[])
+    module = ast.Module(body=[result, parent, child, daily], type_ignores=[])
     exec(compile(ast.fix_missing_locations(module), 'daily_summon_under_test', 'exec'), namespace)
     return namespace['Subject']
 
 
 class World:
-    def __init__(self, quota=2, *, mode='normal', raw=None, fault=None, recorded=False, layout='legacy'):
+    def __init__(self, quota=2, *, mode='normal', raw=None, fault=None, recorded=False, layout='legacy',
+                 current_dt=None, saved_record=None):
         self.now = 0.0
+        self.current_dt = current_dt or datetime(2026, 9, 11, 12)
+        self.saved_record = saved_record
         self.quota = quota
         self.total = max(quota, 2)
         self.mode = mode
@@ -76,7 +87,8 @@ class World:
         self.result_marker = 'I_SM_CONFIRM' if mode == 'normal' else 'I_RECALL_SM_CONFIRM'
         namespace = dict(__name__=__name__, copy=copy, dataclass=dataclass, re=re, unicodedata=unicodedata,
                          logger=Mock(), time=SimpleNamespace(monotonic=lambda: self.now, sleep=self.sleep),
-                         sleep=self.sleep, datetime=SimpleNamespace(now=lambda: datetime(2026, 9, 11, 12)),
+                         sleep=self.sleep, datetime=SimpleNamespace(
+                             now=lambda: self.current_dt, today=lambda: self.current_dt),
                          SummonType=SimpleNamespace(default='normal', recall='recall'), page_summon='menu')
         task = self.task = load_subject(namespace)()
         for marker in ('I_BLUE_TICKET', 'I_ONE_TICKET', 'I_SM_CONFIRM', 'I_SM_CONFIRM_2',
@@ -100,11 +112,20 @@ class World:
         task.O_EVENT_DRAW_PROMPT = SimpleNamespace(ocr=Mock(return_value='画出轨迹召唤式神'))
         task.goto_page = Mock()
         task.check_time = Mock()
-        self.record = SimpleNamespace(summon_dt=datetime(2026, 9, 10))
+        recorded_dt = self.current_dt if recorded else datetime(2026, 9, 10)
+        if saved_record is not None:
+            recorded_dt = datetime.fromisoformat(json.loads(saved_record)['summon_dt'])
+        self.record = SimpleNamespace(summon_dt=recorded_dt)
         self.options = SimpleNamespace(summon_type=mode, draw_mystery_pattern=True)
-        task.config = SimpleNamespace(daily_trifles=SimpleNamespace(
-            today_is_done=Mock(return_value=recorded), trifles_config=self.options, done_record=self.record),
-            save=Mock(), notifier=SimpleNamespace(push=Mock()))
+        daily = namespace['DailyStatus']()
+        daily.trifles_config = self.options
+        daily.done_record = self.record
+        task.config = SimpleNamespace(daily_trifles=daily, save=Mock(side_effect=self.save_record),
+                                      notifier=SimpleNamespace(push=Mock()))
+
+    def save_record(self):
+        # Simulate saving and loading JSON without touching a real account config.
+        self.saved_record = json.dumps({'summon_dt': self.record.summon_dt.isoformat()})
 
     def sleep(self, seconds):
         self.now += seconds
@@ -384,12 +405,71 @@ class EventCanvasTests(unittest.TestCase):
 
 
 class DailyCompletionTests(unittest.TestCase):
-    def test_today_record_does_not_hide_a_remaining_event_attempt(self):
-        world = World(quota=1, recorded=True)
-        world.task.run_one_summon()
-        self.assertEqual(len(world.draws), 1)
-        self.assertEqual(world.record.summon_dt, datetime(2026, 9, 11, 12))
-        world.task.config.save.assert_called_once()
+    def assert_summon_skipped(self, world):
+        world.task.goto_page.assert_not_called()
+        self.assertEqual(world.frames, 0)
+        self.assertEqual(world.read_states, [])
+        self.assertEqual(world.read_rois, [])
+        self.assertEqual(world.clicks, [])
+        self.assertEqual(world.draws, [])
+        world.task.device.click.assert_not_called()
+        world.task.O_EVENT_DRAW_PROMPT.ocr.assert_not_called()
+        world.task.check_time.assert_not_called()
+        world.task.config.save.assert_not_called()
+
+    def test_today_record_skips_normal_recall_and_event_even_with_free_quota(self):
+        for mode, layout in (('normal', 'legacy'), ('recall', 'legacy'), ('normal', 'event')):
+            with self.subTest(mode=mode, layout=layout):
+                world = World(quota=1, recorded=True, mode=mode, layout=layout)
+                recorded_dt = world.record.summon_dt
+                world.task.run_one_summon()
+                self.assert_summon_skipped(world)
+                self.assertEqual(world.record.summon_dt, recorded_dt)
+
+    def test_second_call_on_same_day_does_not_reenter_or_recheck(self):
+        for mode in ('normal', 'recall'):
+            with self.subTest(mode=mode):
+                world = World(mode=mode)
+                world.task.run_one_summon()
+                self.assertEqual(len(world.draws), 2)
+                self.assertEqual(world.record.summon_dt, world.current_dt)
+                self.assertIsNotNone(world.saved_record)
+                before = (world.frames, list(world.clicks), list(world.read_states), list(world.read_rois),
+                          world.task.goto_page.call_count, world.task.device.click.call_count,
+                          world.task.check_time.call_count, world.task.config.save.call_count)
+                world.quota = 1
+                world.task.run_one_summon()
+                self.assertEqual(len(world.draws), 2)
+                self.assertEqual(before, (
+                    world.frames, world.clicks, world.read_states, world.read_rois,
+                    world.task.goto_page.call_count, world.task.device.click.call_count,
+                    world.task.check_time.call_count, world.task.config.save.call_count))
+
+    def test_reloaded_saved_record_skips_on_same_day(self):
+        for mode in ('normal', 'recall'):
+            with self.subTest(mode=mode):
+                original = World(mode=mode)
+                original.task.run_one_summon()
+                self.assertIsNotNone(original.saved_record)
+                reloaded = World(quota=1, mode=mode, saved_record=original.saved_record,
+                                 current_dt=datetime(2026, 9, 11, 23, 59, 59))
+                reloaded.task.run_one_summon()
+                self.assert_summon_skipped(reloaded)
+                self.assertEqual(reloaded.record.summon_dt, original.record.summon_dt)
+
+    def test_next_calendar_day_runs_again_after_midnight(self):
+        for mode in ('normal', 'recall'):
+            with self.subTest(mode=mode):
+                original = World(quota=1, mode=mode, current_dt=datetime(2026, 9, 11, 23, 59, 59))
+                original.task.run_one_summon()
+                self.assertIsNotNone(original.saved_record)
+                next_day = World(quota=1, mode=mode, saved_record=original.saved_record,
+                                 current_dt=datetime(2026, 9, 12, 0, 0, 0))
+                next_day.task.run_one_summon()
+                next_day.task.goto_page.assert_called()
+                self.assertEqual(len(next_day.draws), 1)
+                self.assertEqual(next_day.record.summon_dt, next_day.current_dt)
+                next_day.task.config.save.assert_called_once()
 
     def test_completion_is_not_written_for_unknown_quota(self):
         world = World(raw='')
@@ -406,11 +486,33 @@ class DailyCompletionTests(unittest.TestCase):
         world.task.check_time.assert_called_once()
         self.assertEqual(world.record.summon_dt, datetime(2026, 9, 10))
 
-    def test_rechecking_exhausted_day_never_spends_tickets(self):
+    def test_exhausted_day_is_skipped_without_rechecking(self):
         world = World(quota=0, recorded=True)
         world.task.run_one_summon()
+        self.assert_summon_skipped(world)
+
+    def test_unknown_quota_can_retry_later_on_same_day(self):
+        world = World(raw='')
+        world.task.run_one_summon()
+        world.task.config.save.assert_not_called()
+        self.assertEqual(world.record.summon_dt, datetime(2026, 9, 10))
+        world.raw = None
+        world.task.run_one_summon()
+        self.assertEqual(len(world.draws), 2)
+        self.assertEqual(world.record.summon_dt, world.current_dt)
+        world.task.config.save.assert_called_once()
+
+    def test_failed_entry_can_retry_later_on_same_day(self):
+        world = World(fault='entry')
+        world.task.run_one_summon()
         self.assertEqual(world.draws, [])
-        world.task.check_time.assert_not_called()
+        world.task.config.save.assert_not_called()
+        self.assertEqual(world.record.summon_dt, datetime(2026, 9, 10))
+        world.fault = None
+        world.task.run_one_summon()
+        self.assertEqual(len(world.draws), 2)
+        self.assertEqual(world.record.summon_dt, world.current_dt)
+        world.task.config.save.assert_called_once()
 
     def test_recall_completion_uses_recall_menu(self):
         world = World(mode='recall')
