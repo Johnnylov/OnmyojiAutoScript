@@ -63,7 +63,8 @@ class PartialDispatchLifecycleTests(unittest.TestCase):
             restart=SimpleNamespace(login_character_config=SimpleNamespace(character='role1'))), save=Mock())
         self.task.navigator = SimpleNamespace(resolve_page=lambda page: page)
         self.task._daily_dispatch_view = SimpleNamespace(observe=lambda image: image)
-        self.task._daily_coloring_view = SimpleNamespace(find_page=lambda image: None)
+        self.task._daily_coloring_view = SimpleNamespace(find_page=lambda image: None,
+                                                        find_intro=lambda image: None)
         self.task.screenshot = Mock(side_effect=self.capture)
         self.task.click = Mock()
         self.task.goto_page = Mock(side_effect=self.goto_page)
@@ -127,7 +128,7 @@ class PartialDispatchLifecycleTests(unittest.TestCase):
         self.assertFalse(self.observation.all_slots_known)
         self.assert_climbed_and_scheduled()
         self.task.click.assert_not_called()
-        self.assertEqual(len(self.workers), 1)
+        self.assertEqual(len(self.workers), 2)
 
     def test_real_obscured_map_snapshot_completes_climbing_without_dispatch_clicks(self):
         import cv2
@@ -143,7 +144,7 @@ class PartialDispatchLifecycleTests(unittest.TestCase):
         self.task._daily_dispatch_view = DispatchView(read_text=Mock(return_value=''))
         self.assert_climbed_and_scheduled()
         self.task.click.assert_not_called()
-        self.assertEqual(len(self.workers), 1)
+        self.assertEqual(len(self.workers), 2)
 
     def test_partial_map_with_visible_empty_slot_does_not_guess_or_deploy(self):
         self.observation = DispatchObservation(kind='map', empty=((100, 100, 20, 20),), locked=2,
@@ -151,10 +152,108 @@ class PartialDispatchLifecycleTests(unittest.TestCase):
         self.assert_climbed_and_scheduled()
         self.task.click.assert_not_called()
 
+    def test_real_return_popup_on_map_entry_closes_then_runs_both_climb_types(self):
+        import cv2
+        from tasks.ActivityShikigami.dispatch_view import DispatchView
+
+        snapshot = (Path(__file__).resolve().parents[1] / 'log/error/oas2_1789403348425'
+                    / '2026-09-15_00-29-06-985657.png')
+        if not snapshot.is_file():
+            self.skipTest('Private return-reward snapshot is not present in this checkout')
+        image = cv2.imread(str(snapshot))
+        self.assertIsNotNone(image)
+        popup = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        view = DispatchView(read_text=Mock(return_value=''))
+        map_frame = self.observation
+        self.task._daily_dispatch_view = SimpleNamespace(
+            observe=lambda image: image if isinstance(image, DispatchObservation) else view.observe(image))
+
+        def navigate(page):
+            self.goto_page(page)
+            if page == self.pages.page_act_map:
+                self.observation = popup
+
+        def close(rule):
+            self.assertEqual(rule.name, 'dispatch_return_close')
+            self.observation = map_frame
+
+        self.task.goto_page.side_effect = navigate
+        self.task.click.side_effect = close
+        self.assert_climbed_and_scheduled()
+        self.task.click.assert_called_once()
+        self.assertEqual(len(self.workers), 2)
+
+    def test_recorded_dispatch_day_recovers_new_return_popup_without_deploying(self):
+        record = self.task.conf.daily_dispatch_record
+        record.date, record.owner = DAY.isoformat(), 'offline\nrole1'
+        map_frame = self.observation
+
+        def navigate(page):
+            self.goto_page(page)
+            if page == self.pages.page_act_map:
+                self.observation = DispatchObservation(kind='returned', dismiss_roi=(500, 680, 30, 20))
+
+        def close(rule):
+            self.assertEqual(rule.name, 'dispatch_return_close')
+            self.observation = map_frame
+
+        self.task.goto_page.side_effect = navigate
+        self.task.click.side_effect = close
+        with self.assertRaises(TaskEnd):
+            self.task.run()
+        self.assertEqual(self.events, ['page_act_map', 'page_act_pass', 'battle_pass',
+                                      'page_act_ap', 'battle_ap', 'page_main', 'schedule'])
+        self.task.click.assert_called_once()
+        self.assertEqual(len(self.workers), 1)
+        self.task.config.save.assert_not_called()
+        self.assertEqual((record.date, record.owner), (DAY.isoformat(), 'offline\nrole1'))
+
+    def test_real_first_coloring_intro_after_battles_returns_then_schedules(self):
+        import os
+        import cv2
+        from tasks.ActivityShikigami.coloring import DailyColorer
+        from tasks.ActivityShikigami.coloring_view import ColoringView
+
+        intro_path = (Path(__file__).resolve().parents[1] / 'log/error/oas2_1789377058127'
+                      / '2026-09-14_17-10-57-470164.png')
+        overview_path = Path(os.environ.get('ACTIVITY_REFERENCE_DIR', '')) / (
+            'codex-clipboard-a2fe886d-71a0-4747-998c-e4e6d53b1e45.png')
+        if not intro_path.is_file() or not overview_path.is_file():
+            self.skipTest('Private painting intro/overview screenshots are not present')
+        intro = cv2.cvtColor(cv2.imread(str(intro_path)), cv2.COLOR_BGR2RGB)
+        overview = cv2.cvtColor(cv2.imread(str(overview_path)), cv2.COLOR_BGR2RGB)
+        map_frame = self.observation
+        view = ColoringView()
+        self.task._daily_coloring_view = SimpleNamespace(
+            find_page=view.find_page, find_intro=view.find_intro,
+            find_map_entry=lambda image: (1200, 640, 30, 30) if image is map_frame
+            else view.find_map_entry(image), prepare_counter=view.prepare_counter)
+        self.task.conf.general_climb.auto_color_hyakki = True
+        self.task._activity_read_text = lambda image, roi, name: (
+            '54.0%' if name == 'coloring_global_progress' else '0')
+        self.task._colorer = lambda: DailyColorer(
+            self.task.screenshot, self.task._activity_click_roi, self.task._activity_read_text,
+            view=self.task._coloring_view, sleep=lambda seconds: None)
+
+        def click(rule):
+            transitions = {'coloring_open': intro, 'coloring_intro_skip': overview,
+                           'coloring_back': map_frame}
+            self.assertIn(rule.name, transitions)
+            self.observation = transitions[rule.name]
+
+        self.task.click.side_effect = click
+        with self.assertRaises(TaskEnd):
+            self.task.run()
+        self.assertEqual(self.events, ['page_act_map', 'page_act_pass', 'battle_pass',
+                                      'page_act_ap', 'battle_ap', 'page_act_map', 'page_main', 'schedule'])
+        self.assertEqual([call.args[0].name for call in self.task.click.call_args_list],
+                         ['coloring_open', 'coloring_intro_skip', 'coloring_back'])
+        self.task.set_next_run.assert_called_once_with(task='ActivityShikigami', success=True)
+
     def test_incomplete_check_can_be_retried_later_the_same_day(self):
         self.task._dispatch_once_today()
         self.task._dispatch_once_today()
-        self.assertEqual(len(self.workers), 2)
+        self.assertEqual(len(self.workers), 4)
         self.task.config.save.assert_not_called()
         self.task.click.assert_not_called()
         self.assertEqual(self.task.conf.daily_dispatch_record.date, '')
@@ -187,7 +286,7 @@ class PartialDispatchLifecycleTests(unittest.TestCase):
         self.factory.side_effect = None
         self.factory.return_value = worker
         self.assert_climbed_and_scheduled(map_visits=2)
-        worker.restore_map.assert_not_called()
+        worker.restore_map.assert_called_once()
         self.task.click.assert_not_called()
 
     def test_unknown_popup_after_dispatch_error_still_requires_preparation_retry(self):
@@ -196,7 +295,7 @@ class PartialDispatchLifecycleTests(unittest.TestCase):
             raise DispatchError('Map could not be recovered')
 
         self.factory.side_effect = None
-        self.factory.return_value = Mock(run=Mock(side_effect=fail), restore_map=Mock(return_value=False))
+        self.factory.return_value = Mock(run=Mock(side_effect=fail), restore_map=Mock(return_value=True))
         with self.assertRaises(ActivityPreparationTimeout):
             self.task.run()
         self.assertEqual(self.events, ['page_act_map'])
@@ -210,7 +309,7 @@ class PartialDispatchLifecycleTests(unittest.TestCase):
         with self.assertRaises(ActivityPreparationTimeout):
             self.task.run()
         self.assertEqual(self.events, ['page_act_map'])
-        self.factory.assert_not_called()
+        self.factory.assert_called_once()
         self.assertEqual(self.completed_battles, set())
         self.task.set_next_run.assert_not_called()
         self.task.config.save.assert_not_called()

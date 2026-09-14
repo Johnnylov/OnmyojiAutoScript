@@ -126,19 +126,20 @@ class NormalClimbAct(BaseAct):
         return DailyColorer(self.screenshot, self._activity_click_roi,
                             self._activity_read_text, view=self._coloring_view)
 
-    def _restore_daily_activity_map(self):
-        """Close known interrupted panels before generic page navigation."""
+    def _restore_daily_activity_map(self, require_map=False):
+        """Close known panels; after navigation, wait for a confirmed map."""
         if not pages.special_act_Flag:
             return
         image = self.screenshot()
         try:
             # This recovery does not spend pigment, even with coloring disabled.
-            if self._coloring_view.find_page(image) is not None:
+            if (self._coloring_view.find_page(image) is not None
+                    or self._coloring_view.find_intro(image) is not None):
                 if not self._colorer().leave():
                     raise ColoringError('未确认从百鬼夜行图返回地图')
                 image = self.screenshot()
             observation = self._dispatch_view.observe(image)
-            if (observation.kind in ('success', 'portraits', 'setup')
+            if (require_map or observation.kind in ('success', 'returned', 'portraits', 'setup')
                     or getattr(observation, 'close_roi', None) is not None):
                 dispatcher = DailyDispatcher(self.screenshot, self._activity_click_roi,
                                              view=self._dispatch_view)
@@ -154,13 +155,18 @@ class NormalClimbAct(BaseAct):
         current = self.config.model.activity_shikigami
         if not current.general_climb.run_sequence_v:
             return
-        day, owner = server_date(), self._activity_owner()
-        record = current.daily_dispatch_record
-        if record.date == day.isoformat() and record.owner == owner:
-            return
         self.goto_page(pages.page_act_map)
+        # Entering the map may itself open an expired dispatch's reward popup.
+        # Recover it even when today's dispatch check has already been saved.
+        # The bounded worker also waits through the popup's opening animation.
+        self._restore_daily_activity_map(require_map=True)
         if self._dispatch_view.observe(self.screenshot()).kind != 'map':
             raise ActivityPreparationTimeout('无法确认上阵地图，等待恢复后再开始爬塔')
+        # Navigation/recovery may cross midnight or reload the selected role.
+        day, owner = server_date(), self._activity_owner()
+        record = self.config.model.activity_shikigami.daily_dispatch_record
+        if record.date == day.isoformat() and record.owner == owner:
+            return
         dispatcher = DailyDispatcher(self.screenshot, self._activity_click_roi,
                                      view=self._dispatch_view)
         try:
@@ -194,10 +200,13 @@ class NormalClimbAct(BaseAct):
         self.goto_page(pages.page_act_map)
         colorer = self._colorer()
         try:
+            # A dispatch can finish during a long climb and show its return
+            # popup when navigation re-enters the map for coloring.
+            self._restore_daily_activity_map(require_map=True)
             result = colorer.run()
             if not colorer.leave():
                 raise ColoringError('上色结束后未确认返回地图')
-        except ColoringError as exc:
+        except (ColoringError, ActivityPreparationTimeout) as exc:
             raise BattleTransitionTimeout(f'百鬼夜行图上色未完成：{exc}') from exc
         logger.info(f'百鬼夜行图：{result.status}，提交 {result.submissions} 次，'
                     f'全服进度 {result.global_progress}')

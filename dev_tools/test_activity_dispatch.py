@@ -78,12 +78,173 @@ class IdentityView:
         return image
 
 
+class ReturnWorld(World):
+    def __init__(self, identities):
+        super().__init__(empty=0, locked=0, running=4)
+        self.identities = list(identities)
+        self.kind = 'returned'
+        self.prefix = []
+        self.gap_between_returns = False
+        self.after_returns = 'map'
+
+    def screenshot(self):
+        if self.prefix:
+            self.reads += 1
+            return self.prefix.pop(0)
+        if self.kind == 'returned':
+            self.reads += 1
+            return Observation(kind='returned', dismiss_roi=DISMISS,
+                               return_id=self.identities[0])
+        return super().screenshot()
+
+    def click(self, roi, name):
+        if self.kind == 'returned' and roi == DISMISS:
+            self.clicks.append(roi)
+            self.controls.append(name)
+            if roi != self.stall:
+                self.identities.pop(0)
+                self.kind = 'returned' if self.identities else self.after_returns
+                if self.identities and self.gap_between_returns:
+                    self.prefix.append(Observation(kind='map', running=4))
+            return
+        super().click(roi, name)
+
+
 def dispatcher(world, **kwargs):
     return DailyDispatcher(world.screenshot, world.click, view=IdentityView(),
                            sleep=lambda seconds: None, choose=lambda choices: choices[0], **kwargs)
 
 
 class DispatchFlowTests(unittest.TestCase):
+    def test_consecutive_return_rewards_close_without_resource_actions(self):
+        world = ReturnWorld(['晴明', '神乐', '源赖光', '八百比丘尼'])
+        result = dispatcher(world).run()
+        self.assertTrue(result.completed)
+        self.assertEqual(result.dispatched, 0)
+        self.assertEqual(world.clicks, [DISMISS] * 4)
+        self.assertEqual(world.controls, ['dispatch_return_close'] * 4)
+        self.assertEqual(world.kind, 'map')
+
+    def test_unreadable_return_name_can_close_one_known_popup(self):
+        world = ReturnWorld([None])
+        self.assertTrue(dispatcher(world).restore_map())
+        self.assertEqual(world.controls, ['dispatch_return_close'])
+        self.assertEqual(world.kind, 'map')
+
+    def test_map_or_unknown_navigation_frame_can_precede_return_popup(self):
+        for first in (Observation(kind='map', running=4), Observation()):
+            with self.subTest(first=first.kind):
+                world = ReturnWorld([None])
+                world.prefix = [first]
+                self.assertTrue(dispatcher(world).restore_map())
+                self.assertEqual(world.clicks, [DISMISS])
+                self.assertEqual(world.kind, 'map')
+
+    def test_single_map_gap_does_not_hide_next_return_popup(self):
+        world = ReturnWorld(['晴明', '神乐'])
+        world.gap_between_returns = True
+        self.assertTrue(dispatcher(world).restore_map())
+        self.assertEqual(world.clicks, [DISMISS, DISMISS])
+
+    def test_stuck_return_popup_is_not_clicked_again(self):
+        world = ReturnWorld(['源赖光'])
+        world.stall = DISMISS
+        with self.assertRaises(DispatchError):
+            dispatcher(world).run()
+        self.assertEqual(world.clicks, [DISMISS])
+        self.assertLessEqual(world.reads, 9)
+
+    def test_unknown_return_animation_does_not_authorize_another_click(self):
+        class FlickeringReturn(ReturnWorld):
+            def screenshot(self):
+                if self.clicks and self.reads % 2:
+                    self.reads += 1
+                    return Observation()
+                return super().screenshot()
+
+        world = FlickeringReturn(['源赖光'])
+        world.stall = DISMISS
+        with self.assertRaises(DispatchError):
+            dispatcher(world).run()
+        self.assertEqual(world.clicks, [DISMISS])
+        self.assertLessEqual(world.reads, 9)
+
+    def test_next_return_name_must_be_consistent_across_two_frames(self):
+        class UnstableReturn(ReturnWorld):
+            def screenshot(self):
+                if self.clicks:
+                    self.reads += 1
+                    return Observation(kind='returned', dismiss_roi=DISMISS,
+                                       return_id='神乐' if self.reads % 2 else '晴明')
+                return super().screenshot()
+
+        world = UnstableReturn(['源赖光'])
+        world.stall = DISMISS
+        with self.assertRaises(DispatchError):
+            dispatcher(world).run()
+        self.assertEqual(world.clicks, [DISMISS])
+        self.assertLessEqual(world.reads, 9)
+
+    def test_unreadable_previous_name_cannot_prove_next_return_is_new(self):
+        world = ReturnWorld([None, '神乐'])
+        with self.assertRaises(DispatchError):
+            dispatcher(world).run()
+        self.assertEqual(world.clicks, [DISMISS])
+
+    def test_previously_closed_return_name_is_not_clicked_again(self):
+        world = ReturnWorld(['晴明', '神乐', '晴明'])
+        with self.assertRaises(DispatchError):
+            dispatcher(world).run()
+        self.assertEqual(world.clicks, [DISMISS, DISMISS])
+
+    def test_return_limit_requires_map_and_never_closes_a_fifth_popup(self):
+        world = ReturnWorld(['晴明', '神乐', '源赖光', '八百比丘尼', '藤原道长'])
+        with self.assertRaises(DispatchError):
+            dispatcher(world).run()
+        self.assertEqual(world.clicks, [DISMISS] * 4)
+        self.assertEqual(world.kind, 'returned')
+
+    def test_return_rewards_can_be_followed_by_running_details(self):
+        world = ReturnWorld(['源赖光'])
+        world.after_returns = 'running_details'
+        self.assertTrue(dispatcher(world).restore_map())
+        self.assertEqual(world.controls, ['dispatch_return_close', 'dispatch_collapse'])
+
+    def test_drawer_collapse_can_take_more_than_one_frame(self):
+        class SlowDrawer(World):
+            delay = 0
+
+            def screenshot(self):
+                if self.delay:
+                    self.reads += 1
+                    self.delay -= 1
+                    return Observation(kind='running_details', close_roi=CLOSE)
+                return super().screenshot()
+
+            def click(self, roi, name):
+                super().click(roi, name)
+                if roi == CLOSE:
+                    self.delay = 2
+
+        world = SlowDrawer()
+        world.kind = 'running_details'
+        self.assertTrue(dispatcher(world).restore_map())
+        self.assertEqual(world.controls, ['dispatch_collapse'])
+
+    def test_old_return_cannot_reappear_after_drawer_and_get_another_click(self):
+        class ReappearingReturn(ReturnWorld):
+            def click(self, roi, name):
+                super().click(roi, name)
+                if roi == CLOSE:
+                    self.identities = ['源赖光']
+                    self.kind = 'returned'
+
+        world = ReappearingReturn(['源赖光'])
+        world.after_returns = 'running_details'
+        with self.assertRaises(DispatchError):
+            dispatcher(world).run()
+        self.assertEqual(world.controls, ['dispatch_return_close', 'dispatch_collapse'])
+
     def test_locked_slots_are_skipped_and_available_maximum_is_used(self):
         world = World()
         result = dispatcher(world).run()

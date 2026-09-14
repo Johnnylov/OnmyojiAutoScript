@@ -24,6 +24,12 @@ SUCCESS_ERROR = (Path(__file__).resolve().parents[1] / 'log/error/oas2_178936211
                  / '2026-09-14_13-01-51-279615.png')
 OCCLUDED_MAP_ERROR = (Path(__file__).resolve().parents[1] / 'log/error/oas2_1789363479556'
                       / '2026-09-14_13-24-36-529033.png')
+RETURN_ERRORS = (
+    ('oas2_1789402352213', '2026-09-15_00-12-30-833333.png'),
+    ('oas2_1789402482987', '2026-09-15_00-14-41-525582.png'),
+    ('oas2_1789402574945', '2026-09-15_00-16-13-447366.png'),
+    ('oas2_1789403348425', '2026-09-15_00-29-06-985657.png'),
+)
 
 
 def rgb(path):
@@ -86,7 +92,21 @@ def synthetic_success(name_length=2, hours=1):
     return image
 
 
+def synthetic_return():
+    image = synthetic_success(5, 24)
+    paste(image, 'return_title', 329, 62)
+    return image
+
+
 class DispatchVisionTests(unittest.TestCase):
+    def return_frame(self, folder, filename):
+        path = Path(__file__).resolve().parents[1] / 'log/error' / folder / filename
+        if not path.exists():
+            path = TEMP / filename
+        if not path.exists():
+            self.skipTest('Supplied returned-character screenshot is unavailable')
+        return rgb(path)
+
     def success_frame(self):
         if not SUCCESS_FILE.exists():
             self.skipTest('Supplied success-overlay screenshot is unavailable')
@@ -107,6 +127,66 @@ class DispatchVisionTests(unittest.TestCase):
             self.assertEqual(parse_duration(text), expected)
         for text in ('', None, '9', '9/8时', '99/99时', '9/9/9', '-1/9', '消耗9/9', '9/9时购买'):
             self.assertIsNone(parse_duration(text))
+
+    def test_supplied_return_rewards_are_recognized_without_character_ocr(self):
+        for folder, filename in RETURN_ERRORS:
+            image = self.return_frame(folder, filename)
+            for size, frame in (('native', image), ('smaller', cv2.resize(image, (840, 473)))):
+                with self.subTest(frame=folder, size=size):
+                    observation = DispatchView().observe(frame)
+                    self.assertEqual(observation.kind, 'returned')
+                    self.assertIsNone(observation.return_id)
+                    self.assert_dismissal_inside_prompt(
+                        observation, frame.shape[1]/840, frame.shape[0]/473)
+                    self.assertFalse(observation.empty)
+                    for control in ('submit_roi', 'close_roi', 'plus_roi', 'minus_roi'):
+                        self.assertIsNone(getattr(observation, control))
+
+    def test_return_popup_is_independent_of_character_art_name_and_rewards(self):
+        image = synthetic_return()
+        image[125:423, 230:600] = 0
+        observation = DispatchView().observe(image)
+        self.assertEqual(observation.kind, 'returned')
+        self.assertIsNone(observation.return_id)
+        self.assert_dismissal_inside_prompt(observation)
+        shifted = np.zeros((520, 930, 3), dtype=np.uint8)
+        shifted[21:494, 39:879] = image
+        observation = DispatchView().observe(shifted)
+        self.assertEqual(observation.kind, 'returned')
+        self.assert_dismissal_inside_prompt(observation, dx=39, dy=21)
+
+    def test_return_popup_requires_specific_title_and_matching_prompt(self):
+        for anchor, area in (('return_title', (329, 62, 172, 47)),
+                             ('success_dismiss', (365, 442, 112, 19))):
+            image = synthetic_return()
+            x, y, w, h = area
+            image[y:y+h, x:x+w] = 0
+            with self.subTest(missing=anchor):
+                observation = DispatchView().observe(image)
+                self.assertEqual(observation.kind, 'unknown')
+                self.assertIsNone(observation.dismiss_roi)
+        image = synthetic_return()
+        image[442:461, 365:477] = 0
+        paste(image, 'success_dismiss', 465, 442)
+        self.assertEqual(DispatchView().observe(image).kind, 'unknown')
+        for factor in (.5, .75):
+            with self.subTest(brightness=factor):
+                self.assertEqual(DispatchView().observe(
+                    (synthetic_return() * factor).astype(np.uint8)).kind, 'unknown')
+        # Starting and ending titles are distinct, although the prompt is shared.
+        self.assertEqual(DispatchView().observe(synthetic_success()).kind, 'success')
+
+    def test_return_identity_is_optional_and_requires_a_complete_statement(self):
+        image = synthetic_return()
+        for text, expected in (('晴明已回归', '晴明'), ('源赖光已回归', '源赖光'),
+                               ('藤原道长已回归', '藤原道长'), ('八百比丘尼已回归', '八百比丘尼'),
+                               (' 。—源赖光已回归～ ', '源赖光'), (None, None), ('', None),
+                               ('源赖光', None), ('源赖光将于12小时后回归', None),
+                               ('abc源赖光已回归', None), ('源赖光已回归123', None)):
+            with self.subTest(text=text):
+                observation = DispatchView(lambda image, roi: text).observe(image)
+                self.assertEqual(observation.kind, 'returned')
+                self.assertEqual(observation.return_id, expected)
 
     def assert_dismissal_inside_prompt(self, observation, sx=1., sy=1., dx=0, dy=0):
         self.assertIsNotNone(observation.dismiss_roi)
@@ -406,6 +486,28 @@ class DispatchVisionTests(unittest.TestCase):
         self.assertEqual(observation.kind, 'setup')
         self.assertIsNone(observation.current)
         self.assertIsNone(observation.maximum)
+
+    @unittest.skipUnless(os.environ.get('ACTIVITY_OCR_REPLAY') == '1',
+                         'Set ACTIVITY_OCR_REPLAY=1 for the bundled local OCR model')
+    def test_actual_ocr_reads_return_identity_at_native_and_smaller_sizes(self):
+        from module.atom.ocr import RuleOcr
+        from module.ocr.ppocr import TextSystem
+
+        model = TextSystem(ort_providers=['CPUExecutionProvider'])
+
+        def read(image, roi):
+            rule = RuleOcr(roi=roi, area=roi, mode='Single', method='Default',
+                           keyword='', name='return_identity_regression')
+            rule.model = model
+            return rule.ocr(image)
+
+        for folder, filename in RETURN_ERRORS:
+            image = self.return_frame(folder, filename)
+            for size, frame in (('native', image), ('smaller', cv2.resize(image, (840, 473)))):
+                with self.subTest(frame=folder, size=size):
+                    observation = DispatchView(read).observe(frame)
+                    self.assertEqual(observation.kind, 'returned')
+                    self.assertEqual(observation.return_id, '源赖光')
 
     @unittest.skipUnless(os.environ.get('ACTIVITY_OCR_REPLAY') == '1',
                          'Set ACTIVITY_OCR_REPLAY=1 for the bundled local OCR model')

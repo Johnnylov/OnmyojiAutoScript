@@ -38,7 +38,7 @@ class DailyDispatcher:
                 observation.running, observation.uncertain, observation.selected,
                 observation.current, observation.maximum,
                 tuple(index for index, _ in observation.available), bool(observation.close_roi),
-                bool(observation.dismiss_roi))
+                bool(observation.dismiss_roi), observation.return_id)
 
     def _wait(self, predicate, reason):
         previous, unchanged = None, 0
@@ -61,23 +61,82 @@ class DailyDispatcher:
             raise DispatchError('Dispatch click was not delivered')
         self.sleep(.4)
 
+    def _wait_after_overlay(self, previous, closed_returns):
+        candidate, stable, map_stable = None, 0, 0
+
+        def restored(observation):
+            nonlocal candidate, stable, map_stable
+            if observation.kind == 'map':
+                candidate, stable = None, 0
+                map_stable += 1
+                # A single map frame can be the gap before the next return.
+                return map_stable >= 2
+            map_stable = 0
+            if (previous.kind in ('success', 'returned')
+                    and observation.kind not in ('success', 'returned')
+                    and observation.close_roi is not None):
+                return True
+            if observation.kind == 'returned':
+                identity = observation.return_id
+                if identity in closed_returns or None in closed_returns:
+                    candidate, stable = None, 0
+                    return False
+                if previous.kind == 'returned' and (
+                        previous.return_id is None or identity is None):
+                    candidate, stable = None, 0
+                    return False
+                key = ('returned', identity)
+                stable = stable + 1 if candidate == key else 1
+                candidate = key
+                return stable >= 2
+            candidate, stable = None, 0
+            return False
+
+        return self._wait(restored, 'Dispatch overlay did not close or reveal a confirmed new return')
+
     def restore_map(self):
-        """Dismiss a confirmed success overlay, then collapse its detail drawer."""
+        """Close verified result overlays and their drawer, then confirm the map."""
         self._restore_failed = False
         try:
+            map_stable = 0
+
+            def ready(observation):
+                nonlocal map_stable
+                if observation.kind == 'map':
+                    map_stable += 1
+                    return map_stable >= 2
+                map_stable = 0
+                return observation.kind in ('success', 'returned') or observation.close_roi is not None
+
             observation = self._wait(
-                lambda o: o.kind in ('map', 'success') or o.close_roi is not None,
-                'Cannot identify the dispatch map, success overlay or its drawer')
-            if observation.kind == 'success':
-                self._click(observation.dismiss_roi, 'dispatch_success_close')
-                observation = self._wait(
-                    lambda o: o.kind == 'map' or (o.kind != 'success' and o.close_roi is not None),
-                    'Dispatch success overlay did not close to a recognized map or drawer')
-            if observation.kind == 'map':
-                return True
-            self._click(observation.close_roi, 'dispatch_collapse')
-            self._wait(lambda o: o.kind == 'map', 'Dispatch drawer did not return to the map')
-            return True
+                ready,
+                'Cannot identify the dispatch map, result overlay or its drawer')
+            closed_returns, return_count = set(), 0
+            success_closed = drawer_closed = False
+            for _ in range(7):
+                if observation.kind == 'map':
+                    return True
+                previous = observation
+                if observation.kind == 'returned':
+                    if return_count >= 4:
+                        raise DispatchError('Return overlay count exceeded the four dispatch slots')
+                    self._click(observation.dismiss_roi, 'dispatch_return_close')
+                    return_count += 1
+                    closed_returns.add(observation.return_id)
+                elif observation.kind == 'success':
+                    if success_closed:
+                        raise DispatchError('Dispatch success overlay appeared again without progress')
+                    self._click(observation.dismiss_roi, 'dispatch_success_close')
+                    success_closed = True
+                elif observation.close_roi is not None:
+                    if drawer_closed:
+                        raise DispatchError('Dispatch drawer appeared again without a confirmed map')
+                    self._click(observation.close_roi, 'dispatch_collapse')
+                    drawer_closed = True
+                else:
+                    raise DispatchError('Cannot safely leave the dispatch result screen')
+                observation = self._wait_after_overlay(previous, closed_returns)
+            raise DispatchError('Dispatch result recovery exceeded its bound')
         except DispatchError:
             # Do not repeat a failed popup/drawer click again in run() cleanup.
             self._restore_failed = True

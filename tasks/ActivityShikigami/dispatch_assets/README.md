@@ -8,6 +8,9 @@ with this feature request. No full account screenshot is included.
 - `success_title`, `success_dismiss`: the shared dispatch-success title and
   dismissal prompt. Both must match at their expected relative positions.
   Character art, name, duration and fading success/return text are not matched.
+- `return_title`: the shared dispatch-ended title from a returned-character
+  reward overlay. It must pair with `success_dismiss`; character name OCR is
+  optional progress evidence between successive return overlays, not an anchor.
 - `remaining`, `recall`: the occupied-character detail pane; these only permit
   collapsing its drawer, never pressing Recall.
 

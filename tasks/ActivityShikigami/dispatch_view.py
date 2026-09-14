@@ -36,6 +36,7 @@ class DispatchObservation:
     submit_roi: tuple | None = None
     close_roi: tuple | None = None
     dismiss_roi: tuple | None = None
+    return_id: str | None = None
 
     @property
     def all_slots_known(self):
@@ -198,6 +199,38 @@ class DispatchView:
                 return DispatchObservation(kind='success', dismiss_roi=dismiss)
         return None
 
+    def _returned(self, image, gray):
+        # Return rewards share the generic dismissal prompt, but have their
+        # own end-of-dispatch title. Character art and reward amounts vary.
+        for title in _matches(gray, 'return_title', .82, limit=2):
+            prompt = None
+            # Refine the coarse title scale locally: 1280/840 is 1.524,
+            # and the narrow prompt does not tolerate rounding it to 1.5.
+            for scale in (title.scale, title.scale - .025, title.scale + .025):
+                transform = (title.x - 329 * scale, title.y - 62 * scale, scale)
+                prompt = _near(gray, 'success_dismiss', (365, 442, 112, 19), transform, .8)
+                if prompt is not None:
+                    break
+            if prompt is None:
+                continue
+            dismiss = prompt.roi(10, 3, 92, 13)
+            if not _inside(gray, dismiss):
+                continue
+            ox, oy, scale = transform
+            line = (round(ox + 320 * scale), round(oy + 347 * scale),
+                    round(201 * scale), round(24 * scale))
+            # This optional identity proves progress between consecutive
+            # return overlays; it is never required to recognize/close one.
+            value = self._read(image, line)
+            text = re.sub(r'\s+', '', value) if isinstance(value, str) else ''
+            # The surrounding gold flourish is sometimes recognized as
+            # punctuation. Remove only that boundary noise, never letters.
+            text = text.strip('·。，、“”‘’—-~～')
+            returned = re.fullmatch(r'([\u3400-\u9fff]{2,5})已回归', text)
+            return DispatchObservation(kind='returned', dismiss_roi=dismiss,
+                                       return_id=returned[1] if returned else None)
+        return None
+
     def _drawer(self, image, gray):
         for arrow in _matches(gray, 'chevron', .82, limit=3):
             transform = (arrow.x - 545 * arrow.scale, arrow.y - 436 * arrow.scale, arrow.scale)
@@ -262,6 +295,9 @@ class DispatchView:
                 or image.shape[2] != 3 or min(image.shape[:2]) < 100):
             return DispatchObservation()
         gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        returned = self._returned(image, gray)
+        if returned is not None:
+            return returned
         success = self._success(gray)
         if success is not None:
             return success

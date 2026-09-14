@@ -57,11 +57,20 @@ class DailyColorer:
         self.clock = clock
 
     def _wait_page(self, panel=None):
+        intro_actions = set()
         for _ in range(self.MAX_FRAMES):
             image = self.capture()
             page = self.view.find_page(image)
             if page is not None and (panel is None or page.panel == panel):
                 return image, page
+            # Story advancement is limited to its two exact known controls.
+            # Waiting through unchanged/unknown animation frames never retries
+            # the same action or guesses a generic confirmation/blank click.
+            intro = self.view.find_intro(image)
+            if intro is not None and intro.kind not in intro_actions:
+                if self.click(intro.action_roi, f'coloring_intro_{intro.kind}') is False:
+                    raise ColoringError('百鬼夜行图引导点击未送达')
+                intro_actions.add(intro.kind)
             self.sleep(.25)
         raise ColoringError('未确认百鬼夜行图界面，停止上色，未点击未知弹窗')
 
@@ -138,10 +147,11 @@ class DailyColorer:
         image = self.capture()
         page = self.view.find_page(image)
         if page is None:
-            entry = self.view.find_map_entry(image)
-            if entry is None:
-                return ColoringResult('unavailable', reason='未识别到百鬼夜行图入口')
-            self.click(entry, 'coloring_open')
+            if self.view.find_intro(image) is None:
+                entry = self.view.find_map_entry(image)
+                if entry is None:
+                    return ColoringResult('unavailable', reason='未识别到百鬼夜行图入口')
+                self.click(entry, 'coloring_open')
             _, page = self._wait_page()
         submitted = 0
         progress = None
@@ -198,9 +208,11 @@ class DailyColorer:
         return ColoringResult('no_progress', submitted, progress, '已达到本次上色时间或次数上限')
 
     def leave(self):
-        """Return to the activity map only through recognized collapse/back controls."""
+        """Finish a known intro without spending, then use verified collapse/back."""
         image = self.capture()
         page = self.view.find_page(image)
+        if page is None and self.view.find_intro(image) is not None:
+            _, page = self._wait_page()
         if page is None:
             return self.view.find_map_entry(image) is not None
         if page.panel:

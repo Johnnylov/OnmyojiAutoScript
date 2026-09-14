@@ -57,20 +57,21 @@ class DailyIntegrationTests(unittest.TestCase):
         self.task.goto_page = Mock(side_effect=lambda p: self.events.append(p))
         self.task._dispatch_view = Mock()
         self.task._dispatch_view.observe.return_value = SimpleNamespace(kind='map')
-        self.task._coloring_view = Mock(find_page=Mock(return_value=None))
+        self.task._coloring_view = Mock(find_page=Mock(return_value=None),
+                                        find_intro=Mock(return_value=None))
         self.colorer = Mock()
         self.colorer.run.return_value = SimpleNamespace(status='no_currency', submissions=2,
                                                         global_progress=54.0)
         self.task._colorer = Mock(return_value=self.colorer)
 
-    def test_first_run_records_account_and_day_then_second_run_does_nothing(self):
+    def test_first_run_records_account_and_day_then_second_run_skips_dispatch(self):
         self.task._dispatch_once_today()
         record = self.task.config.model.activity_shikigami.daily_dispatch_record
         self.assertEqual((record.date, record.owner), (DAY.isoformat(), 'a\nrole1'))
         self.task._dispatch_once_today()
         self.dispatcher.run.assert_called_once()
         self.task.config.save.assert_called_once()
-        self.assertEqual(self.events, ['map'])
+        self.assertEqual(self.events, ['map', 'map'])
 
     def test_all_running_slots_complete_today_without_redeploying(self):
         self.dispatcher.run.return_value = SimpleNamespace(completed=True, dispatched=0, reason='running')
@@ -105,20 +106,21 @@ class DailyIntegrationTests(unittest.TestCase):
         self.dispatcher.run.side_effect = DispatchError('unverified')
         self.task._dispatch_once_today()
         self.assertEqual(self.events, ['map', 'map'])
-        self.assertEqual(self.task._dispatch_view.observe.call_count, 2)
-        self.dispatcher.restore_map.assert_not_called()
+        self.assertEqual(self.task._dispatch_view.observe.call_count, 3)
+        self.dispatcher.restore_map.assert_called_once()
         self.task.config.save.assert_not_called()
         self.assertEqual(self.task.conf.daily_dispatch_record.date, '')
 
     def test_failed_dispatch_without_verified_map_requests_preparation_retry(self):
         self.task._dispatch_view.observe.side_effect = [SimpleNamespace(kind='map'),
+                                                       SimpleNamespace(kind='map'),
                                                        SimpleNamespace(kind='unknown')]
         self.dispatcher.run.side_effect = DispatchError('unverified')
         with self.assertRaises(PreparationError):
             self.task._dispatch_once_today()
         self.assertEqual(self.events, ['map'])
-        self.assertEqual(self.task._dispatch_view.observe.call_count, 2)
-        self.dispatcher.restore_map.assert_not_called()
+        self.assertEqual(self.task._dispatch_view.observe.call_count, 3)
+        self.dispatcher.restore_map.assert_called_once()
         self.task.config.save.assert_not_called()
         self.assertEqual(self.task.conf.daily_dispatch_record.date, '')
 
@@ -153,6 +155,29 @@ class DailyIntegrationTests(unittest.TestCase):
         self.task._dispatch_once_today()
         self.assertEqual(original.daily_dispatch_record.date, '')
         self.assertEqual(replacement.daily_dispatch_record.date, DAY.isoformat())
+
+    def test_navigation_crossing_midnight_rechecks_new_day_after_recovery(self):
+        record = self.task.conf.daily_dispatch_record
+        record.date, record.owner = DAY.isoformat(), 'a\nrole1'
+        self.task.goto_page.side_effect = lambda page: setattr(self.clock, 'return_value', DAY + timedelta(days=1))
+        self.task._dispatch_once_today()
+        self.dispatcher.run.assert_called_once()
+        self.assertEqual(record.date, (DAY + timedelta(days=1)).isoformat())
+
+    def test_navigation_reload_checks_the_current_character_record(self):
+        original = self.task.conf.daily_dispatch_record
+        original.date, original.owner = DAY.isoformat(), 'a\nrole1'
+        replacement = ActivityShikigami()
+
+        def reload(page):
+            self.task.config.model.activity_shikigami = replacement
+            self.task.config.model.restart.login_character_config.character = 'role2'
+
+        self.task.goto_page.side_effect = reload
+        self.task._dispatch_once_today()
+        self.dispatcher.run.assert_called_once()
+        self.assertEqual(replacement.daily_dispatch_record.owner, 'a\nrole2')
+        self.assertEqual((original.date, original.owner), (DAY.isoformat(), 'a\nrole1'))
 
     def test_midnight_or_role_change_during_dispatch_does_not_write_stale_record(self):
         for changed in ('day', 'role'):
@@ -200,6 +225,65 @@ class DailyIntegrationTests(unittest.TestCase):
         self.task._coloring_view.find_page.return_value = object()
         self.task._restore_daily_activity_map()
         self.colorer.leave.assert_called_once()
+        self.colorer.run.assert_not_called()
+
+    def test_interrupted_painting_intro_closes_without_spending_with_option_off(self):
+        self.task._coloring_view.find_intro.return_value = object()
+        self.task._restore_daily_activity_map()
+        self.colorer.leave.assert_called_once()
+        self.colorer.run.assert_not_called()
+
+    def test_return_popup_opened_by_navigation_is_closed_before_dispatch(self):
+        self.task._dispatch_view.observe.side_effect = [
+            SimpleNamespace(kind='returned', close_roi=None, dismiss_roi=(1, 2, 3, 4)),
+            SimpleNamespace(kind='map')]
+        self.task._dispatch_once_today()
+        self.dispatcher.restore_map.assert_called_once()
+        self.dispatcher.run.assert_called_once()
+        self.task.config.save.assert_called_once()
+
+    def test_recorded_day_still_closes_return_popup_without_redeploying(self):
+        self.task.conf.daily_dispatch_record.date = DAY.isoformat()
+        self.task.conf.daily_dispatch_record.owner = 'a\nrole1'
+        self.task._dispatch_view.observe.side_effect = [
+            SimpleNamespace(kind='returned', close_roi=None, dismiss_roi=(1, 2, 3, 4)),
+            SimpleNamespace(kind='map')]
+        self.task._dispatch_once_today()
+        self.assertEqual(self.events, ['map'])
+        self.dispatcher.restore_map.assert_called_once()
+        self.dispatcher.run.assert_not_called()
+        self.task.config.save.assert_not_called()
+
+    def test_recorded_day_does_not_hide_an_unclosed_return_popup(self):
+        self.task.conf.daily_dispatch_record.date = DAY.isoformat()
+        self.task.conf.daily_dispatch_record.owner = 'a\nrole1'
+        self.task._dispatch_view.observe.return_value = SimpleNamespace(
+            kind='returned', close_roi=None, dismiss_roi=(1, 2, 3, 4))
+        self.dispatcher.restore_map.side_effect = DispatchError('return popup stuck')
+        with self.assertRaises(PreparationError):
+            self.task._dispatch_once_today()
+        self.dispatcher.run.assert_not_called()
+        self.task.config.save.assert_not_called()
+
+    def test_post_climb_return_popup_is_closed_before_opening_coloring(self):
+        self.task.conf.general_climb.auto_color_hyakki = True
+        self.task._dispatch_view.observe.return_value = SimpleNamespace(
+            kind='returned', close_roi=None, dismiss_roi=(1, 2, 3, 4))
+        self.dispatcher.restore_map.side_effect = lambda: self.events.append('close_return') or True
+        self.colorer.run.side_effect = lambda: self.events.append('color') or SimpleNamespace(
+            status='no_currency', submissions=0, global_progress=54.0)
+        self.task.after_run()
+        self.assertEqual(self.events, ['map', 'close_return', 'color'])
+        self.dispatcher.run.assert_not_called()
+
+    def test_failed_post_climb_return_recovery_does_not_retry_completed_battles(self):
+        self.task.conf.general_climb.auto_color_hyakki = True
+        self.task._dispatch_view.observe.return_value = SimpleNamespace(
+            kind='returned', close_roi=None, dismiss_roi=(1, 2, 3, 4))
+        self.dispatcher.restore_map.side_effect = DispatchError('return popup stuck')
+        with self.assertRaises(TransitionError) as raised:
+            self.task.after_run()
+        self.assertNotIsInstance(raised.exception, PreparationError)
         self.colorer.run.assert_not_called()
 
     def test_interrupted_dispatch_closes_without_redeploying(self):

@@ -14,14 +14,20 @@ ANCHORS = {
     'start': (848, 489), 'max': (859, 449), 'submit': (761, 492),
     'collapse': (637, 234),
     'next': (903, 308),
+    # The first-entry illustrated story uses a 1280 x 720 reference layout.
+    'intro_logo': (89, 162), 'intro_speaker': (601, 564),
+    'intro_skip': (1159, 37), 'intro_confirm': (707, 442),
 }
 
 
-@lru_cache(maxsize=9)
+@lru_cache(maxsize=16)
 def _template(name):
-    result = cv2.imread(str(ASSETS / f'{name}.png'), cv2.IMREAD_GRAYSCALE)
+    shared = {'intro_skip': 'as_skip_button', 'intro_confirm': 'as_confirm_skip'}
+    path = (ASSETS.parent / 'as' / f'{shared[name]}.png' if name in shared
+            else ASSETS / f'{name}.png')
+    result = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
     if result is None:
-        raise FileNotFoundError(ASSETS / f'{name}.png')
+        raise FileNotFoundError(path)
     return result
 
 
@@ -118,6 +124,12 @@ class PaintingPage:
         return self.roi(911, 317, 17, 24)
 
 
+@dataclass(frozen=True)
+class PaintingIntro:
+    kind: str
+    action_roi: tuple
+
+
 class ColoringView:
     def __init__(self):
         self._last = None
@@ -137,6 +149,10 @@ class ColoringView:
         if undimmed:
             patch = gray[top+my:top+my+template.shape[0], left+mx:left+mx+template.shape[1]]
             mask = template >= 175
+            if name == 'intro_speaker':
+                # The speaker name is orange, whose grayscale level is below
+                # the white-label threshold used by the painting controls.
+                mask = template >= np.percentile(template, 90)
             if not mask.any() or patch[mask].mean() < template[mask].mean() * .78:
                 return None
         return left + mx, top + my
@@ -187,6 +203,48 @@ class ColoringView:
         _, x, y, scale = matches[0]
         return (round(x + 21 * scale), round(y + 14 * scale),
                 max(1, round(49 * scale)), max(1, round(43 * scale)))
+
+    def find_intro(self, image):
+        """Only the illustrated anniversary guide may expose a story control.
+
+        A generic skip or confirm button is insufficient. The drawing's logo
+        and distant paper-doll speaker must also match their supplied layout.
+        A dimmed guide exposes only the explicit existing Confirm Skip button,
+        allowing a restart at that confirmation without clicking other modals.
+        """
+        gray = _gray(image)
+        if gray is None:
+            return None
+        # Coarse downscaling can weaken the narrow vertical logo; every
+        # candidate is rechecked at full resolution with both distant anchors.
+        for _, x, y, scale in _candidates(gray, 'intro_logo', threshold=.72)[:8]:
+            page = PaintingPage(x - 89 * scale, y - 162 * scale, scale)
+            speaker = self._anchor(gray, 'intro_speaker', page, threshold=.8, search_margin=16)
+            if speaker is None:
+                continue
+            delta = np.array(ANCHORS['intro_speaker']) - ANCHORS['intro_logo']
+            observed = np.array(speaker) - (x, y)
+            fitted = float(np.dot(observed, delta) / np.dot(delta, delta))
+            if abs(fitted - scale) > .035 or np.linalg.norm(observed - delta * fitted) > 5 * scale:
+                continue
+            scale = fitted
+            page = PaintingPage(x - 89 * scale, y - 162 * scale, scale)
+            if not all(self._anchor(gray, name, page, threshold=.82)
+                       for name in ('intro_logo', 'intro_speaker')):
+                continue
+            confirm = self._anchor(gray, 'intro_confirm', page, threshold=.86,
+                                   undimmed=True, search_margin=12)
+            if confirm is not None:
+                cx, cy = confirm
+                return PaintingIntro('confirm', (round(cx + 20 * scale), round(cy + 7 * scale),
+                                                   max(1, round(95 * scale)), max(1, round(24 * scale))))
+            if not all(self._anchor(gray, name, page, threshold=.82, undimmed=True)
+                       for name in ('intro_logo', 'intro_speaker', 'intro_skip')):
+                continue
+            sx, sy = self._anchor(gray, 'intro_skip', page, threshold=.82, undimmed=True)
+            return PaintingIntro('skip', (round(sx + 4 * scale), round(sy + 2 * scale),
+                                          max(1, round(43 * scale)), max(1, round(18 * scale))))
+        return None
 
     @staticmethod
     def prepare_counter(image, roi, quantity=False):

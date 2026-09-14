@@ -32,7 +32,8 @@ def device_click_guard():
 
 class World:
     def __init__(self, stage='map', currency=200, progress=54., capacity=None,
-                 outcome='consume', amount=None, characters=None, switch_works=True, guard=None):
+                 outcome='consume', amount=None, characters=None, switch_works=True, guard=None,
+                 first_intro=False, intro_outcome='overview', confirm_outcome='overview'):
         self.stage, self.currency, self.progress = stage, currency, progress
         self.capacity, self.outcome, self.amount_override = capacity, outcome, amount
         self.amount = 0
@@ -43,7 +44,9 @@ class World:
         self.action_names = []
         self.guard = guard
         self.reads = []
+        self.first_intro, self.intro_outcome, self.confirm_outcome = first_intro, intro_outcome, confirm_outcome
         self.view = SimpleNamespace(find_page=self.find_page, find_map_entry=self.find_map_entry,
+                                    find_intro=self.find_intro,
                                     prepare_counter=lambda image, roi, quantity: np.zeros((2, 2, 3)))
 
     def capture(self):
@@ -60,6 +63,11 @@ class World:
 
     def find_map_entry(self, image):
         return 'entry' if self.stage == 'map' else None
+
+    def find_intro(self, image):
+        if self.stage in ('intro', 'intro_confirm'):
+            return SimpleNamespace(kind='skip' if self.stage == 'intro' else 'confirm', action_roi='intro_control')
+        return None
 
     def read_text(self, image, roi, name='activity_text'):
         self.reads.append(name)
@@ -83,7 +91,11 @@ class World:
         name = re.sub(r'_\d+_\d+$', '', name)
         self.clicks.append(name)
         if name == 'coloring_open':
-            self.stage = 'overview'
+            self.stage = 'intro' if self.first_intro else 'overview'
+        elif name == 'coloring_intro_skip':
+            self.stage = self.intro_outcome
+        elif name == 'coloring_intro_confirm':
+            self.stage = self.confirm_outcome
         elif name == 'coloring_start':
             self.stage = 'panel'
         elif name == 'coloring_max':
@@ -264,6 +276,47 @@ class ColoringTests(unittest.TestCase):
             world = World(stage=stage)
             self.assertEqual(world.runner().leave(), expected)
             self.assertEqual(world.clicks, [])
+
+    def test_first_entry_intro_skips_then_runs_existing_verified_coloring(self):
+        for confirmation in (False, True):
+            world = World(first_intro=True, intro_outcome='intro_confirm' if confirmation else 'overview')
+            result = world.runner().run()
+            self.assertEqual((result.status, result.submissions), ('no_currency', 1))
+            expected = ['coloring_open', 'coloring_intro_skip']
+            if confirmation:
+                expected.append('coloring_intro_confirm')
+            self.assertEqual(world.clicks, expected + ['coloring_start', 'coloring_max', 'coloring_submit'])
+
+    def test_restart_in_intro_or_its_known_confirmation_can_run_or_leave_without_spending(self):
+        for stage in ('intro', 'intro_confirm'):
+            for leave in (False, True):
+                with self.subTest(stage=stage, leave=leave):
+                    world = World(stage=stage, currency=0)
+                    result = world.runner().leave() if leave else world.runner().run()
+                    self.assertEqual(result if leave else result.status, True if leave else 'no_currency')
+                    action = 'coloring_intro_skip' if stage == 'intro' else 'coloring_intro_confirm'
+                    self.assertEqual(world.clicks, [action] + (['coloring_back'] if leave else []))
+                    self.assertEqual(world.currency, 0)
+
+    def test_intro_stall_unknown_modal_or_reappearing_intro_never_repeats_a_click(self):
+        cases = [('intro', 'overview', ['coloring_intro_skip']),
+                 ('unknown', 'overview', ['coloring_intro_skip']),
+                 ('intro_confirm', 'intro_confirm', ['coloring_intro_skip', 'coloring_intro_confirm']),
+                 ('intro_confirm', 'intro', ['coloring_intro_skip', 'coloring_intro_confirm'])]
+        for intro_outcome, confirm_outcome, expected in cases:
+            with self.subTest(intro_outcome=intro_outcome, confirm_outcome=confirm_outcome):
+                world = World(stage='intro', intro_outcome=intro_outcome, confirm_outcome=confirm_outcome)
+                with self.assertRaises(ColoringError):
+                    world.runner().run()
+                self.assertEqual(world.clicks, expected)
+
+    def test_intro_click_delivery_failure_stops_before_any_other_action(self):
+        world = World(stage='intro')
+        runner = world.runner()
+        runner.click = Mock(return_value=False)
+        with self.assertRaises(ColoringError):
+            runner.run()
+        runner.click.assert_called_once_with('intro_control', 'coloring_intro_skip')
 
 
 if __name__ == '__main__':
