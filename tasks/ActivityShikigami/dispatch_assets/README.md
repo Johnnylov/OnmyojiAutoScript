@@ -5,9 +5,9 @@ with this feature request. No full account screenshot is included.
 - `inspect`: the occupied-slot magnifier, paired with a separately read countdown.
 - `chevron`, `name_0` through `name_5`, `selected`: portrait drawer and selection.
 - `rewards`, `duration`, `minus`, `plus`, `submit`: the dispatch setup panel.
-- `success_title`, `success_label`, `success_dismiss`, `success_return`: the
-  dispatch-success overlay. The return suffix handles the animation frame in
-  which the success label has faded; title and dismissal prompt remain required.
+- `success_title`, `success_dismiss`: the shared dispatch-success title and
+  dismissal prompt. Both must match at their expected relative positions.
+  Character art, name, duration and fading success/return text are not matched.
 - `remaining`, `recall`: the occupied-character detail pane; these only permit
   collapsing its drawer, never pressing Recall.
 

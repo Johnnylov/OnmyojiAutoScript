@@ -180,26 +180,18 @@ class DispatchView:
         return self.read_text(image, roi)
 
     def _success(self, gray):
-        # This overlay intentionally dims the map. Identify its own three
-        # distant anchors before checking the normal map's brightness.
+        # Character art, names, duration and success text vary or fade. Only
+        # the shared title and distant dismissal prompt identify this overlay;
+        # neither a character template nor a return sentence is required.
         for title in _matches(gray, 'success_title', .82, limit=2):
             transform = (title.x - 329 * title.scale,
                          title.y - 62 * title.scale, title.scale)
             prompt = _near(gray, 'success_dismiss', (365, 442, 112, 19), transform, .8)
             if prompt is None:
                 continue
-            label = _near(gray, 'success_label', (385, 147, 78, 21), transform, .82)
-            # The white success label fades during the animation. Its later
-            # frame still has the gold return-time suffix below the character.
-            returning = _near(gray, 'success_return', (444, 347, 57, 23),
-                              transform, .82, margin=20)
-            if label is None and returning is None:
-                continue
-            ox, oy, scale = transform
-            # Blank overlay space between the character and the detail pane;
-            # this avoids the underlying recall button and portrait cards.
-            dismiss = (round(ox + 520 * scale), round(oy + 180 * scale),
-                       max(1, round(25 * scale)), max(1, round(22 * scale)))
+            # Use the matched dismissal instruction itself. Character artwork
+            # can cover the blank space beside another character's portrait.
+            dismiss = prompt.roi(10, 3, 92, 13)
             if _inside(gray, dismiss):
                 return DispatchObservation(kind='success', dismiss_roi=dismiss)
         return None

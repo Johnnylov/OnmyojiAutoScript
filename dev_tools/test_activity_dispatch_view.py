@@ -55,6 +55,32 @@ def synthetic_running_details():
     return image
 
 
+def synthetic_success(name_length=2, hours=1):
+    """Synthetic dynamic-content variation, not another real character capture.
+
+    Only the two common chrome templates come from the supplied screenshot.
+    Random blocks stand in for the illustration and 2-5 character-name glyphs;
+    the hour count changes the line's width and position independently.
+    """
+    image = np.full((473, 840, 3), (19, 16, 14), dtype=np.uint8)
+    rng = np.random.default_rng(91400 + name_length * 100 + hours)
+    portrait_width = 102 + name_length * 35
+    portrait_left = 400 - portrait_width // 2 + hours % 5 * 7
+    portrait_top = 126 + name_length * 3
+    image[portrait_top:portrait_top+168, portrait_left:portrait_left+portrait_width] = (
+        rng.integers(35, 240, (168, portrait_width, 3), dtype=np.uint8))
+    line_y = 329 + (1, 9, 12, 24).index(hours) * 14
+    name_left = 387 - name_length * 8 - len(str(hours)) * 5
+    for index in range(name_length):
+        x = name_left + index * 16
+        image[line_y:line_y+14, x:x+13] = rng.integers(75, 255, (14, 13, 3), dtype=np.uint8)
+    cv2.putText(image, str(hours) + 'h', (name_left + name_length * 16 + 8, line_y + 14),
+                cv2.FONT_HERSHEY_SIMPLEX, .55, (226, 191, 68), 1, cv2.LINE_AA)
+    paste(image, 'success_title', 329, 62)
+    paste(image, 'success_dismiss', 365, 442)
+    return image
+
+
 class DispatchVisionTests(unittest.TestCase):
     def success_frame(self):
         if not SUCCESS_FILE.exists():
@@ -77,15 +103,25 @@ class DispatchVisionTests(unittest.TestCase):
         for text in ('', None, '9', '9/8时', '99/99时', '9/9/9', '-1/9', '消耗9/9', '9/9时购买'):
             self.assertIsNone(parse_duration(text))
 
-    def test_success_popup_uses_only_its_blank_dismissal_region(self):
+    def assert_dismissal_inside_prompt(self, observation, sx=1., sy=1., dx=0, dy=0):
+        self.assertIsNotNone(observation.dismiss_roi)
+        x, y, w, h = observation.dismiss_roi
+        self.assertGreaterEqual(x, dx + 365 * sx)
+        self.assertGreaterEqual(y, dy + 442 * sy)
+        self.assertLessEqual(x + w, dx + 477 * sx)
+        self.assertLessEqual(y + h, dy + 461 * sy)
+
+    def test_success_popup_uses_only_its_verified_dismissal_prompt(self):
         image = self.success_frame()
         shifted = np.zeros((image.shape[0] + 45, image.shape[1] + 70, 3), dtype=np.uint8)
         shifted[21:21+image.shape[0], 39:39+image.shape[1]] = image
-        frames = [('native', image), ('runtime', cv2.resize(image, (1280, 720))),
-                  ('translated', shifted)]
+        frames = [('native', image, 1., 1., 0, 0),
+                  ('runtime', cv2.resize(image, (1280, 720)), 1280/840, 720/473, 0, 0),
+                  ('translated', shifted, 1., 1., 39, 21)]
         if SUCCESS_ERROR.exists():
-            frames.append(('actual_error', rgb(SUCCESS_ERROR)))
-        for name, frame in frames:
+            frame = rgb(SUCCESS_ERROR)
+            frames.append(('actual_error', frame, frame.shape[1]/840, frame.shape[0]/473, 0, 0))
+        for name, frame, sx, sy, dx, dy in frames:
             with self.subTest(name=name):
                 observation = self.view().observe(frame)
                 self.assertEqual(observation.kind, 'success')
@@ -95,20 +131,90 @@ class DispatchVisionTests(unittest.TestCase):
                 self.assertIsNone(observation.plus_roi)
                 self.assertFalse(observation.empty)
                 self.assertFalse(observation.available)
-                x, y, w, h = observation.dismiss_roi
-                # This blank area stays to the left of the running/recall
-                # pane and above the card tray, even if the overlay vanishes.
-                self.assertLess(x + w, frame.shape[1] * .69)
-                self.assertLess(y + h, frame.shape[0] * .48)
+                # The action stays inside the common instruction, regardless
+                # of artwork width, image scaling or frame translation.
+                self.assert_dismissal_inside_prompt(observation, sx, sy, dx, dy)
 
-    def test_faded_success_label_still_requires_return_hint(self):
+    def test_success_does_not_depend_on_character_or_return_text(self):
         image = self.success_frame()
         image[145:171, 382:466] = 0
         self.assertEqual(self.view().observe(image).kind, 'success')
         image[345:373, 340:505] = 0
         observation = self.view().observe(image)
-        self.assertEqual(observation.kind, 'unknown')
-        self.assertIsNone(observation.dismiss_roi)
+        self.assertEqual(observation.kind, 'success')
+        self.assertIsNotNone(observation.dismiss_roi)
+        # Remove the remaining illustration and all character-dependent text.
+        # Recognition must continue to depend on the common popup controls.
+        image[125:423, 230:600] = 0
+        observation = self.view().observe(image)
+        self.assertEqual(observation.kind, 'success')
+        self.assertIsNotNone(observation.dismiss_roi)
+        self.assertIsNone(observation.close_roi)
+        self.assertIsNone(observation.submit_roi)
+
+    def test_portable_success_variants_ignore_name_length_hours_and_artwork(self):
+        for name_length in range(2, 6):
+            for hours in (1, 9, 12, 24):
+                with self.subTest(synthetic_name_length=name_length, hours=hours):
+                    image = synthetic_success(name_length, hours)
+                    observation = self.view().observe(image)
+                    self.assertEqual(observation.kind, 'success')
+                    self.assert_dismissal_inside_prompt(observation)
+                    self.assertIsNone(observation.close_roi)
+                    self.assertIsNone(observation.submit_roi)
+                    self.assertFalse(observation.available)
+                    self.assertFalse(observation.empty)
+                    if (name_length, hours) == (5, 24):
+                        # The wide synthetic illustration covers the old
+                        # fixed blank target at (520, 180, 25, 22).
+                        self.assertGreater(image[180:202, 520:545].std(), 30)
+        for name_length, hours in ((2, 24), (5, 12)):
+            with self.subTest(synthetic_name_length=name_length, hours=hours, size='runtime'):
+                image = cv2.resize(synthetic_success(name_length, hours), (1280, 720))
+                observation = self.view().observe(image)
+                self.assertEqual(observation.kind, 'success')
+                self.assert_dismissal_inside_prompt(observation, 1280/840, 720/473)
+
+    def test_portable_success_requires_both_common_anchors_in_their_relative_positions(self):
+        cases = (('success_title', (329, 62), None),
+                 ('success_dismiss', (365, 442), None),
+                 ('success_title', (329, 62), (429, 62)),
+                 ('success_dismiss', (365, 442), (465, 442)),
+                 ('success_dismiss', (365, 442), (365, 372)))
+        for name, original, moved in cases:
+            with self.subTest(anchor=name, moved=moved):
+                image = synthetic_success(5, 24)
+                patch = rgb(ASSETS / (name + '.png'))
+                x, y = original
+                image[y:y+patch.shape[0], x:x+patch.shape[1]] = (19, 16, 14)
+                if moved is not None:
+                    paste(image, name, *moved)
+                observation = self.view().observe(image)
+                self.assertEqual(observation.kind, 'unknown')
+                self.assertIsNone(observation.dismiss_roi)
+                self.assertIsNone(observation.close_roi)
+                self.assertIsNone(observation.submit_roi)
+
+    def test_portable_success_rejects_mismatched_prompt_scale_or_dimmed_overlay(self):
+        for factor in (.7, 1.4):
+            with self.subTest(prompt_scale=factor):
+                image = synthetic_success(5, 24)
+                image[442:461, 365:477] = (19, 16, 14)
+                patch = cv2.resize(rgb(ASSETS / 'success_dismiss.png'), None, fx=factor, fy=factor)
+                image[442:442+patch.shape[0], 365:365+patch.shape[1]] = patch
+                observation = self.view().observe(image)
+                self.assertEqual(observation.kind, 'unknown')
+                self.assertIsNone(observation.dismiss_roi)
+                self.assertIsNone(observation.close_roi)
+                self.assertIsNone(observation.submit_roi)
+        for factor in (.5, .75):
+            with self.subTest(brightness=factor):
+                image = (synthetic_success(5, 24) * factor).astype(np.uint8)
+                observation = self.view().observe(image)
+                self.assertEqual(observation.kind, 'unknown')
+                self.assertIsNone(observation.dismiss_roi)
+                self.assertIsNone(observation.close_roi)
+                self.assertIsNone(observation.submit_roi)
 
     def test_partial_success_or_other_dimmed_overlay_has_no_dismissal(self):
         for x, y, w, h in ((326, 60, 180, 52), (362, 440, 120, 25)):
