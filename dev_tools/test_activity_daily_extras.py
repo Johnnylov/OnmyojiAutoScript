@@ -26,6 +26,10 @@ class TransitionError(RuntimeError):
     pass
 
 
+class PreparationError(TransitionError):
+    pass
+
+
 class DailyIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.events = []
@@ -39,6 +43,7 @@ class DailyIntegrationTests(unittest.TestCase):
                        '_dispatch_once_today', '_restore_daily_activity_map', 'after_run'],
                       dict(server_date=self.clock, DailyDispatcher=self.factory, pages=self.pages,
                            DispatchError=DispatchError, ColoringError=ColoringError,
+                           ActivityPreparationTimeout=PreparationError,
                            BattleTransitionTimeout=TransitionError, logger=Mock(),
                            RuleClick=lambda **kwargs: SimpleNamespace(**kwargs),
                            RuleOcr=lambda **kwargs: SimpleNamespace(ocr=lambda image: image)))
@@ -93,7 +98,7 @@ class DailyIntegrationTests(unittest.TestCase):
         self.task._dispatch_once_today()
         self.task.config.save.assert_not_called()
         self.dispatcher.run.side_effect = DispatchError('unverified')
-        with self.assertRaises(TransitionError):
+        with self.assertRaises(PreparationError):
             self.task._dispatch_once_today()
         self.task.config.save.assert_not_called()
         self.assertEqual(self.task.conf.daily_dispatch_record.date, '')
@@ -140,7 +145,7 @@ class DailyIntegrationTests(unittest.TestCase):
                         self.task.config.model.restart.login_character_config.character = 'role2'
                     return SimpleNamespace(completed=True, dispatched=1, reason='done')
                 self.dispatcher.run.side_effect = change
-                with self.assertRaises(TransitionError):
+                with self.assertRaises(PreparationError):
                     self.task._dispatch_once_today()
                 self.task.config.save.assert_not_called()
 
@@ -162,8 +167,9 @@ class DailyIntegrationTests(unittest.TestCase):
     def test_failed_coloring_or_return_propagates_before_task_success(self):
         self.task.conf.general_climb.auto_color_hyakki = True
         self.colorer.run.side_effect = ColoringError('unexpected panel')
-        with self.assertRaises(TransitionError):
+        with self.assertRaises(TransitionError) as raised:
             self.task.after_run()
+        self.assertNotIsInstance(raised.exception, PreparationError)
         self.task.config.save.assert_not_called()
         self.colorer.run.side_effect = None
         self.colorer.leave.return_value = False
@@ -182,6 +188,27 @@ class DailyIntegrationTests(unittest.TestCase):
         self.dispatcher.restore_map.assert_called_once()
         self.dispatcher.run.assert_not_called()
         self.task.config.save.assert_not_called()
+
+    def test_interrupted_success_popup_recovers_without_redeploying_or_completing_task(self):
+        self.task._dispatch_view.observe.return_value = SimpleNamespace(
+            kind='success', dismiss_roi=(1, 2, 3, 4), close_roi=None)
+        self.task._restore_daily_activity_map()
+        self.dispatcher.restore_map.assert_called_once()
+        self.dispatcher.run.assert_not_called()
+        self.task.goto_page.assert_not_called()
+        self.task.config.save.assert_not_called()
+        self.assertEqual(self.task.conf.daily_dispatch_record.date, '')
+
+    def test_unclosed_success_popup_requests_preparation_retry_without_daily_record(self):
+        self.task._dispatch_view.observe.return_value = SimpleNamespace(kind='success', close_roi=None)
+        for failure in (False, DispatchError('popup did not close')):
+            with self.subTest(failure=failure):
+                self.dispatcher.restore_map.side_effect = failure if isinstance(failure, Exception) else None
+                self.dispatcher.restore_map.return_value = False
+                with self.assertRaises(PreparationError):
+                    self.task._restore_daily_activity_map()
+        self.task.config.save.assert_not_called()
+        self.dispatcher.run.assert_not_called()
 
     def test_partially_recognized_drawer_uses_verified_collapse_without_deployment(self):
         self.task._dispatch_view.observe.return_value = SimpleNamespace(kind='unknown', close_roi=(1, 2, 3, 4))
@@ -267,6 +294,11 @@ class LifecycleTests(unittest.TestCase):
             task.run()
         self.assertNotIn('after', events)
         self.assertNotIn('schedule', events)
+        events.clear()
+        task.before_run = Mock(side_effect=PreparationError('dispatch popup did not close'))
+        with self.assertRaises(PreparationError):
+            task.run()
+        self.assertEqual(events, [])
 
 
 if __name__ == '__main__':

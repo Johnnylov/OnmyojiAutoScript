@@ -26,6 +26,7 @@ class DailyDispatcher:
         self.sleep = sleep
         self.choose = choose or random.choice
         self.latest = None
+        self._restore_failed = False
 
     def _observe(self):
         self.latest = self.view.observe(self.screenshot())
@@ -36,7 +37,8 @@ class DailyDispatcher:
         return (observation.kind, len(observation.empty), observation.locked,
                 observation.running, observation.uncertain, observation.selected,
                 observation.current, observation.maximum,
-                tuple(index for index, _ in observation.available), bool(observation.close_roi))
+                tuple(index for index, _ in observation.available), bool(observation.close_roi),
+                bool(observation.dismiss_roi))
 
     def _wait(self, predicate, reason):
         previous, unchanged = None, 0
@@ -60,14 +62,26 @@ class DailyDispatcher:
         self.sleep(.4)
 
     def restore_map(self):
-        """Collapse a positively identified drawer without dispatching anyone."""
-        observation = self._wait(lambda o: o.kind == 'map' or o.close_roi is not None,
-                                 'Cannot identify the dispatch map or its drawer')
-        if observation.kind == 'map':
+        """Dismiss a confirmed success overlay, then collapse its detail drawer."""
+        self._restore_failed = False
+        try:
+            observation = self._wait(
+                lambda o: o.kind in ('map', 'success') or o.close_roi is not None,
+                'Cannot identify the dispatch map, success overlay or its drawer')
+            if observation.kind == 'success':
+                self._click(observation.dismiss_roi, 'dispatch_success_close')
+                observation = self._wait(
+                    lambda o: o.kind == 'map' or (o.kind != 'success' and o.close_roi is not None),
+                    'Dispatch success overlay did not close to a recognized map or drawer')
+            if observation.kind == 'map':
+                return True
+            self._click(observation.close_roi, 'dispatch_collapse')
+            self._wait(lambda o: o.kind == 'map', 'Dispatch drawer did not return to the map')
             return True
-        self._click(observation.close_roi, 'dispatch_collapse')
-        self._wait(lambda o: o.kind == 'map', 'Dispatch drawer did not return to the map')
-        return True
+        except DispatchError:
+            # Do not repeat a failed popup/drawer click again in run() cleanup.
+            self._restore_failed = True
+            raise
 
     def _complete_without_dispatch(self, dispatched, reason):
         self.restore_map()
@@ -134,8 +148,9 @@ class DailyDispatcher:
                     or fresh.maximum != setup.maximum or target <= 0):
                 raise DispatchError('Dispatch setup changed before submission')
             self._click(fresh.submit_roi, 'dispatch_submit')
-            # Never repeat a resource-spending submit click. Close any remaining
-            # drawer and require one new running timer before touching a slot.
+            # Never repeat a resource-spending submit click. Dismiss the success
+            # overlay, collapse running details (whose button is now Recall),
+            # and require one new running timer before touching another slot.
             self.restore_map()
             after = self._wait(lambda o: o.all_slots_known and o.running == before.running + 1
                                and len(o.empty) == len(before.empty) - 1
@@ -152,7 +167,8 @@ class DailyDispatcher:
         except DispatchError as error:
             # Safe best effort: leave a recognized setup via its collapse
             # control. Unknown screens never receive a guessed back/plus click.
-            if self.latest is not None and self.latest.close_roi is not None:
+            if (not self._restore_failed and self.latest is not None
+                    and (self.latest.close_roi is not None or self.latest.dismiss_roi is not None)):
                 try:
                     self.restore_map()
                 except DispatchError:

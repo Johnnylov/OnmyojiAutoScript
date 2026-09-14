@@ -12,6 +12,7 @@ PLUS = (900, 300, 20, 20)
 MINUS = (700, 300, 20, 20)
 SUBMIT = (800, 400, 50, 25)
 CLOSE = (500, 440, 20, 20)
+DISMISS = (520, 180, 25, 22)
 
 
 class World:
@@ -27,6 +28,8 @@ class World:
         self.stall = None
         self.confirm_submit = True
         self.leave_drawer = False
+        self.show_success = False
+        self.after_success = 'running_details'
 
     def screenshot(self):
         self.reads += 1
@@ -36,6 +39,10 @@ class World:
                 locked=self.locked, running=self.running)
         if self.kind == 'unknown':
             return Observation()
+        if self.kind == 'success':
+            return Observation(kind='success', dismiss_roi=DISMISS)
+        if self.kind == 'running_details':
+            return Observation(kind='running_details', close_roi=CLOSE)
         return Observation(kind=self.kind, available=self.available, selected=self.selected,
                            current=self.current if self.kind == 'setup' else None,
                            maximum=self.maximum if self.kind == 'setup' else None,
@@ -48,6 +55,8 @@ class World:
             return
         if roi == CLOSE:
             self.kind = 'map'
+        elif roi == DISMISS:
+            self.kind = self.after_success
         elif self.kind == 'map' and roi[1] == 100:
             self.kind = 'portraits'
         elif roi in [value for _, value in self.available]:
@@ -61,7 +70,7 @@ class World:
             if self.confirm_submit:
                 self.empty -= 1
                 self.running += 1
-            self.kind = 'portraits' if self.leave_drawer else 'map'
+            self.kind = 'success' if self.show_success else 'portraits' if self.leave_drawer else 'map'
 
 
 class IdentityView:
@@ -104,6 +113,71 @@ class DispatchFlowTests(unittest.TestCase):
         result = dispatcher(world).run()
         self.assertEqual(result.dispatched, 4)
         self.assertEqual(world.clicks, [SLOT, PORTRAIT, SUBMIT, CLOSE] * 4)
+
+    def test_success_overlay_is_dismissed_before_collapsing_running_details(self):
+        world = World(empty=4, locked=0, current=12, maximum=12)
+        world.show_success = True
+        result = dispatcher(world).run()
+        self.assertEqual(result.dispatched, 4)
+        self.assertEqual(world.clicks, [SLOT, PORTRAIT, SUBMIT, DISMISS, CLOSE] * 4)
+        self.assertEqual(world.controls.count('dispatch_success_close'), 4)
+        self.assertEqual(world.kind, 'map')
+
+    def test_interrupted_success_is_recovered_without_resubmitting_its_character(self):
+        world = World(empty=3, locked=0, running=1)
+        world.show_success = True
+        world.kind = 'success'
+        result = dispatcher(world).run()
+        self.assertEqual(result.dispatched, 3)
+        self.assertEqual(world.clicks[:2], [DISMISS, CLOSE])
+        self.assertEqual(world.clicks.count(SUBMIT), 3)
+        self.assertEqual(world.running, 4)
+
+    def test_success_without_new_countdown_does_not_count_as_completed(self):
+        world = World()
+        world.show_success = True
+        world.confirm_submit = False
+        with self.assertRaises(DispatchError):
+            dispatcher(world).run()
+        self.assertEqual(world.clicks, [SLOT, PORTRAIT, SUBMIT, DISMISS, CLOSE])
+
+    def test_stuck_success_overlay_gets_one_dismissal_and_no_underlying_clicks(self):
+        world = World()
+        world.show_success = True
+        world.stall = DISMISS
+        with self.assertRaises(DispatchError):
+            dispatcher(world).run()
+        self.assertEqual(world.clicks, [SLOT, PORTRAIT, SUBMIT, DISMISS])
+
+    def test_unknown_success_animation_frames_do_not_allow_repeat_dismissal(self):
+        class FlickeringWorld(World):
+            def screenshot(self):
+                if self.clicks:
+                    self.kind = 'unknown' if self.reads % 2 else 'success'
+                return super().screenshot()
+
+        world = FlickeringWorld()
+        world.kind = 'success'
+        with self.assertRaises(DispatchError):
+            dispatcher(world).run()
+        self.assertEqual(world.clicks, [DISMISS])
+        self.assertLessEqual(world.reads, 9)
+
+    def test_stuck_running_details_never_receive_a_recall_or_repeat_collapse(self):
+        world = World(empty=0, locked=0, running=4)
+        world.kind = 'running_details'
+        world.stall = CLOSE
+        with self.assertRaises(DispatchError):
+            dispatcher(world).run()
+        self.assertEqual(world.clicks, [CLOSE])
+
+    def test_success_can_return_directly_to_the_map(self):
+        world = World()
+        world.show_success = True
+        world.after_success = 'map'
+        result = dispatcher(world).run()
+        self.assertTrue(result.completed)
+        self.assertEqual(world.clicks, [SLOT, PORTRAIT, SUBMIT, DISMISS])
 
     def test_target_twelve_adjusts_and_reads_every_hour(self):
         for current, control, count in ((8, PLUS, 4), (15, MINUS, 3)):

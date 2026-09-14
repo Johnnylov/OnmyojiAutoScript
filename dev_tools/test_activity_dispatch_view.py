@@ -19,6 +19,9 @@ FILES = {
     'running': '95beef8e-89c2-4714-b256-9be8932833dc',
     'running_later': '4be37c8e-260c-41e3-b9f5-d1c0befee047',
 }
+SUCCESS_FILE = TEMP / 'codex-clipboard-5c9f94ca-b621-480d-a0fb-dd78552fe82e.png'
+SUCCESS_ERROR = (Path(__file__).resolve().parents[1] / 'log/error/oas2_1789362111908'
+                 / '2026-09-14_13-01-51-279615.png')
 
 
 def rgb(path):
@@ -39,7 +42,25 @@ def synthetic_map():
     return image
 
 
+def synthetic_running_details():
+    image = np.full((625, 1111, 3), (41, 30, 24), dtype=np.uint8)
+    paste(image, 'chevron', 545, 436)
+    for i, x in enumerate((102, 276, 426, 614, 789, 957)):
+        paste(image, 'name_' + str(i), x, 594)
+    factor = 1111 / 840
+    for name, (x, y) in (('remaining', (650, 247)), ('recall', (671, 310))):
+        patch = cv2.resize(rgb(ASSETS / (name + '.png')), None, fx=factor, fy=factor)
+        x, y = round(x * factor), round(y * factor)
+        image[y:y+patch.shape[0], x:x+patch.shape[1]] = patch
+    return image
+
+
 class DispatchVisionTests(unittest.TestCase):
+    def success_frame(self):
+        if not SUCCESS_FILE.exists():
+            self.skipTest('Supplied success-overlay screenshot is unavailable')
+        return rgb(SUCCESS_FILE)
+
     def load(self, name):
         path = TEMP / ('codex-clipboard-' + FILES[name] + '.png')
         if not path.exists():
@@ -55,6 +76,77 @@ class DispatchVisionTests(unittest.TestCase):
             self.assertEqual(parse_duration(text), expected)
         for text in ('', None, '9', '9/8时', '99/99时', '9/9/9', '-1/9', '消耗9/9', '9/9时购买'):
             self.assertIsNone(parse_duration(text))
+
+    def test_success_popup_uses_only_its_blank_dismissal_region(self):
+        image = self.success_frame()
+        shifted = np.zeros((image.shape[0] + 45, image.shape[1] + 70, 3), dtype=np.uint8)
+        shifted[21:21+image.shape[0], 39:39+image.shape[1]] = image
+        frames = [('native', image), ('runtime', cv2.resize(image, (1280, 720))),
+                  ('translated', shifted)]
+        if SUCCESS_ERROR.exists():
+            frames.append(('actual_error', rgb(SUCCESS_ERROR)))
+        for name, frame in frames:
+            with self.subTest(name=name):
+                observation = self.view().observe(frame)
+                self.assertEqual(observation.kind, 'success')
+                self.assertIsNotNone(observation.dismiss_roi)
+                self.assertIsNone(observation.close_roi)
+                self.assertIsNone(observation.submit_roi)
+                self.assertIsNone(observation.plus_roi)
+                self.assertFalse(observation.empty)
+                self.assertFalse(observation.available)
+                x, y, w, h = observation.dismiss_roi
+                # This blank area stays to the left of the running/recall
+                # pane and above the card tray, even if the overlay vanishes.
+                self.assertLess(x + w, frame.shape[1] * .69)
+                self.assertLess(y + h, frame.shape[0] * .48)
+
+    def test_faded_success_label_still_requires_return_hint(self):
+        image = self.success_frame()
+        image[145:171, 382:466] = 0
+        self.assertEqual(self.view().observe(image).kind, 'success')
+        image[345:373, 340:505] = 0
+        observation = self.view().observe(image)
+        self.assertEqual(observation.kind, 'unknown')
+        self.assertIsNone(observation.dismiss_roi)
+
+    def test_partial_success_or_other_dimmed_overlay_has_no_dismissal(self):
+        for x, y, w, h in ((326, 60, 180, 52), (362, 440, 120, 25)):
+            image = self.success_frame()
+            image[y:y+h, x:x+w] = 0
+            observation = self.view().observe(image)
+            self.assertEqual(observation.kind, 'unknown')
+            self.assertIsNone(observation.dismiss_roi)
+        observation = self.view().observe((synthetic_map() * .5).astype(np.uint8))
+        self.assertEqual(observation.kind, 'unknown')
+        self.assertIsNone(observation.dismiss_roi)
+
+    def test_missing_success_title_cannot_expose_dark_underlying_running_details(self):
+        frames = [self.success_frame()]
+        frames.append(cv2.resize(frames[0], (1280, 720)))
+        if SUCCESS_ERROR.exists():
+            frames.append(rgb(SUCCESS_ERROR))
+        for image in frames:
+            sx, sy = image.shape[1] / 840, image.shape[0] / 473
+            x, y, w, h = round(326*sx), round(60*sy), round(180*sx), round(52*sy)
+            image[y:y+h, x:x+w] = 0
+            observation = self.view().observe(image)
+            self.assertEqual(observation.kind, 'unknown')
+            self.assertIsNone(observation.close_roi)
+            self.assertIsNone(observation.dismiss_roi)
+            self.assertIsNone(observation.submit_roi)
+
+    def test_running_details_only_expose_collapse_even_without_map_title(self):
+        image = synthetic_running_details()
+        observation = self.view().observe(image)
+        self.assertEqual(observation.kind, 'running_details')
+        self.assertIsNotNone(observation.close_roi)
+        self.assertIsNone(observation.submit_roi)
+        self.assertIsNone(observation.dismiss_roi)
+        self.assertFalse(observation.available)
+        # An isolated recall or remaining-time label is not sufficient.
+        image[326:355, 855:965] = 0
+        self.assertEqual(self.view().observe(image).kind, 'unknown')
 
     def test_portable_map_requires_labels_and_four_identified_slots(self):
         observation = self.view().observe(synthetic_map())

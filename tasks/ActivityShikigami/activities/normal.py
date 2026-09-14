@@ -6,7 +6,7 @@ from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleCon
 from tasks.Component.GeneralBattle.general_battle import ExitMatcher
 from module.atom.click import RuleClick
 from module.atom.ocr import RuleOcr
-from module.exception import BattleTransitionTimeout
+from module.exception import ActivityPreparationTimeout, BattleTransitionTimeout
 from tasks.ActivityShikigami.dispatch import DailyDispatcher, DispatchError
 from tasks.ActivityShikigami.dispatch_view import DispatchView
 from tasks.ActivityShikigami.coloring import DailyColorer, ColoringError
@@ -138,14 +138,14 @@ class NormalClimbAct(BaseAct):
                     raise ColoringError('未确认从百鬼夜行图返回地图')
                 image = self.screenshot()
             observation = self._dispatch_view.observe(image)
-            if (observation.kind in ('portraits', 'setup')
+            if (observation.kind in ('success', 'portraits', 'setup')
                     or getattr(observation, 'close_roi', None) is not None):
                 dispatcher = DailyDispatcher(self.screenshot, self._activity_click_roi,
                                              view=self._dispatch_view)
                 if not dispatcher.restore_map():
                     raise DispatchError('上阵面板未确认收起')
         except (DispatchError, ColoringError) as exc:
-            raise BattleTransitionTimeout(f'活动面板恢复失败：{exc}') from exc
+            raise ActivityPreparationTimeout(f'活动面板恢复失败：{exc}') from exc
 
     def _dispatch_once_today(self):
         """Check this account's unlocked dispatch slots once per server day."""
@@ -167,12 +167,12 @@ class NormalClimbAct(BaseAct):
         try:
             result = dispatcher.run()
         except DispatchError as exc:
-            raise BattleTransitionTimeout(f'每日上阵未完成：{exc}') from exc
+            raise ActivityPreparationTimeout(f'每日上阵未完成：{exc}') from exc
         if not result.completed:
             logger.warning(f'每日上阵未确认完成：{result.reason}')
             return
         if server_date() != day or self._activity_owner() != owner:
-            raise BattleTransitionTimeout('上阵期间日期或角色发生变化，下次重新检查')
+            raise ActivityPreparationTimeout('上阵期间日期或角色发生变化，下次重新检查')
         # Screenshot callbacks may reload the model; save into the current one.
         record = self.config.model.activity_shikigami.daily_dispatch_record
         record.date, record.owner = day.isoformat(), owner

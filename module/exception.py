@@ -35,6 +35,10 @@ class BattleTransitionTimeout(Exception):
     """A battle transition timed out; defer this task and continue scheduling."""
 
 
+class ActivityPreparationTimeout(BattleTransitionTimeout):
+    """Activity setup failed before climbing; recover and retry the unfinished task."""
+
+
 class GameBugError(Exception):
     # An error has occurred in Azur Lane game client. Alas is unable to handle.
     # A restart should fix it.

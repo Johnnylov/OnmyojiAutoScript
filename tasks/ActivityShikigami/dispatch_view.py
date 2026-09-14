@@ -35,6 +35,7 @@ class DispatchObservation:
     minus_roi: tuple | None = None
     submit_roi: tuple | None = None
     close_roi: tuple | None = None
+    dismiss_roi: tuple | None = None
 
     @property
     def all_slots_known(self):
@@ -153,10 +154,10 @@ def _matches(gray, name, threshold=.82, limit=8):
     return unique[:limit]
 
 
-def _near(gray, name, reference, transform, threshold=.8):
+def _near(gray, name, reference, transform, threshold=.8, margin=5):
     origin_x, origin_y, scale = transform
     x, y, w, h = reference
-    margin = max(3, round(5 * scale))
+    margin = max(3, round(margin * scale))
     roi = (round(origin_x + x * scale) - margin, round(origin_y + y * scale) - margin,
            round(w * scale) + 2 * margin, round(h * scale) + 2 * margin)
     if not _inside(gray, roi):
@@ -177,6 +178,31 @@ class DispatchView:
         if not _inside(image, roi):
             return ''
         return self.read_text(image, roi)
+
+    def _success(self, gray):
+        # This overlay intentionally dims the map. Identify its own three
+        # distant anchors before checking the normal map's brightness.
+        for title in _matches(gray, 'success_title', .82, limit=2):
+            transform = (title.x - 329 * title.scale,
+                         title.y - 62 * title.scale, title.scale)
+            prompt = _near(gray, 'success_dismiss', (365, 442, 112, 19), transform, .8)
+            if prompt is None:
+                continue
+            label = _near(gray, 'success_label', (385, 147, 78, 21), transform, .82)
+            # The white success label fades during the animation. Its later
+            # frame still has the gold return-time suffix below the character.
+            returning = _near(gray, 'success_return', (444, 347, 57, 23),
+                              transform, .82, margin=20)
+            if label is None and returning is None:
+                continue
+            ox, oy, scale = transform
+            # Blank overlay space between the character and the detail pane;
+            # this avoids the underlying recall button and portrait cards.
+            dismiss = (round(ox + 520 * scale), round(oy + 180 * scale),
+                       max(1, round(25 * scale)), max(1, round(22 * scale)))
+            if _inside(gray, dismiss):
+                return DispatchObservation(kind='success', dismiss_roi=dismiss)
+        return None
 
     def _drawer(self, image, gray):
         for arrow in _matches(gray, 'chevron', .82, limit=3):
@@ -211,6 +237,13 @@ class DispatchView:
             close = arrow.roi(2, 2, 23, 20)
             if len(selected) > 1:
                 return DispatchObservation(close_roi=close)
+            # The post-submit detail pane has a recall button in the former
+            # submit location. Expose only its drawer-collapse control.
+            detail_transform = (ox, oy, scale * 1111 / 840)
+            remaining = _near(gray, 'remaining', (650, 247, 74, 18), detail_transform, .82)
+            recall = _near(gray, 'recall', (671, 310, 38, 19), detail_transform, .82)
+            if remaining is not None and recall is not None:
+                return DispatchObservation(kind='running_details', close_roi=close)
             rewards = _near(gray, 'rewards', (866, 140, 90, 24), transform, .82)
             submit = _near(gray, 'submit', (825, 400, 169, 45), transform, .82)
             duration = _near(gray, 'duration', (838, 271, 80, 25), transform, .8)
@@ -235,9 +268,14 @@ class DispatchView:
                 or image.shape[2] != 3 or min(image.shape[:2]) < 100):
             return DispatchObservation()
         gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        success = self._success(gray)
+        if success is not None:
+            return success
+        drawer = self._drawer(image, gray)
+        if drawer is not None and drawer.kind == 'running_details':
+            return drawer
         if not _matches(gray, 'map_name', .8, limit=1):
             return DispatchObservation()
-        drawer = self._drawer(image, gray)
         if drawer is not None:
             return drawer
         empty = _matches(gray, 'empty', .8, limit=5)

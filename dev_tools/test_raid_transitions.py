@@ -256,6 +256,7 @@ class TimeoutSchedulerTests(unittest.TestCase):
     def setUp(self):
         namespace = dict(logger=Mock(), TaskEnd=type('TaskEnd', (Exception,), {}),
                          BattleTransitionTimeout=TransitionTimeout,
+                         ActivityPreparationTimeout=type('ActivityPreparationTimeout', (TransitionTimeout,), {}),
                          datetime=datetime, timedelta=timedelta, date=date,
                          _log_switch_lock=nullcontext(), IS_WINDOWS=False,
                          ScriptRuntimeDecision=SimpleNamespace(RESCHEDULE='reschedule', FAILED='failed'),

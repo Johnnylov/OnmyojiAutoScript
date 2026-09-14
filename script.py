@@ -565,6 +565,17 @@ class Script:
             self._capture_task_runtime_outcome(command)
             return True
 
+        if isinstance(e, ActivityPreparationTimeout):
+            logger.warning(f'{command}: {e}; restart and retry unfinished activity preparation in one minute')
+            self.save_error_log()
+            retry_at = datetime.now().replace(microsecond=0) + timedelta(minutes=1)
+            # Climbing has not started, so do not consume its daily failure interval.
+            self.config.task_delay(task=command, target=retry_at, server=False)
+            self.config.task_call('Restart')
+            self._set_task_runtime_outcome(task=command, status='retry_scheduled', wait_until=retry_at)
+            # Count genuine failures so the existing three-failure limit still applies.
+            return False
+
         if isinstance(e, BattleTransitionTimeout):
             logger.warning(f'{command}: {e}; skip current task and continue scheduling')
             self.save_error_log()
