@@ -117,6 +117,8 @@
   "run_sequence": "运行顺序",
   "auto_select_souls": "按日期自选御魂",
   "auto_select_souls_help": "进入虚无精锐后，按图示9月9日至29日当天推荐随机选择四种御魂；推荐不足四种时，从当天其余御魂随机补齐。每日首次爬塔挑战前提交，跨日重新选择。",
+  "auto_color_hyakki": "爬塔后自动上色",
+  "auto_color_hyakki_help": "每日爬塔结束后进入百鬼夜行图，点击开始上色并提交当前可用的全部颜料。全服进度达到100%、颜料用完或提交无变化时停止；不购买颜料。",
   "random_sleep": "随机休息",
   "collect_paper_reward": "是否收取小纸人奖励",
   "collect_paper_reward_help": "关闭则不收取直接退出",

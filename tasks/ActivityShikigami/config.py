@@ -23,6 +23,7 @@ class GeneralClimb(ConfigBase):
                                           '逗号分隔,从左到右依次运行\n'
                                           '例:pass,ap100,boss,ap=门票->100体->boss战->体力')
     auto_select_souls: bool = Field(default=False, description='auto_select_souls_help')
+    auto_color_hyakki: bool = Field(default=False, description='auto_color_hyakki_help')
     # # 门票爬塔buff
     # pass_buff: str = Field(default='buff_4,buff_5', description='门票爬塔加成,buff1-5,加成页从左往右顺序,清空则不切换加成')
     # # 体力爬塔buff
@@ -158,11 +159,17 @@ class SoulSelectionRecord(BaseModel):
     owner: str = Field(default='')
 
 
+class DailyDispatchRecord(BaseModel):
+    date: str = Field(default='')
+    owner: str = Field(default='')
+
+
 class ActivityShikigami(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
     general_climb: GeneralClimb = Field(default_factory=GeneralClimb)
     rich_man: RichManConfig = Field(default_factory=RichManConfig)
     soul_selection_record: SoulSelectionRecord = Field(default_factory=SoulSelectionRecord)
+    daily_dispatch_record: DailyDispatchRecord = Field(default_factory=DailyDispatchRecord)
     switch_soul_config: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig)
 
     pass_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
@@ -170,4 +177,4 @@ class ActivityShikigami(ConfigBase):
     boss_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
     ap100_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
 
-    hide_fields = dynamic_hide('rich_man', 'soul_selection_record')
+    hide_fields = dynamic_hide('rich_man', 'soul_selection_record', 'daily_dispatch_record')

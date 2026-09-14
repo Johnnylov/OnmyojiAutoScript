@@ -131,6 +131,5 @@ class ActivityShikigamiAssets:
 	# 活动主界面进入体力爬塔标志 
 	I_TO_BATTLE_AP = RuleImage(roi_front=(825,321,39,139), roi_back=(720,255,238,269), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_to_battle_ap.png")
 	# 活动中转界面进入战斗界面
-	I_MAP_GOTO_BATTLE = RuleImage(roi_front=(71,93,99,36), roi_back=(71,93,99,36), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_map_goto_battle.png")
-
+	I_MAP_GOTO_BATTLE = RuleImage(roi_front=(71,93,99,36), roi_back=(50,75,150,65), threshold=0.8, method="Template matching", file="./tasks/ActivityShikigami/as/as_map_goto_battle.png")
 

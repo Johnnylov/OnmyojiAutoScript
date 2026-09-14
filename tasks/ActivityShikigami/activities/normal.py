@@ -5,7 +5,12 @@ import tasks.ActivityShikigami.page as pages
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.GeneralBattle.general_battle import ExitMatcher
 from module.atom.click import RuleClick
+from module.atom.ocr import RuleOcr
 from module.exception import BattleTransitionTimeout
+from tasks.ActivityShikigami.dispatch import DailyDispatcher, DispatchError
+from tasks.ActivityShikigami.dispatch_view import DispatchView
+from tasks.ActivityShikigami.coloring import DailyColorer, ColoringError
+from tasks.ActivityShikigami.coloring_view import ColoringView
 from tasks.ActivityShikigami.soul_selection import (
     DailySoulSelector, SoulSelectionError, choose_souls, recommendations,
     recorded_today, server_date,
@@ -86,6 +91,110 @@ class NormalClimbAct(BaseAct):
         if self.conf.general_climb.auto_select_souls and recommendations(server_date()):
             if self._soul_selection_view.find_panel(self.screenshot()) is not None:
                 self._select_daily_souls(force=True)
+        self._restore_daily_activity_map()
+        self._dispatch_once_today()
+
+    @property
+    def _dispatch_view(self):
+        if not hasattr(self, '_daily_dispatch_view'):
+            self._daily_dispatch_view = DispatchView(read_text=self._activity_read_text)
+        return self._daily_dispatch_view
+
+    @property
+    def _coloring_view(self):
+        if not hasattr(self, '_daily_coloring_view'):
+            self._daily_coloring_view = ColoringView()
+        return self._daily_coloring_view
+
+    def _activity_read_text(self, image, roi, name='activity_text'):
+        # Keep raw strings: a blank OCR result must never become zero/100%.
+        rule = RuleOcr(roi=roi, area=roi, mode='Single', method='Default',
+                       keyword='', name=name)
+        return rule.ocr(image)
+
+    def _activity_click_roi(self, roi, name):
+        self.click(RuleClick(roi_front=roi, roi_back=roi, name=name))
+        # BaseTask.click returns False for a delivered click without interval;
+        # our UI workers use False to mean no action, so normalize that API.
+        return True
+
+    def _activity_owner(self):
+        return (self.config.config_name + '\n' +
+                self.config.model.restart.login_character_config.character)
+
+    def _colorer(self):
+        return DailyColorer(self.screenshot, self._activity_click_roi,
+                            self._activity_read_text, view=self._coloring_view)
+
+    def _restore_daily_activity_map(self):
+        """Close known interrupted panels before generic page navigation."""
+        if not pages.special_act_Flag:
+            return
+        image = self.screenshot()
+        try:
+            # This recovery does not spend pigment, even with coloring disabled.
+            if self._coloring_view.find_page(image) is not None:
+                if not self._colorer().leave():
+                    raise ColoringError('未确认从百鬼夜行图返回地图')
+                image = self.screenshot()
+            observation = self._dispatch_view.observe(image)
+            if (observation.kind in ('portraits', 'setup')
+                    or getattr(observation, 'close_roi', None) is not None):
+                dispatcher = DailyDispatcher(self.screenshot, self._activity_click_roi,
+                                             view=self._dispatch_view)
+                if not dispatcher.restore_map():
+                    raise DispatchError('上阵面板未确认收起')
+        except (DispatchError, ColoringError) as exc:
+            raise BattleTransitionTimeout(f'活动面板恢复失败：{exc}') from exc
+
+    def _dispatch_once_today(self):
+        """Check this account's unlocked dispatch slots once per server day."""
+        if not pages.special_act_Flag:
+            return
+        current = self.config.model.activity_shikigami
+        if not current.general_climb.run_sequence_v:
+            return
+        day, owner = server_date(), self._activity_owner()
+        record = current.daily_dispatch_record
+        if record.date == day.isoformat() and record.owner == owner:
+            return
+        self.goto_page(pages.page_act_map)
+        if self._dispatch_view.observe(self.screenshot()).kind != 'map':
+            logger.info('当前活动没有可确认的上阵地图，继续爬塔')
+            return
+        dispatcher = DailyDispatcher(self.screenshot, self._activity_click_roi,
+                                     view=self._dispatch_view)
+        try:
+            result = dispatcher.run()
+        except DispatchError as exc:
+            raise BattleTransitionTimeout(f'每日上阵未完成：{exc}') from exc
+        if not result.completed:
+            logger.warning(f'每日上阵未确认完成：{result.reason}')
+            return
+        if server_date() != day or self._activity_owner() != owner:
+            raise BattleTransitionTimeout('上阵期间日期或角色发生变化，下次重新检查')
+        # Screenshot callbacks may reload the model; save into the current one.
+        record = self.config.model.activity_shikigami.daily_dispatch_record
+        record.date, record.owner = day.isoformat(), owner
+        self.config.save()
+        logger.info(f'每日上阵已检查：新上阵 {result.dispatched} 个格子；{result.reason}')
+
+    def after_run(self):
+        climb = self.config.model.activity_shikigami.general_climb
+        if not climb.auto_color_hyakki or not climb.run_sequence_v:
+            return
+        if not pages.special_act_Flag:
+            return
+        self.goto_page(pages.page_act_map)
+        colorer = self._colorer()
+        try:
+            result = colorer.run()
+            if not colorer.leave():
+                raise ColoringError('上色结束后未确认返回地图')
+        except ColoringError as exc:
+            raise BattleTransitionTimeout(f'百鬼夜行图上色未完成：{exc}') from exc
+        logger.info(f'百鬼夜行图：{result.status}，提交 {result.submissions} 次，'
+                    f'全服进度 {result.global_progress}')
 
     @property
     def _soul_selection_view(self):

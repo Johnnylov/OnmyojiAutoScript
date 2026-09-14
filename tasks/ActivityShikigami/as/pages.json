@@ -129,7 +129,7 @@
     "itemName": "map_goto_battle",
     "imageName": "as_map_goto_battle.png",
     "roiFront": "71,93,99,36",
-    "roiBack": "71,93,99,36",
+    "roiBack": "50,75,150,65",
     "method": "Template matching",
     "threshold": 0.8,
     "description": "活动中转界面进入战斗界面"

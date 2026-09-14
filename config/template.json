@@ -940,6 +940,7 @@
       "ap100_limit": 20,
       "run_sequence": "pass,ap,ap100,boss",
       "auto_select_souls": false,
+      "auto_color_hyakki": false,
       "active_souls_clean": false,
       "random_sleep": false
     },
@@ -951,6 +952,10 @@
     "soul_selection_record": {
       "date": "",
       "slots": [],
+      "owner": ""
+    },
+    "daily_dispatch_record": {
+      "date": "",
       "owner": ""
     },
     "switch_soul_config": {

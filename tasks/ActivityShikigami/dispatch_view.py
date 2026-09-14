@@ -1,0 +1,258 @@
+"""Read dispatch controls using local visual anchors, without device access.
+
+All public images are RGB uint8 arrays. The injected read_text(image, roi)
+reads a single line; ambiguous counters never produce an actionable setup.
+"""
+
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+import re
+
+import cv2
+import numpy as np
+
+
+ASSETS = Path(__file__).with_name('dispatch_assets')
+# Exclude each card's bottom selection border from its name template.
+NAMES = ((102, 594, 39, 20), (276, 594, 40, 20), (426, 594, 93, 20),
+         (614, 594, 70, 20), (789, 594, 70, 20), (957, 594, 87, 20))
+CARD_X = (47, 223, 399, 575, 751, 927)
+
+
+@dataclass(frozen=True)
+class DispatchObservation:
+    kind: str = 'unknown'
+    empty: tuple = ()
+    locked: int = 0
+    running: int = 0
+    uncertain: int = 0
+    available: tuple = ()  # (zero-based portrait index, click ROI)
+    selected: int | None = None
+    current: int | None = None
+    maximum: int | None = None
+    plus_roi: tuple | None = None
+    minus_roi: tuple | None = None
+    submit_roi: tuple | None = None
+    close_roi: tuple | None = None
+
+    @property
+    def all_slots_known(self):
+        return (self.kind == 'map' and not self.uncertain
+                and len(self.empty) + self.locked + self.running == 4)
+
+
+@dataclass(frozen=True)
+class Match:
+    x: float
+    y: float
+    scale: float
+    width: float
+    height: float
+    score: float
+
+    @property
+    def center(self):
+        return self.x + self.width / 2, self.y + self.height / 2
+
+    def roi(self, dx=0, dy=0, width=None, height=None):
+        return (round(self.x + dx * self.scale), round(self.y + dy * self.scale),
+                max(1, round(self.width if width is None else width * self.scale)),
+                max(1, round(self.height if height is None else height * self.scale)))
+
+
+@lru_cache(maxsize=32)
+def _template(name):
+    image = cv2.imread(str(ASSETS / (name + '.png')), cv2.IMREAD_GRAYSCALE)
+    if image is None:
+        raise FileNotFoundError(ASSETS / (name + '.png'))
+    return image
+
+
+def parse_duration(text):
+    if not isinstance(text, str):
+        return None
+    text = re.sub(r'\s+', '', text)
+    match = re.fullmatch(r'(?:放置时间)?(\d{1,2})/(\d{1,2})(?:时|小时)?', text)
+    if match is None:
+        return None
+    current, maximum = map(int, match.groups())
+    return (current, maximum) if 0 <= current <= maximum <= 24 else None
+
+
+def _countdown(text):
+    if not isinstance(text, str):
+        return False
+    match = re.search(r'(?<!\d)(\d{1,2}):([0-5]\d):([0-5]\d)(?!\d)',
+                      re.sub(r'\s+', '', text).replace('：', ':'))
+    return bool(match and int(match[1]) <= 24)
+
+
+def _inside(image, roi):
+    x, y, w, h = roi
+    return x >= 0 and y >= 0 and w > 0 and h > 0 and x + w <= image.shape[1] and y + h <= image.shape[0]
+
+
+def _crop(image, roi):
+    x, y, w, h = roi
+    return image[y:y+h, x:x+w]
+
+
+def _best(source, template):
+    if source.size == 0 or any(a < b for a, b in zip(source.shape[:2], template.shape[:2])):
+        return 0., (0, 0)
+    _, score, _, location = cv2.minMaxLoc(cv2.matchTemplate(source, template, cv2.TM_CCOEFF_NORMED))
+    return score, location
+
+
+def _scaled(image, scale):
+    return cv2.resize(image, None, fx=scale, fy=scale,
+                      interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR)
+
+
+def _lit(gray, match, name):
+    """Correlation alone also matches controls beneath a dim modal overlay."""
+    roi = match.roi()
+    if not _inside(gray, roi):
+        return False
+    source = _crop(gray, roi)
+    reference = _scaled(_template(name), match.scale)
+    return (np.percentile(source, 90) >= np.percentile(reference, 90) * .85
+            and float(source.std()) >= float(reference.std()) * .65)
+
+
+def _matches(gray, name, threshold=.82, limit=8):
+    """Search scale and translation, then suppress duplicate nearby matches."""
+    reduction = min(1., 1050. / max(gray.shape))
+    source = _scaled(gray, reduction) if reduction < 1 else gray
+    template = _template(name)
+    candidates = []
+    scales = sorted(set(np.arange(.55, 2.61, .05).round(3)) | {1., 1.25, 1.5, 2.})
+    for scale in scales:
+        resized = _scaled(template, scale * reduction)
+        if any(a < b for a, b in zip(source.shape, resized.shape)):
+            continue
+        scores = cv2.matchTemplate(source, resized, cv2.TM_CCOEFF_NORMED)
+        for _ in range(limit):
+            _, score, _, (x, y) = cv2.minMaxLoc(scores)
+            if score < threshold:
+                break
+            height, width = resized.shape
+            candidates.append(Match(x / reduction, y / reduction, scale,
+                                    width / reduction, height / reduction, score))
+            scores[max(0, y-height//2):y+height//2+1,
+                   max(0, x-width//2):x+width//2+1] = -1
+    unique = []
+    for candidate in sorted(candidates, key=lambda m: m.score, reverse=True):
+        if not _lit(gray, candidate, name):
+            continue
+        if all(np.linalg.norm(np.subtract(candidate.center, other.center))
+               > max(candidate.width, candidate.height, other.width, other.height) * .65
+               for other in unique):
+            unique.append(candidate)
+    return unique[:limit]
+
+
+def _near(gray, name, reference, transform, threshold=.8):
+    origin_x, origin_y, scale = transform
+    x, y, w, h = reference
+    margin = max(3, round(5 * scale))
+    roi = (round(origin_x + x * scale) - margin, round(origin_y + y * scale) - margin,
+           round(w * scale) + 2 * margin, round(h * scale) + 2 * margin)
+    if not _inside(gray, roi):
+        return None
+    template = _scaled(_template(name), scale)
+    score, (mx, my) = _best(_crop(gray, roi), template)
+    if score < threshold:
+        return None
+    match = Match(roi[0] + mx, roi[1] + my, scale, template.shape[1], template.shape[0], score)
+    return match if _lit(gray, match, name) else None
+
+
+class DispatchView:
+    def __init__(self, read_text=None):
+        self.read_text = read_text or (lambda image, roi: '')
+
+    def _read(self, image, roi):
+        if not _inside(image, roi):
+            return ''
+        return self.read_text(image, roi)
+
+    def _drawer(self, image, gray):
+        for arrow in _matches(gray, 'chevron', .82, limit=3):
+            transform = (arrow.x - 545 * arrow.scale, arrow.y - 436 * arrow.scale, arrow.scale)
+            ox, oy, scale = transform
+
+            def roi(x, y, w, h):
+                return (round(ox + x * scale), round(oy + y * scale),
+                        max(1, round(w * scale)), max(1, round(h * scale)))
+
+            labels = [(i, _near(gray, 'name_' + str(i), area, transform, .8))
+                      for i, area in enumerate(NAMES)]
+            if sum(match is not None for _, match in labels) < 2:
+                continue
+            available, selected = [], []
+            for i, match in labels:
+                if match is None:
+                    continue
+                body = roi(CARD_X[i] + 30, 480, 90, 105)
+                click = roi(CARD_X[i] + 48, 512, 50, 50)
+                if not _inside(image, body) or not _inside(image, click):
+                    continue
+                hsv = cv2.cvtColor(_crop(image, body), cv2.COLOR_RGB2HSV)
+                # Busy/disabled portraits are desaturated. A name alone is
+                # insufficient to choose a card that may no longer be usable.
+                colored = (hsv[:, :, 1] > 65) & (hsv[:, :, 2] < 225)
+                if np.mean(colored) < .06:
+                    continue
+                available.append((i, click))
+                if _near(gray, 'selected', (CARD_X[i]-4, 468, 26, 27), transform, .91):
+                    selected.append(i)
+            close = arrow.roi(2, 2, 23, 20)
+            if len(selected) > 1:
+                return DispatchObservation(close_roi=close)
+            rewards = _near(gray, 'rewards', (866, 140, 90, 24), transform, .82)
+            submit = _near(gray, 'submit', (825, 400, 169, 45), transform, .82)
+            duration = _near(gray, 'duration', (838, 271, 80, 25), transform, .8)
+            plus = _near(gray, 'plus', (998, 302, 37, 37), transform, .82)
+            minus = _near(gray, 'minus', (785, 303, 35, 36), transform, .82)
+            if any((rewards, submit, duration, plus, minus)):
+                if not all((rewards, submit, duration, plus, minus)) or len(selected) != 1:
+                    return DispatchObservation(close_roi=close)
+                # Exclude the decorative diamond following the duration; OCR
+                # otherwise reads it as an extra character at runtime scale.
+                counter = parse_duration(self._read(image, roi(833, 269, 148, 29)))
+                return DispatchObservation(kind='setup', available=tuple(available),
+                    selected=selected[0], current=counter[0] if counter else None,
+                    maximum=counter[1] if counter else None,
+                    plus_roi=plus.roi(9, 9, 18, 18), minus_roi=minus.roi(8, 8, 18, 18),
+                    submit_roi=submit.roi(32, 11, 100, 24), close_roi=close)
+            return DispatchObservation(kind='portraits', available=tuple(available), close_roi=close)
+        return None
+
+    def observe(self, image):
+        if (not isinstance(image, np.ndarray) or image.dtype != np.uint8 or image.ndim != 3
+                or image.shape[2] != 3 or min(image.shape[:2]) < 100):
+            return DispatchObservation()
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        if not _matches(gray, 'map_name', .8, limit=1):
+            return DispatchObservation()
+        drawer = self._drawer(image, gray)
+        if drawer is not None:
+            return drawer
+        empty = _matches(gray, 'empty', .8, limit=5)
+        locked = _matches(gray, 'locked', .8, limit=5)
+        inspected = _matches(gray, 'inspect', .78, limit=5)
+        running = 0
+        for button in inspected:
+            # The magnifier must be paired with a live countdown to count as
+            # an occupied slot. Reward-ready or unrelated icons are ambiguous.
+            # Keep the numeric countdown, excluding its leading clock icon.
+            if _countdown(self._read(image, button.roi(-65, 6, 54, 17))):
+                running += 1
+        uncertain = len(inspected) - running
+        # No partial map is allowed to announce daily completion.
+        if len(empty) + len(locked) + len(inspected) > 4:
+            return DispatchObservation()
+        return DispatchObservation(kind='map', empty=tuple(m.roi(3, 3, 35, 45) for m in empty),
+                                   locked=len(locked), running=running, uncertain=uncertain)

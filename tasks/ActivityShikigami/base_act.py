@@ -130,6 +130,10 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, ActivityShikigami
             self.I_UI_BACK_RED, pages.page_battle_result.recognizer
         )
 
+    def after_run(self):
+        """Optional activity actions after all climb types, before leaving."""
+        pass
+
     @property
     def act_page_handle_dict(self) -> dict[pages.Page, Callable]:
         """活动页面和处理器的映射"""
@@ -184,6 +188,7 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, ActivityShikigami
                 pass
             finally:
                 self.switch_next()  # 切换下一个爬塔类型
+        self.after_run()
         self.goto_page(pages.page_main)
         if self.conf.general_climb.active_souls_clean:
             self.set_next_run(
