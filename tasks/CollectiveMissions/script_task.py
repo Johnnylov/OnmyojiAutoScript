@@ -208,14 +208,20 @@ class ScriptTask(GameUi, CollectiveMissionsAssets):
     def get_reward_and_close(self,  target: RuleImage):
         # 捐赠可能有双倍的，需要领两次
         reward_number = 0
+        reward_pending = False
         timeout_timer = Timer(3).start()
         while not timeout_timer.reached():
             self.screenshot()
-            if reward_number >= 2:
-                break
             if self.ui_reward_appear_click(False):
-                reward_number += 1
+                reward_pending = True
                 continue
+            # The helper also returns True while its click is throttled.
+            # Count a reward only once its panel has actually disappeared.
+            if reward_pending:
+                reward_number += 1
+                reward_pending = False
+                if reward_number >= 2:
+                    break
             if self.appear_then_click(target, interval=1):
                 continue
         self.ui_reward_appear_click(True)  # 兜底再尝试领取一次
@@ -230,4 +236,3 @@ if __name__ == '__main__':
     t.screenshot()
 
     t.run()
-

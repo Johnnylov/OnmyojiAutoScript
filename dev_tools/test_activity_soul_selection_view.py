@@ -6,6 +6,7 @@ portable tests use the four small, committed visual templates.
 """
 
 from pathlib import Path
+import os
 import unittest
 
 import cv2
@@ -145,6 +146,19 @@ class SoulSelectionViewTests(unittest.TestCase):
         x, y, w, h = self.view.find_entry(original)
         self.assertLess(abs(x + w / 2 - 173), 4)
         self.assertLess(abs(y + h / 2 - 371), 4)
+
+    @unittest.skipUnless(os.environ.get('SOUL_SELECTION_ERROR_IMAGE'),
+                         'Local interrupted-climb screenshot not supplied')
+    def test_interrupted_climb_error_has_an_empty_recoverable_selector(self):
+        image = read_rgb(os.environ['SOUL_SELECTION_ERROR_IMAGE'])
+        panel = self.view.find_panel(image)
+        self.assertIsNotNone(panel)
+        self.assertEqual(self.view.selected(image, panel), frozenset())
+        # The recorded error has a visible exit at (1075, 118), not the
+        # underlying mode switch at (1245, 558) which caused repeated clicks.
+        x, y, w, h = panel.close_roi
+        self.assertLess(abs(x + w / 2 - 1075), 8)
+        self.assertLess(abs(y + h / 2 - 118), 8)
 
 
 if __name__ == "__main__":

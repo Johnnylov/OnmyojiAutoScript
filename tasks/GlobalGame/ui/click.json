@@ -1,8 +1,8 @@
 [
   {
     "itemName": "ui_reward",
-    "roiFront": "919,160,208,368",
-    "roiBack": "72,107,244,503",
-    "description": "description"
+    "roiFront": "35,280,45,100",
+    "roiBack": "35,280,45,100",
+    "description": "点击奖励面板及物品详情左侧空白处"
   }
 ]

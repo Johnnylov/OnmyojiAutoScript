@@ -664,7 +664,13 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         """
         if screenshot:
             self.screenshot()
-        return self.appear_then_click(self.I_UI_REWARD, action=self.C_UI_REWARD, interval=0.4, threshold=0.6)
+        if not self.appear(self.I_UI_REWARD, threshold=0.6):
+            return False
+        # The right side can be covered by an item tooltip. Dismiss on the
+        # empty left margin, and keep callers waiting during the click interval
+        # so they cannot click an answer or summon button behind the reward.
+        self.click(self.C_UI_REWARD, interval=0.8)
+        return True
 
     def ui_get_reward(self, click_image: RuleImage | RuleOcr | RuleClick, click_interval: float = 1):
         """

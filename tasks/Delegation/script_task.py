@@ -6,6 +6,7 @@ from datetime import time, datetime, timedelta
 
 from module.logger import logger
 from module.exception import TaskEnd
+from module.atom.click import RuleClick
 from module.base.timer import Timer
 
 from tasks.GameUi.game_ui import GameUi
@@ -92,6 +93,23 @@ class ScriptTask(GameUi, DelegationAssets):
         # ui_click(self.C_D_5, self.I_D_SELECT_5)
         # self.ui_click_until_disappear(self.I_D_START)
 
+    def click_completed_delegation(self):
+        """Open one completed mission on the map, excluding the sidebar label."""
+        rule = self.O_D_DONE
+        results = rule.detect_and_ocr(self.device.image)
+        for result in results:
+            if result.ocr_text != rule.keyword:
+                continue
+            # Multiple completed missions must be opened one at a time. Full OCR
+            # merges matching boxes, which can otherwise click between markers.
+            x, y = result.box[0]
+            right, bottom = result.box[2]
+            area = (int(rule.roi[0] + x), int(rule.roi[1] + y),
+                    int(right - x), int(bottom - y))
+            action = RuleClick(roi_front=area, roi_back=area, name=rule.name)
+            return self.click(action, interval=1.5)
+        return False
+
     def check_reward(self):
         check_timer = Timer(3)
         check_timer.start()
@@ -119,11 +137,11 @@ class ScriptTask(GameUi, DelegationAssets):
 
             if not self.appear(self.I_REWARDS_MIN):
                 continue
-            if check_timer.reached():
-                break
-            if self.ocr_appear_click(self.O_D_DONE, interval=1):
+            if self.click_completed_delegation():
                 check_timer.reset()
                 continue
+            if check_timer.reached():
+                break
 
 
 if __name__ == '__main__':
@@ -136,7 +154,6 @@ if __name__ == '__main__':
 
     # t.delegate_one('弥助的画')
     t.run()
-
 
 
 

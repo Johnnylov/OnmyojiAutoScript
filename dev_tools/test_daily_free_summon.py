@@ -104,6 +104,7 @@ class World:
         task.appear = self.appear
         task.click = self.click
         task.appear_then_click = self.appear_then_click
+        task.ui_reward_appear_click = Mock(return_value=False)
         task.summon = lambda: self.draw('normal')
         task.summon_mystery_pattern = lambda: self.draw('pattern')
         task.O_ONE_TICKET = Counter(self, [574, 681, 100, 32])
@@ -163,6 +164,7 @@ class World:
         elif marker in ('I_UI_BACK_BLUE', 'I_UI_BACK_YELLOW'):
             if self.fault != 'back':
                 self.state = 'menu'
+        return True
 
     def appear_then_click(self, marker, **kwargs):
         if self.appear(marker):
@@ -330,6 +332,76 @@ class SummonFlowTests(unittest.TestCase):
 
 
 class EventCanvasTests(unittest.TestCase):
+    def test_reward_intercepting_result_confirmation_is_dismissed_without_extra_draw(self):
+        for mode in ('normal', 'recall'):
+            with self.subTest(mode=mode):
+                world = World(quota=1, mode=mode)
+                original_click = world.task.click
+                def click(marker, **kwargs):
+                    if marker == world.result_marker and marker not in world.clicks:
+                        world.clicks.append(marker)
+                        world.state = 'reward'
+                        return True
+                    return original_click(marker, **kwargs)
+                def reward():
+                    if world.state != 'reward':
+                        return False
+                    world.clicks.append('safe_reward_margin')
+                    world.state = 'result'
+                    return True
+                world.task.click = click
+                world.task.ui_reward_appear_click.side_effect = reward
+                result = (world.task.summon_one() if mode == 'normal'
+                          else world.task.summon_recall())
+                self.assertTrue(result.exhausted)
+                self.assertEqual(result.completed, 1)
+                self.assertEqual(len(world.draws), 1)
+                self.assertEqual(world.clicks.count(world.result_marker), 2)
+                self.assertEqual(world.clicks.count('safe_reward_margin'), 1)
+                self.assertEqual(world.state, 'menu')
+
+    def test_result_reward_before_confirmation_is_dismissed_first(self):
+        world = World(quota=1)
+        def draw():
+            world.draw('normal')
+            world.state = 'reward'
+        def reward():
+            if world.state != 'reward':
+                return False
+            world.clicks.append('safe_reward_margin')
+            world.state = 'result'
+            return True
+        world.task.summon = draw
+        world.task.ui_reward_appear_click.side_effect = reward
+        result = world.task.summon_one()
+        self.assertTrue(result.exhausted)
+        self.assertEqual(world.clicks.count('I_SM_CONFIRM'), 1)
+        self.assertLess(world.clicks.index('safe_reward_margin'),
+                        world.clicks.index('I_SM_CONFIRM'))
+
+    def test_restart_recovers_leftover_reward_and_result_without_drawing(self):
+        world = World()
+        world.state = 'reward'
+        def reward():
+            if world.state != 'reward':
+                return False
+            world.state = 'result'
+            return True
+        world.task.ui_reward_appear_click.side_effect = reward
+        self.assertTrue(world.task.back_summon_main())
+        self.assertEqual(world.clicks.count('I_SM_CONFIRM'), 1)
+        self.assertEqual(world.draws, [])
+        self.assertEqual(world.read_states, [])
+
+    def test_restart_recovers_alternate_recall_result(self):
+        world = World(mode='recall')
+        world.result_marker = 'I_SM_CONFIRM_2'
+        world.state = 'result'
+        self.assertTrue(world.task.back_summon_main(main_marker=world.task.I_RECALL_TICKET))
+        self.assertEqual(world.clicks.count('I_SM_CONFIRM_2'), 1)
+        self.assertEqual(world.draws, [])
+        self.assertEqual(world.read_states, [])
+
     def test_last_confirmed_attempt_finishes_when_free_caption_disappears(self):
         world = World(quota=1, layout='event')
         world.raw = lambda: '免费1/2' if not world.draws else '神秘召唤'

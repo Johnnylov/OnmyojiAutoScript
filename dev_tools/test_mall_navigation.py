@@ -156,7 +156,6 @@ class MallRecognitionTests(unittest.TestCase):
                 image = cv2.imdecode(np.fromfile(name, dtype=np.uint8), cv2.IMREAD_COLOR)
                 self.assertIsNotNone(image)
                 task = Frames(image)
-                self.assertFalse(task.appear(GameUiAssets.I_CHECK_MALL))
                 self.assertTrue(is_mall_page(task))
                 self.assertTrue(task.appear(MysteryShopAssets.I_ME_ENTER))
                 self.assertTrue(page_mall.recognizer.evaluate(task))

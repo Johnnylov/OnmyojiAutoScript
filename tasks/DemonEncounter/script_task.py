@@ -51,7 +51,7 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
         self.goto_page(page_rwt)
         self.screenshot()
         if self.check_challenge_done():
-            logger.info('Challenge count 0/1, already challenged today')
+            logger.info('No remaining challenges, already challenged today')
             self.goto_page(page_main)
             self.set_next_run(task='DemonEncounter', success=True, finish=False)
             raise TaskEnd('DemonEncounter')
@@ -62,14 +62,15 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
         raise TaskEnd('DemonEncounter')
 
     def check_challenge_done(self) -> bool:
-        """今日挑战次数为 0/1 时跳过，未识别到数字时沿用原流程。"""
+        """今日挑战次数耗尽时跳过，兼容活动期间增加的次数。"""
         results = self.O_DE_CHALLENGE_COUNT.detect_and_ocr(self.device.image)
         text = ''.join(result.ocr_text for result in (results or []))
-        match = re.search(r'([01])\s*/\s*1', text)
+        match = re.search(r'(?<!\d)(\d+)\s*/\s*(\d+)(?!\d)', text)
         if not match:
             logger.warning(f'Challenge count not recognized: [{text}], continue by default')
             return False
-        return match.group(1) == '0'
+        remaining, total = map(int, match.groups())
+        return total > 0 and remaining == 0
 
     def checkout_soul(self):
         """

@@ -4,10 +4,12 @@
 from time import sleep
 from datetime import timedelta, datetime, time
 from cached_property import cached_property
+import cv2
 
 from module.exception import TaskEnd
 from module.logger import logger
 from module.base.timer import Timer
+from module.atom.click import RuleClick
 
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_shikigami_records
@@ -17,6 +19,10 @@ from typing import Optional
 
 
 class ScriptTask(GameUi, SoulsTidyAssets):
+    # The friend-message badge can cover the right side of this tab.
+    C_ST_ABANDONED_TAB = RuleClick(roi_front=(48, 124, 50, 25),
+                                 roi_back=(48, 124, 50, 25), name='st_abandoned_tab')
+
     def run(self):
         self.goto_page(page_shikigami_records)
         con = self.config.souls_tidy
@@ -95,16 +101,8 @@ class ScriptTask(GameUi, SoulsTidyAssets):
                 continue
         if self.config.souls_tidy.simple_tidy.enable_maneki:
             logger.hr('Enter bongna')
-            # 确保已弃置界面
-            while True:
-                self.screenshot()
-                if self.appear(self.I_ST_ABANDONED_SELECTED):
-                    break
-                # 防止因为好友消息导致误点击到好友聊天界面
-                if self.appear(self.I_UI_BACK_RED):
-                    self.click(self.I_UI_BACK_RED, interval=0.8)
-                    continue
-                self.click(self.I_ST_ABANDONED_SELECTED, interval=1.5)
+            if not self.ensure_abandoned_selected():
+                self.defer_disposal('Cannot confirm the abandoned-souls filter')
             self.pre_confirm()
             # 开始奉纳
             while True:
@@ -114,6 +112,7 @@ class ScriptTask(GameUi, SoulsTidyAssets):
                     break
                 self.click(self.L_ONE, interval=2.5)
                 self.screenshot()
+                self.require_abandoned_selected()
                 gold_amount = self.O_ST_GOLD.ocr(self.device.image)
                 if not isinstance(gold_amount, int) or gold_amount == 0:
                     logger.warning('Gold amount not int or 0, skip')
@@ -126,6 +125,49 @@ class ScriptTask(GameUi, SoulsTidyAssets):
                 logger.info('Donate one')
 
         logger.info('Bongna done')
+
+    def abandoned_selected(self) -> bool:
+        """Recognize the selected tab even when its right side is covered."""
+        if self.appear(self.I_ST_ABANDONED_SELECTED):
+            return True
+        rule = self.I_ST_ABANDONED_SELECTED
+        # Keep the gold selected background/borders and the visible text.
+        # Matching only text, or relaxing the full-template threshold, could
+        # also accept the unselected tab and allow disposal from the All list.
+        template = rule.image[:, :70]
+        source = rule.corp(self.device.image)
+        if (source.size == 0 or template.size == 0
+                or source.shape[0] < template.shape[0]
+                or source.shape[1] < template.shape[1]):
+            return False
+        scores = cv2.matchTemplate(source, template, cv2.TM_CCOEFF_NORMED)
+        return cv2.minMaxLoc(scores)[1] >= 0.9
+
+    def ensure_abandoned_selected(self) -> bool:
+        """Confirm the disposal filter with bounded, unobscured tab clicks."""
+        timeout = Timer(12).start()
+        clicks = 0
+        while not timeout.reached():
+            self.screenshot()
+            if self.appear(self.I_UI_BACK_RED):
+                self.click(self.I_UI_BACK_RED, interval=0.8)
+                continue
+            if not self.appear(self.I_ST_CAT):
+                continue
+            if self.abandoned_selected():
+                return True
+            if clicks < 3 and self.click(self.C_ST_ABANDONED_TAB, interval=1.5):
+                clicks += 1
+        return False
+
+    def defer_disposal(self, reason: str):
+        logger.warning(f'{reason}; stop soul disposal and retry later')
+        self.set_next_run(task='SoulsTidy', success=False, finish=True)
+        raise TaskEnd('SoulsTidy')
+
+    def require_abandoned_selected(self):
+        if not self.appear(self.I_ST_CAT) or not self.abandoned_selected():
+            self.defer_disposal('Abandoned-souls filter is no longer confirmed')
 
     def pre_confirm(self):
         """前置确认：确保是按照等级来排序的"""
@@ -162,6 +204,7 @@ class ScriptTask(GameUi, SoulsTidyAssets):
                 interval_timer.reset()
             else:
                 continue
+            self.require_abandoned_selected()
             if self.appear(self.I_ST_SOUL_STACK) or self.appear(self.I_ST_SOUL_STACK_1):
                 logger.info('Find stacked discard souls')
                 return True

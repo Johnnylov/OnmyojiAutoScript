@@ -13,6 +13,7 @@ from module.logger import logger
 from tasks.GameUi.assets import GameUiAssets
 from tasks.Restart.assets import RestartAssets
 from tasks.base_task import BaseTask
+from tasks.Component.Login.recovery import LoginRecovery
 
 
 class LoginService(BaseTask, RestartAssets, GameUiAssets):
@@ -47,6 +48,7 @@ class LoginService(BaseTask, RestartAssets, GameUiAssets):
         skip_login_animation = True
         skip_click_mx_cnt = 5
         login_success = False
+        recovery = LoginRecovery()
 
         while 1:
             if not login_success and orientation_timer.reached():
@@ -55,6 +57,10 @@ class LoginService(BaseTask, RestartAssets, GameUiAssets):
 
             if not self._login_screenshot():
                 confirm_timer.reset()
+                continue
+            if recovery.handle(self):
+                confirm_timer.reset()
+                skip_login_animation = False
                 continue
             if self.appear_then_click(self.I_CANCEL_BATTLE, interval=0.8):
                 logger.info('Cancel continue battle')

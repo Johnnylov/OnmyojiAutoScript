@@ -184,16 +184,28 @@ class Summon(BaseTask, SummonAssets):
         deadline = time.monotonic() + 90
         drawn = False
         confirmed = False
+        reward_after_confirm = False
+        confirmation_clicks = 0
         while time.monotonic() < deadline:
             self.screenshot()
+            if drawn and self.ui_reward_appear_click():
+                reward_after_confirm = confirmed
+                continue
             result = next((marker for marker in confirmations if self.appear(marker)), None)
             if confirmed:
                 if result is None:
                     return True
-                continue
+                # A bonus reward can intercept the first confirmation click.
+                # Only retry after handling that overlay; never draw again.
+                if not reward_after_confirm:
+                    continue
             if drawn and result is not None:
-                self.click(result)
-                confirmed = True
+                if confirmation_clicks < 3:
+                    self.click(result)
+                    confirmation_clicks += 1
+                    confirmed = True
+                    reward_after_confirm = False
+                    deadline = min(deadline, time.monotonic() + 20)
                 continue
             canvas_ready = not drawn and (
                 self._event_summon_canvas_appear() if event_canvas else self.appear(single_marker))
@@ -251,10 +263,21 @@ class Summon(BaseTask, SummonAssets):
         """Return to the selected summon menu before reading its free quota."""
         main_marker = self.I_BLUE_TICKET if main_marker is None else main_marker
         deadline = time.monotonic() + 30
+        confirmations = ((self.I_SM_CONFIRM, self.I_SM_CONFIRM_2)
+                         if main_marker is self.I_BLUE_TICKET
+                         else (self.I_RECALL_SM_CONFIRM, self.I_SM_CONFIRM_2))
+        confirmation_clicks = 0
         while time.monotonic() < deadline:
             self.screenshot()
+            if self.ui_reward_appear_click():
+                continue
             if self.appear(main_marker):
                 return True
+            result = next((marker for marker in confirmations if self.appear(marker)), None)
+            if result is not None:
+                if confirmation_clicks < 3 and self.click(result, interval=1):
+                    confirmation_clicks += 1
+                continue
             if self.appear_then_click(self.I_UI_BACK_BLUE, interval=1):
                 continue
             if self.appear_then_click(self.I_UI_BACK_YELLOW, interval=1):
