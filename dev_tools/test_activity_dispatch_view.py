@@ -22,6 +22,8 @@ FILES = {
 SUCCESS_FILE = TEMP / 'codex-clipboard-5c9f94ca-b621-480d-a0fb-dd78552fe82e.png'
 SUCCESS_ERROR = (Path(__file__).resolve().parents[1] / 'log/error/oas2_1789362111908'
                  / '2026-09-14_13-01-51-279615.png')
+OCCLUDED_MAP_ERROR = (Path(__file__).resolve().parents[1] / 'log/error/oas2_1789363479556'
+                      / '2026-09-14_13-24-36-529033.png')
 
 
 def rgb(path):
@@ -29,13 +31,16 @@ def rgb(path):
 
 
 def paste(image, name, x, y):
-    patch = rgb(ASSETS / (name + '.png'))
+    path = (ASSETS.parent / 'as/as_map_goto_battle.png'
+            if name == 'map_menu' else ASSETS / (name + '.png'))
+    patch = rgb(path)
     image[y:y+patch.shape[0], x:x+patch.shape[1]] = patch
 
 
 def synthetic_map():
     image = np.full((625, 1111, 3), (41, 30, 24), dtype=np.uint8)
     paste(image, 'map_name', 385, 237)
+    paste(image, 'map_menu', 70, 80)
     paste(image, 'empty', 205, 59)
     for x, y in ((148, 211), (158, 319), (385, 302)):
         paste(image, 'locked', x, y)
@@ -263,6 +268,61 @@ class DispatchVisionTests(unittest.TestCase):
         image[237:262, 385:482] = 0
         self.assertEqual(self.view().observe(image).kind, 'unknown')
 
+    def test_missing_slot_markers_remain_uncertain_instead_of_empty(self):
+        image = synthetic_map()
+        patch = rgb(ASSETS / 'locked.png')
+        image[211:211+patch.shape[0], 148:148+patch.shape[1]] = (41, 30, 24)
+        observation = self.view().observe(image)
+        self.assertEqual(observation.kind, 'map')
+        self.assertEqual((len(observation.empty), observation.locked,
+                          observation.running, observation.uncertain), (1, 2, 0, 1))
+        self.assertFalse(observation.all_slots_known)
+
+    def test_map_menu_must_be_visible_and_in_the_upper_left(self):
+        patch = rgb(ASSETS.parent / 'as/as_map_goto_battle.png')
+        for replacement in ('missing', 'elsewhere', 'dimmed'):
+            with self.subTest(menu=replacement):
+                image = synthetic_map()
+                image[80:80+patch.shape[0], 70:70+patch.shape[1]] = (41, 30, 24)
+                if replacement == 'elsewhere':
+                    paste(image, 'map_menu', 800, 400)
+                elif replacement == 'dimmed':
+                    image[80:80+patch.shape[0], 70:70+patch.shape[1]] = (patch * .5).astype(np.uint8)
+                observation = self.view().observe(image)
+                self.assertEqual(observation.kind, 'unknown')
+                self.assertFalse(observation.empty)
+                self.assertIsNone(observation.close_roi)
+
+    def test_damaged_drawer_is_never_treated_as_a_full_map(self):
+        for name in ('portraits', 'setup'):
+            image = self.load(name)
+            image[436:460, 545:573] = 0
+            for size, frame in (('native', image), ('runtime', cv2.resize(image, (1280, 720)))):
+                with self.subTest(page=name, size=size):
+                    observation = self.view(name == 'setup').observe(frame)
+                    self.assertEqual(observation.kind, 'unknown')
+                    self.assertFalse(observation.empty)
+                    self.assertIsNone(observation.close_roi)
+                    self.assertIsNone(observation.submit_roi)
+
+    def test_supplied_effect_occlusion_preserves_one_unknown_slot(self):
+        path = OCCLUDED_MAP_ERROR
+        if not path.exists():
+            path = TEMP / OCCLUDED_MAP_ERROR.name
+        if not path.exists():
+            self.skipTest('Supplied character-effect occlusion screenshot is unavailable')
+        image = rgb(path)
+        for label, frame in (('runtime', image), ('smaller', cv2.resize(image, (840, 473)))):
+            with self.subTest(size=label):
+                observation = DispatchView(lambda image, roi: '2:38.32').observe(frame)
+                self.assertEqual(observation.kind, 'map')
+                self.assertEqual((len(observation.empty), observation.locked,
+                                  observation.running, observation.uncertain), (0, 3, 0, 1))
+                self.assertFalse(observation.all_slots_known)
+                self.assertIsNone(observation.submit_roi)
+                self.assertIsNone(observation.close_roi)
+                self.assertIsNone(observation.dismiss_roi)
+
     def test_map_and_slot_coordinates_follow_scale_and_translation(self):
         image = cv2.resize(synthetic_map(), None, fx=.75, fy=.75)
         frame = np.zeros((image.shape[0] + 90, image.shape[1] + 140, 3), dtype=np.uint8)
@@ -336,7 +396,7 @@ class DispatchVisionTests(unittest.TestCase):
 
     def test_unreadable_or_non_countdown_text_never_confirms_running(self):
         image = self.load('running')
-        for text in ('', '领取奖励', '11:99:20'):
+        for text in ('', '领取奖励', '11:99:20', '2:38.', '2：38.0', '2:38.32', '038'):
             observation = DispatchView(lambda image, roi: text).observe(image)
             self.assertEqual(observation.running, 0)
             self.assertFalse(observation.all_slots_known)

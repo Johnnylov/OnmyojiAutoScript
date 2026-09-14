@@ -160,16 +160,22 @@ class NormalClimbAct(BaseAct):
             return
         self.goto_page(pages.page_act_map)
         if self._dispatch_view.observe(self.screenshot()).kind != 'map':
-            logger.info('当前活动没有可确认的上阵地图，继续爬塔')
-            return
+            raise ActivityPreparationTimeout('无法确认上阵地图，等待恢复后再开始爬塔')
         dispatcher = DailyDispatcher(self.screenshot, self._activity_click_roi,
                                      view=self._dispatch_view)
         try:
             result = dispatcher.run()
         except DispatchError as exc:
+            # Dispatch is auxiliary. Its worker already attempts one safe
+            # panel recovery; continue only if a fresh frame confirms the map.
+            # An unknown popup must still go through the bounded retry path.
+            if self._dispatch_view.observe(self.screenshot()).kind == 'map':
+                self.goto_page(pages.page_act_map)
+                logger.warning(f'已返回活动地图，暂缓每日上阵并继续爬塔：{exc}')
+                return
             raise ActivityPreparationTimeout(f'每日上阵未完成：{exc}') from exc
         if not result.completed:
-            logger.warning(f'每日上阵未确认完成：{result.reason}')
+            logger.warning(f'暂缓每日上阵，继续爬塔：{result.reason}')
             return
         if server_date() != day or self._activity_owner() != owner:
             raise ActivityPreparationTimeout('上阵期间日期或角色发生变化，下次重新检查')

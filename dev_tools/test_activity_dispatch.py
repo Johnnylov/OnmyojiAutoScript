@@ -240,9 +240,47 @@ class DispatchFlowTests(unittest.TestCase):
 
     def test_incomplete_map_is_not_treated_as_completed(self):
         world = World(empty=1, locked=1, running=0)
-        with self.assertRaises(DispatchError):
-            dispatcher(world).run()
+        result = dispatcher(world).run()
+        self.assertFalse(result.completed)
+        self.assertEqual(result.dispatched, 0)
         self.assertEqual(world.clicks, [])
+        self.assertLessEqual(world.reads, 3)
+
+    def test_obscured_running_slot_skips_dispatch_without_waiting_for_ocr(self):
+        world = World(empty=0, locked=3, running=0)
+        result = dispatcher(world).run()
+        self.assertFalse(result.completed)
+        self.assertEqual(result.dispatched, 0)
+        self.assertEqual(world.clicks, [])
+        self.assertEqual(world.kind, 'map')
+        self.assertLessEqual(world.reads, 3)
+
+    def test_obscured_post_submit_countdown_is_not_resubmitted_or_recorded(self):
+        class ObscuredWorld(World):
+            def click(self, roi, name):
+                super().click(roi, name)
+                if roi == SUBMIT:
+                    self.running = 0
+
+        world = ObscuredWorld()
+        world.show_success = True
+        result = dispatcher(world).run()
+        self.assertFalse(result.completed)
+        self.assertEqual(result.dispatched, 0)
+        self.assertEqual(world.clicks, [SLOT, PORTRAIT, SUBMIT, DISMISS, CLOSE])
+        self.assertEqual(world.kind, 'map')
+
+    def test_obscured_map_after_no_resources_is_partial_not_complete(self):
+        class ObscuredWorld(World):
+            def click(self, roi, name):
+                super().click(roi, name)
+                if roi == CLOSE:
+                    self.locked = 2
+
+        world = ObscuredWorld(current=0, maximum=0)
+        result = dispatcher(world).run()
+        self.assertFalse(result.completed)
+        self.assertEqual(world.clicks, [SLOT, PORTRAIT, CLOSE])
 
     def test_unchanged_duration_stops_after_one_adjustment(self):
         world = World(current=8, maximum=12)

@@ -64,9 +64,11 @@ class Match:
 
 @lru_cache(maxsize=32)
 def _template(name):
-    image = cv2.imread(str(ASSETS / (name + '.png')), cv2.IMREAD_GRAYSCALE)
+    path = (ASSETS.parent / 'as/as_map_goto_battle.png'
+            if name == 'map_menu' else ASSETS / (name + '.png'))
+    image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
     if image is None:
-        raise FileNotFoundError(ASSETS / (name + '.png'))
+        raise FileNotFoundError(path)
     return image
 
 
@@ -270,6 +272,12 @@ class DispatchView:
             return DispatchObservation()
         if drawer is not None:
             return drawer
+        # The boss name remains visible behind an open character drawer. A
+        # missed collapse arrow must not turn that drawer into a verified map.
+        # Its fixed upper-left quest menu is only present on the full map.
+        menu_region = gray[:round(gray.shape[0] * .35), :round(gray.shape[1] * .35)]
+        if not _matches(menu_region, 'map_menu', .82, limit=1):
+            return DispatchObservation()
         empty = _matches(gray, 'empty', .8, limit=5)
         locked = _matches(gray, 'locked', .8, limit=5)
         inspected = _matches(gray, 'inspect', .78, limit=5)
@@ -280,9 +288,12 @@ class DispatchView:
             # Keep the numeric countdown, excluding its leading clock icon.
             if _countdown(self._read(image, button.roi(-65, 6, 54, 17))):
                 running += 1
-        uncertain = len(inspected) - running
         # No partial map is allowed to announce daily completion.
         if len(empty) + len(locked) + len(inspected) > 4:
             return DispatchObservation()
+        # A character or battle effect can hide both a slot's magnifier and
+        # countdown. Count missing markers as unknown slots as well as icons
+        # with unreadable timers; neither case proves empty or running.
+        uncertain = 4 - len(empty) - len(locked) - running
         return DispatchObservation(kind='map', empty=tuple(m.roi(3, 3, 35, 45) for m in empty),
                                    locked=len(locked), running=running, uncertain=uncertain)

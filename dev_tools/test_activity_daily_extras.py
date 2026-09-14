@@ -93,23 +93,43 @@ class DailyIntegrationTests(unittest.TestCase):
         self.task._dispatch_once_today()
         self.assertEqual(self.dispatcher.run.call_count, 4)
 
-    def test_failed_or_unverified_dispatch_never_records_success(self):
+    def test_partial_dispatch_never_records_success_and_can_be_checked_again(self):
         self.dispatcher.run.return_value = SimpleNamespace(completed=False, dispatched=1, reason='unconfirmed')
         self.task._dispatch_once_today()
-        self.task.config.save.assert_not_called()
-        self.dispatcher.run.side_effect = DispatchError('unverified')
-        with self.assertRaises(PreparationError):
-            self.task._dispatch_once_today()
+        self.task._dispatch_once_today()
+        self.assertEqual(self.dispatcher.run.call_count, 2)
         self.task.config.save.assert_not_called()
         self.assertEqual(self.task.conf.daily_dispatch_record.date, '')
 
-    def test_other_event_and_unknown_map_do_not_deploy(self):
+    def test_failed_dispatch_already_on_map_continues_without_daily_record(self):
+        self.dispatcher.run.side_effect = DispatchError('unverified')
+        self.task._dispatch_once_today()
+        self.assertEqual(self.events, ['map', 'map'])
+        self.assertEqual(self.task._dispatch_view.observe.call_count, 2)
+        self.dispatcher.restore_map.assert_not_called()
+        self.task.config.save.assert_not_called()
+        self.assertEqual(self.task.conf.daily_dispatch_record.date, '')
+
+    def test_failed_dispatch_without_verified_map_requests_preparation_retry(self):
+        self.task._dispatch_view.observe.side_effect = [SimpleNamespace(kind='map'),
+                                                       SimpleNamespace(kind='unknown')]
+        self.dispatcher.run.side_effect = DispatchError('unverified')
+        with self.assertRaises(PreparationError):
+            self.task._dispatch_once_today()
+        self.assertEqual(self.events, ['map'])
+        self.assertEqual(self.task._dispatch_view.observe.call_count, 2)
+        self.dispatcher.restore_map.assert_not_called()
+        self.task.config.save.assert_not_called()
+        self.assertEqual(self.task.conf.daily_dispatch_record.date, '')
+
+    def test_other_event_skips_dispatch_but_unknown_current_map_requires_recovery(self):
         self.pages.special_act_Flag = False
         self.task._dispatch_once_today()
         self.task.goto_page.assert_not_called()
         self.pages.special_act_Flag = True
         self.task._dispatch_view.observe.return_value.kind = 'unknown'
-        self.task._dispatch_once_today()
+        with self.assertRaises(PreparationError):
+            self.task._dispatch_once_today()
         self.dispatcher.run.assert_not_called()
         self.task.config.save.assert_not_called()
 

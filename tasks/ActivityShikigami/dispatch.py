@@ -86,7 +86,7 @@ class DailyDispatcher:
     def _complete_without_dispatch(self, dispatched, reason):
         self.restore_map()
         if not self.latest.all_slots_known:
-            raise DispatchError('Dispatch map is incomplete after closing the drawer')
+            return DispatchResult(False, dispatched, '上阵面板已收起，但部分格子被遮挡，暂缓派遣')
         # A fully inspected account with no usable portrait or no remaining
         # time allowance has completed today's attempt; it must not buy more.
         return DispatchResult(True, dispatched, reason)
@@ -119,8 +119,13 @@ class DailyDispatcher:
         self.restore_map()
         dispatched = 0
         for _ in range(5):
-            before = self._wait(lambda o: o.all_slots_known,
-                                'Cannot account for all four dispatch slots')
+            before = self._wait(lambda o: o.kind == 'map',
+                                'Cannot confirm the dispatch map before checking slots')
+            if not before.all_slots_known:
+                # Character effects can hide timers or their inspect icons.
+                # Keep those slots unknown, but do not block the main climb
+                # after positively identifying the unobstructed activity map.
+                return DispatchResult(False, dispatched, '部分上阵格子被遮挡或无法识别，暂缓派遣')
             if not before.empty:
                 return DispatchResult(True, dispatched, 'All unlocked slots are already running')
             if dispatched >= 4:
@@ -152,10 +157,15 @@ class DailyDispatcher:
             # overlay, collapse running details (whose button is now Recall),
             # and require one new running timer before touching another slot.
             self.restore_map()
-            after = self._wait(lambda o: o.all_slots_known and o.running == before.running + 1
+            after = self._wait(lambda o: o.kind == 'map' and (not o.all_slots_known or (
+                               o.running == before.running + 1
                                and len(o.empty) == len(before.empty) - 1
-                               and o.locked == before.locked,
+                               and o.locked == before.locked)),
                                'Dispatch was not confirmed by a new running countdown')
+            if not after.all_slots_known:
+                # The submit was already sent. Do not resend or record success
+                # when its new countdown is obscured; climbing may continue.
+                return DispatchResult(False, dispatched, '提交后已返回地图，但倒计时未确认，不重复上阵')
             dispatched += 1
             if not after.empty:
                 return DispatchResult(True, dispatched, 'All unlocked slots are now running')
