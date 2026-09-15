@@ -11,6 +11,8 @@ with this feature request. No full account screenshot is included.
 - `return_title`: the shared dispatch-ended title from a returned-character
   reward overlay. It must pair with `success_dismiss`; character name OCR is
   optional progress evidence between successive return overlays, not an anchor.
+- `interrupt_title`: the resource-shortage interruption acknowledgement; paired
+  with the common dismissal prompt. Closing it never activates a recall button.
 - `remaining`, `recall`: the occupied-character detail pane; these only permit
   collapsing its drawer, never pressing Recall.
 
@@ -19,4 +21,6 @@ translation from the images; these are not absolute device coordinates.
 The occupied-slot reference was 956 by 538 and is matched independently.
 Name templates exclude the changing gold selection border. OCR regions exclude
 the clock icon before a countdown and the decoration after a duration.
+Busy characters can disappear from the drawer. Name templates are searched
+within each remaining card column; their original column is not an identity.
 The success-overlay and running-detail templates use an 840 by 473 reference.

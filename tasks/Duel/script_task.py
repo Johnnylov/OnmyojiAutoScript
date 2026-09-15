@@ -202,12 +202,16 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
                 logger.warning('Duel battle timeout[>15 minutes], exit')
                 self.duel_exit_battle()
                 continue
-            if ret is None and not battle_operated:  # 进行战斗前的操作
-                self.ui_click(self.O_BATTLE_HAND, self.O_BATTLE_AUTO, interval=0.8)
-                self.green_mark(self.conf.duel_config.green_enable, self.conf.duel_config.green_mark)
-                battle_operated = True
-                self.reset_device('BATTLE_STATUS_S')
-                continue
+            if ret is None and not battle_operated and self.is_in_real_battle(is_screenshot=False):
+                # Keep auto switching in this frame loop: a short battle can
+                # finish before the next OCR read, removing both mode buttons.
+                # A nested ui_click would then never inspect the result again.
+                if self.appear(self.O_BATTLE_AUTO):
+                    self.green_mark(self.conf.duel_config.green_enable, self.conf.duel_config.green_mark)
+                    battle_operated = True
+                    self.reset_device('BATTLE_STATUS_S')
+                else:
+                    self.ocr_appear_click(self.O_BATTLE_HAND, interval=0.8)
             if not ret_timer.started() and battle_timeout_timer.reached_and_reset():
                 battle_timeout_cnt += 1
                 self.reset_device('BATTLE_STATUS_S')

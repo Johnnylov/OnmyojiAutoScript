@@ -7,3 +7,8 @@ Neither button alone identifies the guide: the logo, speaker, relative layout,
 and action brightness are verified together. The confirmation layout uses the
 existing activity asset's coordinates; its regression is synthetic because the
 new report supplied only the initial story screen.
+
+`reward_frame.png` is the small lower-left scroll corner (312, 421, 88, 78)
+from the 2026-09-15 coloring reward report. Recognition also requires the
+shared `GlobalGame/ui/ui_ui_reward.png` title and the painting page's title,
+back and global-progress label. Only the left margin is exposed for closing.

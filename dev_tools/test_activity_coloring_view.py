@@ -17,6 +17,7 @@ PANEL = TEMP / 'codex-clipboard-dc69021d-2481-42a4-bda6-bba98c26a532.png'
 MAP = TEMP / 'codex-clipboard-95beef8e-89c2-4714-b256-9be8932833dc.png'
 INTRO_FILE = '2026-09-14_17-10-57-470164.png'
 INTRO = Path(__file__).resolve().parents[1] / 'log/error/oas2_1789377058127' / INTRO_FILE
+FIXTURES = Path(__file__).with_name('fixtures') / 'activity_coloring'
 
 
 def rgb(path):
@@ -79,6 +80,46 @@ def five_digit_counter(kind, scale=1.):
 
 
 class ViewTests(unittest.TestCase):
+    def test_retained_real_reward_fixtures_expose_only_safe_margin_at_multiple_sizes(self):
+        for name in ('reward_coin', 'reward_daruma'):
+            source = rgb(FIXTURES / f'{name}.png')
+            for size in ((1280, 720), (956, 538), (840, 473)):
+                with self.subTest(fixture=name, size=size):
+                    image = cv2.resize(source, size)
+                    view = ColoringView()
+                    reward = view.find_reward(image)
+                    self.assertIsNotNone(reward)
+                    self.assertIsNone(view.find_page(image))
+                    self.assertIsNone(view.find_map_entry(image))
+                    self.assertIsNone(view.find_intro(image))
+                    x, y, w, h = reward.dismiss_roi
+                    self.assertGreaterEqual(x, 0)
+                    self.assertLess(x+w, size[0] * .09)
+                    self.assertGreater(y, size[1] * .3)
+                    self.assertLess(y+h, size[1] * .6)
+            moved = transformed(source, .9)
+            reward = ColoringView().find_reward(moved)
+            self.assertIsNotNone(reward)
+            self.assertGreaterEqual(reward.dismiss_roi[0], 53)
+
+    def test_reward_needs_title_frame_and_painting_context_not_any_dim_modal(self):
+        original = rgb(FIXTURES / 'reward_coin.png')
+        # Remove the exact template rectangles, or a distinct background anchor.
+        rectangles = [(481, 234, 317, 42), (312, 421, 88, 78),
+                      (130, 0, 225, 76), (135, 627, 123, 74), (0, 0, 88, 76)]
+        for roi in rectangles:
+            with self.subTest(missing=roi):
+                image = original.copy()
+                x, y, w, h = roi
+                image[y:y+h, x:x+w] = 0
+                self.assertIsNone(ColoringView().find_reward(image))
+        image = original.copy()
+        image[175:506, 280:1000] = (image[175:506, 280:1000] * .5).astype(np.uint8)
+        self.assertIsNone(ColoringView().find_reward(image))
+        for panel in (False, True):
+            self.assertIsNone(ColoringView().find_reward(synthetic(panel)))
+        self.assertIsNone(ColoringView().find_reward(synthetic_intro()))
+
     def test_intro_and_contextual_skip_confirmation_follow_scale_and_translation(self):
         for confirm in (False, True):
             for scale in (.75, 1., 1.25):

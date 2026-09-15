@@ -64,7 +64,8 @@ class PartialDispatchLifecycleTests(unittest.TestCase):
         self.task.navigator = SimpleNamespace(resolve_page=lambda page: page)
         self.task._daily_dispatch_view = SimpleNamespace(observe=lambda image: image)
         self.task._daily_coloring_view = SimpleNamespace(find_page=lambda image: None,
-                                                        find_intro=lambda image: None)
+                                                        find_intro=lambda image: None,
+                                                        find_reward=lambda image: None)
         self.task.screenshot = Mock(side_effect=self.capture)
         self.task.click = Mock()
         self.task.goto_page = Mock(side_effect=self.goto_page)
@@ -225,7 +226,7 @@ class PartialDispatchLifecycleTests(unittest.TestCase):
         map_frame = self.observation
         view = ColoringView()
         self.task._daily_coloring_view = SimpleNamespace(
-            find_page=view.find_page, find_intro=view.find_intro,
+            find_page=view.find_page, find_intro=view.find_intro, find_reward=view.find_reward,
             find_map_entry=lambda image: (1200, 640, 30, 30) if image is map_frame
             else view.find_map_entry(image), prepare_counter=view.prepare_counter)
         self.task.conf.general_climb.auto_color_hyakki = True

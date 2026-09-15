@@ -45,6 +45,7 @@ def parse_amount(text):
 
 class DailyColorer:
     MAX_FRAMES = 12
+    MAX_ACK_FRAMES = 36
     MAX_SUBMISSIONS = 1000
     MAX_RUNTIME = 30 * 60
 
@@ -55,14 +56,41 @@ class DailyColorer:
         self.view = view or ColoringView()
         self.sleep = sleep
         self.clock = clock
+        self._reward_close_pending = False
+        self._reward_phase = 0
+
+    def _handle_reward(self, image):
+        reward = self.view.find_reward(image)
+        if reward is None:
+            return False
+        if not self._reward_close_pending:
+            if self.click(reward.dismiss_roi, f'coloring_reward_close_{self._reward_phase}') is False:
+                raise ColoringError('上色奖励关闭点击未送达')
+            self._reward_close_pending = True
+        return True
+
+    def _page_confirmed(self):
+        # A fresh action name requires the reward to have closed to two
+        # verified page frames; unknown/unchanged popup frames never advance it.
+        if self._reward_close_pending:
+            self._reward_close_pending = False
+            self._reward_phase += 1
 
     def _wait_page(self, panel=None):
         intro_actions = set()
+        previous = None
         for _ in range(self.MAX_FRAMES):
             image = self.capture()
+            if self._handle_reward(image):
+                previous = None
+                self.sleep(.25)
+                continue
             page = self.view.find_page(image)
             if page is not None and (panel is None or page.panel == panel):
-                return image, page
+                if not self._reward_close_pending or page == previous:
+                    self._page_confirmed()
+                    return image, page
+            previous = page
             # Story advancement is limited to its two exact known controls.
             # Waiting through unchanged/unknown animation frames never retries
             # the same action or guesses a generic confirmation/blank click.
@@ -99,9 +127,14 @@ class DailyColorer:
         previous = None
         for _ in range(self.MAX_FRAMES):
             image = self.capture()
+            if self._handle_reward(image):
+                previous = None
+                self.sleep(.25)
+                continue
             page = self.view.find_page(image)
             values = None if page is None else self._read(image, page, quantity)
             if values is not None and values == previous:
+                self._page_confirmed()
                 return page, values
             previous = values
             self.sleep(.25)
@@ -109,8 +142,14 @@ class DailyColorer:
 
     def _acknowledge(self, before, before_progress):
         previous = None
-        for _ in range(self.MAX_FRAMES):
+        # Both reports showed several unchanged frames before the delayed
+        # reward arrived. Allow time for it to close and for two new readings.
+        for _ in range(self.MAX_ACK_FRAMES):
             image = self.capture()
+            if self._handle_reward(image):
+                previous = None
+                self.sleep(.25)
+                continue
             page = self.view.find_page(image)
             values = None if page is None else self._read(image, page)
             if values is not None and values == previous:
@@ -118,6 +157,7 @@ class DailyColorer:
                 # resource count proves our submission succeeded and permits
                 # another submit; 100% may safely end the workflow regardless.
                 if values[0] == 100 or (values[0] >= before_progress and values[1] < before):
+                    self._page_confirmed()
                     return page, values
             previous = values
             self.sleep(.25)
@@ -147,7 +187,7 @@ class DailyColorer:
         image = self.capture()
         page = self.view.find_page(image)
         if page is None:
-            if self.view.find_intro(image) is None:
+            if self.view.find_intro(image) is None and self.view.find_reward(image) is None:
                 entry = self.view.find_map_entry(image)
                 if entry is None:
                     return ColoringResult('unavailable', reason='未识别到百鬼夜行图入口')
@@ -211,7 +251,8 @@ class DailyColorer:
         """Finish a known intro without spending, then use verified collapse/back."""
         image = self.capture()
         page = self.view.find_page(image)
-        if page is None and self.view.find_intro(image) is not None:
+        if ((page is None and (self.view.find_intro(image) is not None or self.view.find_reward(image) is not None))
+                or self._reward_close_pending):
             _, page = self._wait_page()
         if page is None:
             return self.view.find_map_entry(image) is not None

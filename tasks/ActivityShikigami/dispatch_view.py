@@ -199,15 +199,16 @@ class DispatchView:
                 return DispatchObservation(kind='success', dismiss_roi=dismiss)
         return None
 
-    def _returned(self, image, gray):
-        # Return rewards share the generic dismissal prompt, but have their
-        # own end-of-dispatch title. Character art and reward amounts vary.
-        for title in _matches(gray, 'return_title', .82, limit=2):
+    def _result_overlay(self, image, gray, title_name, kind):
+        # Returned/interrupted dispatches share a dismissal prompt, but each
+        # requires its own title. Character art and reward amounts vary.
+        title_top = 68 if kind == 'interrupted' else 62
+        for title in _matches(gray, title_name, .82, limit=2):
             prompt = None
             # Refine the coarse title scale locally: 1280/840 is 1.524,
             # and the narrow prompt does not tolerate rounding it to 1.5.
             for scale in (title.scale, title.scale - .025, title.scale + .025):
-                transform = (title.x - 329 * scale, title.y - 62 * scale, scale)
+                transform = (title.x - 329 * scale, title.y - title_top * scale, scale)
                 prompt = _near(gray, 'success_dismiss', (365, 442, 112, 19), transform, .8)
                 if prompt is not None:
                     break
@@ -216,6 +217,10 @@ class DispatchView:
             dismiss = prompt.roi(10, 3, 92, 13)
             if not _inside(gray, dismiss):
                 continue
+            if kind == 'interrupted':
+                # Resource shortage can recall several characters at once.
+                # This acknowledgement is never a request to recall anyone.
+                return DispatchObservation(kind=kind, dismiss_roi=dismiss)
             ox, oy, scale = transform
             line = (round(ox + 320 * scale), round(oy + 347 * scale),
                     round(201 * scale), round(24 * scale))
@@ -240,16 +245,31 @@ class DispatchView:
                 return (round(ox + x * scale), round(oy + y * scale),
                         max(1, round(w * scale)), max(1, round(h * scale)))
 
-            labels = [(i, _near(gray, 'name_' + str(i), area, transform, .8))
-                      for i, area in enumerate(NAMES)]
-            if sum(match is not None for _, match in labels) < 2:
+            # Busy characters are removed from the drawer, and the remaining
+            # cards move left. Match a character inside each column rather
+            # than assuming that identity always occupies its original slot.
+            labels, ambiguous = [], False
+            for column, card_x in enumerate(CARD_X):
+                candidates = []
+                for identity, (name_x, name_y, width, height) in enumerate(NAMES):
+                    area = (card_x + name_x - CARD_X[identity], name_y, width, height)
+                    match = _near(gray, 'name_' + str(identity), area, transform, .8)
+                    if match is not None:
+                        candidates.append((identity, match, column))
+                if len(candidates) == 1:
+                    labels.extend(candidates)
+                elif candidates:
+                    ambiguous = True
+            if len(labels) < 2:
                 continue
+            close = arrow.roi(2, 2, 23, 20)
+            if ambiguous or len({identity for identity, _, _ in labels}) != len(labels):
+                return DispatchObservation(close_roi=close)
             available, selected = [], []
-            for i, match in labels:
-                if match is None:
-                    continue
-                body = roi(CARD_X[i] + 30, 480, 90, 105)
-                click = roi(CARD_X[i] + 48, 512, 50, 50)
+            for identity, match, column in labels:
+                card_x = CARD_X[column]
+                body = roi(card_x + 30, 480, 90, 105)
+                click = roi(card_x + 48, 512, 50, 50)
                 if not _inside(image, body) or not _inside(image, click):
                     continue
                 hsv = cv2.cvtColor(_crop(image, body), cv2.COLOR_RGB2HSV)
@@ -258,10 +278,9 @@ class DispatchView:
                 colored = (hsv[:, :, 1] > 65) & (hsv[:, :, 2] < 225)
                 if np.mean(colored) < .06:
                     continue
-                available.append((i, click))
-                if _near(gray, 'selected', (CARD_X[i]-4, 468, 26, 27), transform, .91):
-                    selected.append(i)
-            close = arrow.roi(2, 2, 23, 20)
+                available.append((identity, click))
+                if _near(gray, 'selected', (card_x-4, 468, 26, 27), transform, .91):
+                    selected.append(identity)
             if len(selected) > 1:
                 return DispatchObservation(close_roi=close)
             # The post-submit detail pane has a recall button in the former
@@ -295,7 +314,10 @@ class DispatchView:
                 or image.shape[2] != 3 or min(image.shape[:2]) < 100):
             return DispatchObservation()
         gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-        returned = self._returned(image, gray)
+        interrupted = self._result_overlay(image, gray, 'interrupt_title', 'interrupted')
+        if interrupted is not None:
+            return interrupted
+        returned = self._result_overlay(image, gray, 'return_title', 'returned')
         if returned is not None:
             return returned
         success = self._success(gray)

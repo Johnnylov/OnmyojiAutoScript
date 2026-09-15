@@ -12,6 +12,7 @@ from tasks.ActivityShikigami.dispatch_view import DispatchView, parse_duration, 
 
 
 TEMP = Path(os.environ.get('ACTIVITY_REFERENCE_DIR', tempfile.gettempdir()))
+FIXTURES = Path(__file__).with_name('fixtures') / 'activity_dispatch'
 FILES = {
     'idle': 'e233c8c3-5d2a-4f81-84e3-26f72d399de1',
     'portraits': '86eb7849-a5ab-4404-aa7f-e1b276e75279',
@@ -99,6 +100,89 @@ def synthetic_return():
 
 
 class DispatchVisionTests(unittest.TestCase):
+    def test_interrupted_fixture_closes_only_its_acknowledgement(self):
+        image = rgb(FIXTURES / 'interrupted_multi_return.png')
+        for label, frame in (('native', image), ('smaller', cv2.resize(image, (840, 473)))):
+            with self.subTest(size=label):
+                observation = DispatchView().observe(frame)
+                self.assertEqual(observation.kind, 'interrupted')
+                self.assert_dismissal_inside_prompt(
+                    observation, frame.shape[1]/840, frame.shape[0]/473)
+                self.assertIsNone(observation.return_id)
+                self.assertFalse(observation.available)
+                self.assertFalse(observation.empty)
+                for control in ('submit_roi', 'close_roi', 'plus_roi', 'minus_roi'):
+                    self.assertIsNone(getattr(observation, control))
+
+    def test_interruption_requires_title_and_prompt_not_character_names(self):
+        image = rgb(FIXTURES / 'interrupted_multi_return.png')
+        image[220:563, 230:1010] = 0
+        self.assertEqual(DispatchView().observe(image).kind, 'interrupted')
+        for label, region in (('title', (465, 103, 335, 70)),
+                               ('prompt', (540, 665, 190, 43))):
+            with self.subTest(missing=label):
+                frame = image.copy()
+                x, y, w, h = region
+                frame[y:y+h, x:x+w] = 0
+                observation = DispatchView().observe(frame)
+                self.assertEqual(observation.kind, 'unknown')
+                self.assertIsNone(observation.dismiss_roi)
+        self.assertEqual(DispatchView().observe((image * .5).astype(np.uint8)).kind, 'unknown')
+
+    def test_five_remaining_portraits_use_their_actual_columns(self):
+        image = rgb(FIXTURES / 'five_available_portraits.png')
+        for label, frame in (('native', image), ('smaller', cv2.resize(image, (840, 473)))):
+            with self.subTest(size=label):
+                observation = DispatchView().observe(frame)
+                self.assertEqual(observation.kind, 'portraits')
+                self.assertEqual([identity for identity, _ in observation.available], [1, 2, 3, 4, 5])
+                sx, sy = frame.shape[1]/1280, frame.shape[0]/720
+                for column, (_, (x, y, w, h)) in enumerate(observation.available):
+                    self.assertGreater(x, (45 + 203 * column) * sx)
+                    self.assertLess(x + w, (230 + 203 * column) * sx)
+                    self.assertGreater(y, 539 * sy)
+                    self.assertLess(y + h, 716 * sy)
+
+    def shifted_portraits(self, source_columns):
+        # Reorder actual card strips from the fixed five-card screenshot.
+        # This is a synthetic layout variation, not another account capture.
+        source = rgb(FIXTURES / 'five_available_portraits.png')
+        image = source.copy()
+        image[539:716] = 0
+        for column, original in enumerate(source_columns):
+            left, old_left = 45 + 203 * column, 45 + 203 * original
+            image[539:716, left:left+185] = source[539:716, old_left:old_left+185]
+        return image
+
+    def test_reordered_three_card_setup_selects_identity_instead_of_column(self):
+        image = self.shifted_portraits([1, 2, 4])  # identities 2, 3, 5
+        for name, (x, y) in (('selected', (219, 468)), ('rewards', (866, 140)),
+                             ('submit', (825, 400)), ('duration', (838, 271)),
+                             ('plus', (998, 302)), ('minus', (785, 303))):
+            patch = cv2.resize(rgb(ASSETS / (name + '.png')), None, fx=1.15, fy=1.15)
+            left, top = round(-3 + x * 1.15), round(2 + y * 1.15)
+            image[top:top+patch.shape[0], left:left+patch.shape[1]] = patch
+        observation = self.view(True).observe(image)
+        self.assertEqual(observation.kind, 'setup')
+        self.assertEqual([identity for identity, _ in observation.available], [2, 3, 5])
+        self.assertEqual(observation.selected, 3)  # column 1 holds character 3
+        self.assertEqual((observation.current, observation.maximum), (9, 9))
+
+    def test_duplicate_shifted_identity_is_ambiguous_and_cannot_be_selected(self):
+        observation = DispatchView().observe(self.shifted_portraits([1, 1, 4]))
+        self.assertEqual(observation.kind, 'unknown')
+        self.assertFalse(observation.available)
+        self.assertIsNone(observation.submit_roi)
+        self.assertIsNotNone(observation.close_roi)
+
+    def test_disabled_shifted_portrait_is_still_excluded(self):
+        image = rgb(FIXTURES / 'five_available_portraits.png')
+        image[539:716, 45:230] = cv2.cvtColor(
+            cv2.cvtColor(image[539:716, 45:230], cv2.COLOR_RGB2GRAY), cv2.COLOR_GRAY2RGB)
+        observation = DispatchView().observe(image)
+        self.assertEqual(observation.kind, 'portraits')
+        self.assertEqual([identity for identity, _ in observation.available], [2, 3, 4, 5])
+
     def return_frame(self, folder, filename):
         path = Path(__file__).resolve().parents[1] / 'log/error' / folder / filename
         if not path.exists():

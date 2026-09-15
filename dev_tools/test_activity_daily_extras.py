@@ -58,7 +58,8 @@ class DailyIntegrationTests(unittest.TestCase):
         self.task._dispatch_view = Mock()
         self.task._dispatch_view.observe.return_value = SimpleNamespace(kind='map')
         self.task._coloring_view = Mock(find_page=Mock(return_value=None),
-                                        find_intro=Mock(return_value=None))
+                                        find_intro=Mock(return_value=None),
+                                        find_reward=Mock(return_value=None))
         self.colorer = Mock()
         self.colorer.run.return_value = SimpleNamespace(status='no_currency', submissions=2,
                                                         global_progress=54.0)
@@ -291,6 +292,24 @@ class DailyIntegrationTests(unittest.TestCase):
         self.task._restore_daily_activity_map()
         self.dispatcher.restore_map.assert_called_once()
         self.dispatcher.run.assert_not_called()
+        self.task.config.save.assert_not_called()
+
+    def test_recalled_dispatch_popup_recovers_before_navigation_without_spending(self):
+        self.task._dispatch_view.observe.return_value = SimpleNamespace(
+            kind='interrupted', dismiss_roi=(1, 2, 3, 4), close_roi=None)
+        self.task._restore_daily_activity_map()
+        self.dispatcher.restore_map.assert_called_once()
+        self.dispatcher.run.assert_not_called()
+        self.task.goto_page.assert_not_called()
+        self.task.config.save.assert_not_called()
+
+    def test_interrupted_coloring_reward_is_closed_even_when_coloring_is_disabled(self):
+        self.task.conf.general_climb.auto_color_hyakki = False
+        self.task._coloring_view.find_reward.return_value = object()
+        self.task._restore_daily_activity_map()
+        self.colorer.leave.assert_called_once()
+        self.colorer.run.assert_not_called()
+        self.task.click.assert_not_called()
         self.task.config.save.assert_not_called()
 
     def test_interrupted_success_popup_recovers_without_redeploying_or_completing_task(self):

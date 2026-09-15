@@ -17,14 +17,18 @@ ANCHORS = {
     # The first-entry illustrated story uses a 1280 x 720 reference layout.
     'intro_logo': (89, 162), 'intro_speaker': (601, 564),
     'intro_skip': (1159, 37), 'intro_confirm': (707, 442),
+    # Reward layout uses the 1280 x 720 runtime screenshots.
+    'reward_title': (481, 234), 'reward_frame': (312, 421),
 }
 
 
-@lru_cache(maxsize=16)
+@lru_cache(maxsize=20)
 def _template(name):
     shared = {'intro_skip': 'as_skip_button', 'intro_confirm': 'as_confirm_skip'}
     path = (ASSETS.parent / 'as' / f'{shared[name]}.png' if name in shared
             else ASSETS / f'{name}.png')
+    if name == 'reward_title':
+        path = ASSETS.parent.parent / 'GlobalGame/ui/ui_ui_reward.png'
     result = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
     if result is None:
         raise FileNotFoundError(path)
@@ -130,6 +134,11 @@ class PaintingIntro:
     action_roi: tuple
 
 
+@dataclass(frozen=True)
+class PaintingReward:
+    dismiss_roi: tuple
+
+
 class ColoringView:
     def __init__(self):
         self._last = None
@@ -149,9 +158,9 @@ class ColoringView:
         if undimmed:
             patch = gray[top+my:top+my+template.shape[0], left+mx:left+mx+template.shape[1]]
             mask = template >= 175
-            if name == 'intro_speaker':
-                # The speaker name is orange, whose grayscale level is below
-                # the white-label threshold used by the painting controls.
+            if name in ('intro_speaker', 'reward_frame'):
+                # Orange lettering/gold trim have grayscale levels below the
+                # white-label threshold used by the painting controls.
                 mask = template >= np.percentile(template, 90)
             if not mask.any() or patch[mask].mean() < template[mask].mean() * .78:
                 return None
@@ -244,6 +253,42 @@ class ColoringView:
             sx, sy = self._anchor(gray, 'intro_skip', page, threshold=.82, undimmed=True)
             return PaintingIntro('skip', (round(sx + 4 * scale), round(sy + 2 * scale),
                                           max(1, round(43 * scale)), max(1, round(18 * scale))))
+        return None
+
+    def find_reward(self, image):
+        """Recognize the reward overlay only over the verified painting layout.
+
+        Currency can already be consumed while the reward obscures the page.
+        Expose only the same empty left margin as the shared reward handler;
+        item icons and painting controls remain outside the click target.
+        """
+        gray = _gray(image)
+        if gray is None:
+            return None
+        delta = np.array(ANCHORS['reward_frame']) - ANCHORS['reward_title']
+        for _, x, y, scale in _candidates(gray, 'reward_title', threshold=.8)[:8]:
+            page = PaintingPage(x - 481 * scale, y - 234 * scale, scale)
+            frame = self._anchor(gray, 'reward_frame', page, threshold=.8, search_margin=12)
+            if frame is None:
+                continue
+            observed = np.array(frame) - (x, y)
+            fitted = float(np.dot(observed, delta) / np.dot(delta, delta))
+            if abs(fitted - scale) > .04 or np.linalg.norm(observed - delta * fitted) > 5 * scale:
+                continue
+            page = PaintingPage(x - 481 * fitted, y - 234 * fitted, fitted)
+            if not all(self._anchor(gray, name, page, threshold=.8, undimmed=True)
+                       for name in ('reward_title', 'reward_frame')):
+                continue
+            background = PaintingPage(page.x, page.y, fitted * 1280 / 956)
+            # The modal deliberately darkens these fixed background controls.
+            # They establish page identity, never permission to spend or go back.
+            if not all(self._anchor(gray, name, background, threshold=.74, search_margin=10)
+                       for name in ('title', 'global_label', 'back')):
+                continue
+            roi = page.roi(35, 280, 45, 100)
+            rx, ry, rw, rh = roi
+            if rx >= 0 and ry >= 0 and rx + rw <= gray.shape[1] and ry + rh <= gray.shape[0]:
+                return PaintingReward(roi)
         return None
 
     @staticmethod

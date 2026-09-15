@@ -39,8 +39,8 @@ class World:
                 locked=self.locked, running=self.running)
         if self.kind == 'unknown':
             return Observation()
-        if self.kind == 'success':
-            return Observation(kind='success', dismiss_roi=DISMISS)
+        if self.kind in ('success', 'interrupted'):
+            return Observation(kind=self.kind, dismiss_roi=DISMISS)
         if self.kind == 'running_details':
             return Observation(kind='running_details', close_roi=CLOSE)
         return Observation(kind=self.kind, available=self.available, selected=self.selected,
@@ -116,6 +116,71 @@ def dispatcher(world, **kwargs):
 
 
 class DispatchFlowTests(unittest.TestCase):
+    def test_interrupted_dispatch_acknowledgement_never_recalls_or_submits(self):
+        world = World()
+        world.kind, world.after_success = 'interrupted', 'map'
+        self.assertTrue(dispatcher(world).restore_map())
+        self.assertEqual(world.controls, ['dispatch_interrupt_close'])
+        self.assertEqual(world.kind, 'map')
+
+    def test_stuck_interruption_is_clicked_only_once(self):
+        world = World()
+        world.kind, world.stall = 'interrupted', DISMISS
+        with self.assertRaises(DispatchError):
+            dispatcher(world).run()
+        self.assertEqual(world.controls, ['dispatch_interrupt_close'])
+        self.assertLessEqual(world.reads, 9)
+
+    def test_unknown_interruption_animation_does_not_allow_repeat_dismissal(self):
+        class FlickeringInterruption(World):
+            def screenshot(self):
+                if self.clicks:
+                    self.kind = 'unknown' if self.reads % 2 else 'interrupted'
+                return super().screenshot()
+
+        world = FlickeringInterruption()
+        world.kind, world.stall = 'interrupted', DISMISS
+        with self.assertRaises(DispatchError):
+            dispatcher(world).run()
+        self.assertEqual(world.controls, ['dispatch_interrupt_close'])
+        self.assertLessEqual(world.reads, 9)
+
+    def test_post_submit_interruption_does_not_repeat_submission(self):
+        class InterruptedSubmit(World):
+            def click(self, roi, name):
+                super().click(roi, name)
+                if roi == SUBMIT:
+                    self.kind = 'interrupted'
+
+        world = InterruptedSubmit()
+        world.confirm_submit = False
+        world.after_success = 'map'
+        with self.assertRaises(DispatchError):
+            dispatcher(world).run()
+        self.assertEqual(world.controls,
+                         ['dispatch_slot', 'dispatch_portrait', 'dispatch_submit', 'dispatch_interrupt_close'])
+
+    def test_interruption_can_follow_return_rewards(self):
+        world = ReturnWorld(['源赖光'])
+        world.after_returns, world.after_success = 'interrupted', 'map'
+        self.assertTrue(dispatcher(world).restore_map())
+        self.assertEqual(world.controls, ['dispatch_return_close', 'dispatch_interrupt_close'])
+
+    def test_interruption_that_reappears_after_return_is_not_clicked_again(self):
+        world = ReturnWorld(['源赖光'])
+        world.kind, world.after_success = 'interrupted', 'returned'
+        world.after_returns = 'interrupted'
+        with self.assertRaises(DispatchError):
+            dispatcher(world).run()
+        self.assertEqual(world.controls, ['dispatch_interrupt_close', 'dispatch_return_close'])
+
+    def test_single_map_frame_does_not_hide_delayed_interruption(self):
+        world = ReturnWorld([])
+        world.kind, world.after_success = 'interrupted', 'map'
+        world.prefix = [Observation(kind='map', running=4)]
+        self.assertTrue(dispatcher(world).restore_map())
+        self.assertEqual(world.controls, ['dispatch_interrupt_close'])
+
     def test_consecutive_return_rewards_close_without_resource_actions(self):
         world = ReturnWorld(['晴明', '神乐', '源赖光', '八百比丘尼'])
         result = dispatcher(world).run()

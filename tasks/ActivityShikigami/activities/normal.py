@@ -134,12 +134,13 @@ class NormalClimbAct(BaseAct):
         try:
             # This recovery does not spend pigment, even with coloring disabled.
             if (self._coloring_view.find_page(image) is not None
-                    or self._coloring_view.find_intro(image) is not None):
+                    or self._coloring_view.find_intro(image) is not None
+                    or self._coloring_view.find_reward(image) is not None):
                 if not self._colorer().leave():
                     raise ColoringError('未确认从百鬼夜行图返回地图')
                 image = self.screenshot()
             observation = self._dispatch_view.observe(image)
-            if (require_map or observation.kind in ('success', 'returned', 'portraits', 'setup')
+            if (require_map or observation.kind in ('success', 'returned', 'interrupted', 'portraits', 'setup')
                     or getattr(observation, 'close_roi', None) is not None):
                 dispatcher = DailyDispatcher(self.screenshot, self._activity_click_roi,
                                              view=self._dispatch_view)

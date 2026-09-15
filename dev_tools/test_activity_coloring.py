@@ -47,6 +47,7 @@ class World:
         self.first_intro, self.intro_outcome, self.confirm_outcome = first_intro, intro_outcome, confirm_outcome
         self.view = SimpleNamespace(find_page=self.find_page, find_map_entry=self.find_map_entry,
                                     find_intro=self.find_intro,
+                                    find_reward=self.find_reward,
                                     prepare_counter=lambda image, roi, quantity: np.zeros((2, 2, 3)))
 
     def capture(self):
@@ -68,6 +69,9 @@ class World:
         if self.stage in ('intro', 'intro_confirm'):
             return SimpleNamespace(kind='skip' if self.stage == 'intro' else 'confirm', action_roi='intro_control')
         return None
+
+    def find_reward(self, image):
+        return SimpleNamespace(dismiss_roi='reward_close') if self.stage == 'reward' else None
 
     def read_text(self, image, roi, name='activity_text'):
         self.reads.append(name)
@@ -113,6 +117,14 @@ class World:
                 self.progress += 1
             elif self.outcome == 'unknown':
                 self.stage = 'unknown'
+            elif self.outcome in ('reward', 'reward_stuck', 'reward_no_consumption'):
+                if self.outcome != 'reward_no_consumption':
+                    self.currency -= self.amount
+                    self.amount = 0
+                self.stage = 'reward'
+        elif name.startswith('coloring_reward_close_'):
+            if self.outcome != 'reward_stuck':
+                self.stage = 'panel'
         elif name == 'coloring_collapse':
             self.stage = 'overview'
         elif name == 'coloring_back':
@@ -317,6 +329,108 @@ class ColoringTests(unittest.TestCase):
         with self.assertRaises(ColoringError):
             runner.run()
         runner.click.assert_called_once_with('intro_control', 'coloring_intro_skip')
+
+    def test_each_successful_submission_closes_reward_and_verifies_consumption_before_next(self):
+        world = World(stage='panel', currency=2500, capacity=999, outcome='reward')
+        result = world.runner().run()
+        self.assertEqual((result.status, result.submissions, world.currency), ('no_currency', 3, 0))
+        self.assertEqual(world.clicks, [action for index in range(3) for action in
+                         ('coloring_max', 'coloring_submit', f'coloring_reward_close_{index}')])
+
+    def test_delayed_reward_after_unchanged_currency_is_closed_before_acknowledgement(self):
+        self.check_delayed_reward(8)
+        self.check_delayed_reward(18)
+
+    def check_delayed_reward(self, frames):
+        world = World(stage='panel', currency=999, outcome='reward')
+        original_click = world.click
+        pending = [None, 0]
+
+        def click(roi, name):
+            before = world.currency
+            original_click(roi, name)
+            if name.startswith('coloring_submit_'):
+                pending[:] = [world.currency, frames]
+                world.currency, world.stage = before, 'panel'
+
+        def capture():
+            if pending[1]:
+                pending[1] -= 1
+                if not pending[1]:
+                    world.currency, world.stage = pending[0], 'reward'
+            return world.stage
+
+        runner = world.runner()
+        runner.click, runner.capture = click, capture
+        result = runner.run()
+        self.assertEqual((result.status, result.submissions), ('no_currency', 1))
+        self.assertEqual(world.clicks, ['coloring_max', 'coloring_submit', 'coloring_reward_close_0'])
+
+    def test_reward_does_not_replace_resource_consumption_acknowledgement(self):
+        world = World(stage='panel', outcome='reward_no_consumption')
+        runner = world.runner()
+        result = runner.run()
+        self.assertEqual((result.status, result.submissions), ('no_progress', 0))
+        self.assertEqual(world.clicks, ['coloring_max', 'coloring_submit', 'coloring_reward_close_0'])
+        self.assertTrue(runner.leave())
+        self.assertEqual(world.clicks[-2:], ['coloring_collapse', 'coloring_back'])
+
+    def test_stuck_reward_is_not_closed_again_by_leave_or_followed_by_back(self):
+        world = World(stage='panel', outcome='reward_stuck')
+        runner = world.runner()
+        result = runner.run()
+        self.assertEqual((result.status, result.submissions), ('no_progress', 0))
+        with self.assertRaises(ColoringError):
+            runner.leave()
+        self.assertEqual(world.clicks, ['coloring_max', 'coloring_submit', 'coloring_reward_close_0'])
+
+    def test_unknown_or_single_page_flash_does_not_rearm_a_stuck_reward_click(self):
+        world = World(stage='panel', outcome='reward_stuck')
+        runner = world.runner()
+        frames = [0, False]
+
+        def capture():
+            frames[1] = frames[1] or world.stage == 'reward'
+            if frames[1]:
+                world.stage = ('reward', 'unknown', 'panel')[frames[0] % 3]
+                frames[0] += 1
+            return world.stage
+
+        runner.capture = capture
+        result = runner.run()
+        self.assertEqual((result.status, result.submissions), ('no_progress', 0))
+        with self.assertRaises(ColoringError):
+            runner.leave()
+        self.assertEqual(world.clicks, ['coloring_max', 'coloring_submit', 'coloring_reward_close_0'])
+
+    def test_restart_at_reward_can_leave_without_any_coloring_action(self):
+        world = World(stage='reward', currency=2513)
+        self.assertTrue(world.runner().leave())
+        self.assertEqual(world.currency, 2513)
+        self.assertEqual(world.clicks, ['coloring_reward_close_0', 'coloring_collapse', 'coloring_back'])
+
+    def test_restart_at_reward_can_resume_using_only_remaining_currency(self):
+        world = World(stage='reward', currency=0)
+        result = world.runner().run()
+        self.assertEqual((result.status, result.submissions), ('no_currency', 0))
+        self.assertEqual(world.clicks, ['coloring_reward_close_0'])
+
+    def test_many_reward_transactions_do_not_bypass_or_trip_actual_device_click_guard(self):
+        guard = device_click_guard()
+        world = World(stage='panel', currency=1500, capacity=100, outcome='reward', guard=guard)
+        result = world.runner().run()
+        self.assertEqual((result.status, result.submissions), ('no_currency', 15))
+        self.assertEqual([name for name in world.action_names if name.startswith('coloring_reward_close_')],
+                         [f'coloring_reward_close_{index}' for index in range(15)])
+        guard.click_record_clear.assert_not_called()
+
+    def test_reward_dismiss_click_failure_stops_without_resource_retry(self):
+        world = World(stage='reward')
+        runner = world.runner()
+        runner.click = Mock(return_value=False)
+        with self.assertRaises(ColoringError):
+            runner.leave()
+        runner.click.assert_called_once_with('reward_close', 'coloring_reward_close_0')
 
 
 if __name__ == '__main__':
