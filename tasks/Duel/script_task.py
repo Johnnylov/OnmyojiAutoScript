@@ -7,7 +7,7 @@ import random
 from datetime import time, datetime, timedelta
 
 from module.logger import logger
-from module.exception import TaskEnd
+from module.exception import GameStuckError, TaskEnd
 from module.base.timer import Timer
 
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
@@ -289,7 +289,8 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
         if not self.conf.duel_config.switch_all_soul:
             return
         click_count = 0  # 计数
-        while 1:
+        timeout = Timer(45).start()
+        while not timeout.reached():
             self.screenshot()
             if self.duel_popup_handle():
                 continue
@@ -302,8 +303,12 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
             if self.appear_then_click(self.I_D_TEAM_SWTICH, interval=1):
                 click_count += 1
                 continue
+        else:
+            raise GameStuckError('Duel soul switch did not reach the expected team controls')
         logger.info('Souls Switch is complete')
-        self.ui_click(self.I_UI_BACK_YELLOW, self.I_D_TEAM)
+        if not self.ui_click_until_appear_or_timeout(self.I_UI_BACK_YELLOW, self.I_D_TEAM,
+                                                   interval=1, timeout=10):
+            raise GameStuckError('Duel soul switch did not return to the duel lobby')
 
     def check_and_get_reward(self):
         """检查并收获奖励"""
@@ -315,6 +320,8 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
         """处理斗技界面上的弹窗和残留结算界面, 避免素材被遮挡后静默空转直至 GameStuckError
         :return: 是否有处理动作
         """
+        if self._claim_duel_event_gift():
+            return True
         # 队伍试用提示只在实际出现时处理，点击后由下一帧继续识别。
         if self.appear_then_click(self.I_D_TRY, interval=1.2):
             logger.info('Duel team trial prompt handled')
@@ -330,6 +337,29 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
             self.click(random_click(ltrb=(True, True, False, True)), interval=1.2)
             return True
         return False
+
+    def _claim_duel_event_gift(self) -> bool:
+        """领取已确认的斗技活动赠礼；一次点击后等待消失，不点击背景阵容。"""
+        markers = (self.I_D_EVENT_GIFT_PROTECT, self.I_D_EVENT_GIFT_COUPON,
+                   self.I_D_EVENT_GIFT_ACCEPT)
+        if not all(self.appear(marker) for marker in markers):
+            return False
+        logger.info('Duel event gift appears, accept once before preparing the team')
+        timeout = Timer(10).start()
+        clicked = False
+        cleared_frames = 0
+        while not timeout.reached():
+            visible = [self.appear(marker) for marker in markers]
+            if not any(visible):
+                cleared_frames += 1
+                if cleared_frames >= 2:
+                    return True
+            else:
+                cleared_frames = 0
+                if all(visible) and not clicked:
+                    clicked = bool(self.click(self.I_D_EVENT_GIFT_ACCEPT, interval=1.2))
+            self.screenshot()
+        raise GameStuckError('Duel event gift did not close after one acceptance')
 
     def is_in_battle_prepare(self, skip_screenshot=True) -> bool:
         """是否在战斗准备界面"""

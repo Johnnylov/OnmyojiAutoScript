@@ -205,5 +205,32 @@
     "method": "Template matching",
     "threshold": 0.8,
     "description": "队伍试用"
+  },
+  {
+    "itemName": "d_event_gift_protect",
+    "imageName": "duel_d_event_gift_protect.png",
+    "roiFront": "806,220,179,40",
+    "roiBack": "797,209,204,66",
+    "method": "Template matching",
+    "threshold": 0.9,
+    "description": "斗技活动赠礼：不败符咒标题"
+  },
+  {
+    "itemName": "d_event_gift_coupon",
+    "imageName": "duel_d_event_gift_coupon.png",
+    "roiFront": "758,375,246,43",
+    "roiBack": "747,365,269,64",
+    "method": "Template matching",
+    "threshold": 0.9,
+    "description": "斗技活动赠礼：难行符咒兑换券标题"
+  },
+  {
+    "itemName": "d_event_gift_accept",
+    "imageName": "duel_d_event_gift_accept.png",
+    "roiFront": "776,502,120,38",
+    "roiBack": "722,490,225,65",
+    "method": "Template matching",
+    "threshold": 0.9,
+    "description": "斗技活动赠礼：开心收下，仅联合两种赠品使用"
   }
 ]

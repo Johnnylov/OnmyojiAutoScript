@@ -64,6 +64,10 @@ class DuelAssets:
 	I_D_ANNOUNCE = RuleImage(roi_front=(545,498,200,26), roi_back=(450,470,400,90), threshold=0.8, method="Template matching", file="./tasks/Duel/duel/duel_d_announce.png")
 	# 队伍试用
 	I_D_TRY = RuleImage(roi_front=(667,356,111,30), roi_back=(667,356,111,30), threshold=0.8, method="Template matching", file="./tasks/Duel/duel/duel_d_try.png")
+	# 活动赠礼：同时确认两种赠品和领取按钮
+	I_D_EVENT_GIFT_PROTECT = RuleImage(roi_front=(806,220,179,40), roi_back=(797,209,204,66), threshold=0.9, method="Template matching", file="./tasks/Duel/duel/duel_d_event_gift_protect.png")
+	I_D_EVENT_GIFT_COUPON = RuleImage(roi_front=(758,375,246,43), roi_back=(747,365,269,64), threshold=0.9, method="Template matching", file="./tasks/Duel/duel/duel_d_event_gift_coupon.png")
+	I_D_EVENT_GIFT_ACCEPT = RuleImage(roi_front=(776,502,120,38), roi_back=(722,490,225,65), threshold=0.9, method="Template matching", file="./tasks/Duel/duel/duel_d_event_gift_accept.png")
 
 
 	# Ocr Rule Assets
@@ -75,4 +79,3 @@ class DuelAssets:
 	O_D_CELEB_STAR = RuleOcr(roi=(625,454,77,37), area=(625,454,77,37), mode="Digit", method="Default", keyword="", name="d_celeb_star")
 	# 被办式神名称 
 	O_D_BAN_NAME = RuleOcr(roi=(92,97,82,25), area=(92,97,82,25), mode="Single", method="Default", keyword="", name="d_ban_name")
-
