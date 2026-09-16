@@ -24,7 +24,7 @@ from unittest.mock import Mock, patch
 
 import cv2
 import numpy as np
-from filelock import FileLock
+from filelock import FileLock, Timeout
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -81,6 +81,8 @@ class MemorySchedule:
         self.read_next_run = Mock(side_effect=lambda: self.next_run)
         self.resolve_next_run = Mock(side_effect=lambda now: self.read_next_run())
         self.write_next_run = Mock(side_effect=self._write)
+        self.read_manual_run = Mock(return_value=None)
+        self.consume_manual_run = Mock(return_value=False)
 
     def _write(self, target):
         self.next_run = target
@@ -341,6 +343,7 @@ def independent_schedule_class():
         "os": os,
         "json": json,
         "FileLock": FileLock,
+        "Timeout": Timeout,
         "atomic_write": atomic_namespace["atomic_write"],
         "logger": Mock(),
     }

@@ -66,7 +66,7 @@ class World:
         elif marker in (purchase.CONFIRM_QUANTITY, self.C_BUY_ONE):
             if not self.legacy:
                 assert self.count == 1
-            self.stage = 'reward' if self.outcome else 'unknown'
+            self.stage = 'panel' if self.outcome == 'stuck' else ('reward' if self.outcome else 'unknown')
         else:
             raise AssertionError('Unexpected confirm')
         return True
@@ -77,8 +77,15 @@ class World:
             return True
         return False
 
+    def _shop_page_visible(self):
+        return self.stage == 'shelf'
+
     def run(self):
         with patch.object(purchase, 'Timer', LimitedTimer), \
+                patch.object(purchase, 'item_availability', return_value='available'), \
+                patch.object(purchase, 'bond_required', return_value=False), \
+                patch.object(purchase, 'purchase_dialog_present', side_effect=lambda _: self.stage == 'panel'), \
+                patch.object(purchase, 'shelf_controls_enabled', side_effect=lambda _: self.stage == 'shelf'), \
                 patch.object(purchase.QUANTITY, 'ocr', side_effect=lambda _: self.count):
             return purchase.buy_shop_one(self, MysteryShopAssets.I_MS_BLUE, MysteryShopAssets.I_MS_CHECK_BLUE)
 
@@ -116,6 +123,50 @@ class PurchaseTests(unittest.TestCase):
         with self.assertRaises(GameStuckError):
             world.run()
         self.assertEqual(world.clicks, ['MS_MS_BLUE', 'ms_buy_quantity_one'])
+
+    def test_unchanged_purchase_dialog_never_receives_a_second_submit(self):
+        for legacy in (False, True):
+            world = World(count=1, legacy=legacy, outcome='stuck')
+            with self.assertRaises(GameStuckError):
+                world.run()
+            self.assertEqual(world.clicks, ['MS_MS_BLUE', 'buy_one' if legacy else 'ms_buy_quantity_one'])
+
+    def test_unresponsive_shelf_gets_only_one_click_and_is_skipped(self):
+        world = World()
+        world.appear_then_click = lambda marker, **kwargs: world.clicks.append(marker.name) or True
+        self.assertFalse(world.run())
+        self.assertEqual(world.clicks, ['MS_MS_BLUE'])
+
+    def test_quantity_minus_requires_verified_one_step_change_before_next_click(self):
+        world = World(count=3)
+        original = world.appear_then_click
+
+        def click(marker, **kwargs):
+            if marker == world.I_BUY_SUB:
+                world.clicks.append(marker.name)
+                return True
+            return original(marker, **kwargs)
+
+        world.appear_then_click = click
+        with self.assertRaises(GameStuckError):
+            world.run()
+        self.assertEqual(world.clicks, ['MS_MS_BLUE', 'BUY_BUY_SUB'])
+
+    def test_paid_dialog_cancellation_must_be_confirmed_before_scanning_resumes(self):
+        world = World(rmb=True)
+        world.click = lambda marker, **kwargs: world.clicks.append(marker.name) or True
+        with self.assertRaises(GameStuckError):
+            world.run()
+        self.assertEqual(world.clicks, ['MS_MS_BLUE', 'buy_cancel'])
+
+    def test_a_stale_success_toast_does_not_confirm_a_new_purchase(self):
+        world = World(count=1)
+        original = world.appear
+        world.appear = lambda marker, **kwargs: (world.stage == 'panel' if marker == world.I_BUY_SUCCESS
+                                                 else original(marker, **kwargs))
+        with self.assertRaises(GameStuckError):
+            world.run()
+        self.assertEqual(world.clicks, ['MS_MS_BLUE'])
 
     def test_wrong_product_dialog_does_not_click_underlying_shelf(self):
         world = World()

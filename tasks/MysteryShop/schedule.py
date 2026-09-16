@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 
+from filelock import FileLock, Timeout
+
 from module.config.utils import read_file, write_file
 
 
@@ -20,6 +22,64 @@ class MysteryShopSchedule:
         # 配置名称不参与目录拼接，不同账号配置分别保存且不产生非法路径。
         key = sha256(config_name.encode('utf-8')).hexdigest()
         self.path = self.root / f'{key}.json'
+        self.manual_path = self.root / f'{key}.manual.json'
+
+    def read_manual_run(self, now: datetime) -> datetime | None:
+        """立即执行请求仅在请求当天有效，普通 next_run 改写不能生成请求。"""
+        if not isinstance(now, datetime) or now.tzinfo is not None:
+            raise ValueError('MysteryShop current time must be a local datetime without a timezone')
+        try:
+            self.manual_path.stat()
+        except FileNotFoundError:
+            return None
+        data = read_file(str(self.manual_path))
+        if (not isinstance(data, dict)
+                or type(data.get('version')) is not int or data['version'] != self.VERSION
+                or data.get('config_name') != self.config_name
+                or not isinstance(data.get('requested_at'), str)
+                or type(data.get('pending')) is not bool):
+            raise ValueError(f'Invalid MysteryShop manual request: {self.manual_path}')
+        requested = datetime.fromisoformat(data['requested_at'])
+        if requested.tzinfo is not None:
+            raise ValueError(f'Invalid MysteryShop manual request time: {self.manual_path}')
+        if data['pending'] and requested.date() == now.date() and requested <= now:
+            return requested
+        return None
+
+    def request_manual_run(self, now: datetime) -> None:
+        """由立即执行按钮写入；与自动完成时间分开保存，互不覆盖。"""
+        if not isinstance(now, datetime) or now.tzinfo is not None:
+            raise ValueError('MysteryShop manual request requires a local datetime')
+        self.root.mkdir(parents=True, exist_ok=True)
+        try:
+            with FileLock(f'{self.manual_path}.guard.lock', timeout=5):
+                write_file(str(self.manual_path), {
+                    'version': self.VERSION,
+                    'config_name': self.config_name,
+                    'requested_at': now.replace(microsecond=0).isoformat(timespec='seconds'),
+                    'pending': True,
+                })
+        except Timeout as exc:
+            raise OSError(f'MysteryShop manual request is busy: {self.manual_path}') from exc
+
+    def consume_manual_run(self, now: datetime) -> bool:
+        """进入商店前消费一次，重启或失败不能重复使用同一次手动授权。"""
+        if not self.manual_path.exists():
+            return False
+        try:
+            with FileLock(f'{self.manual_path}.guard.lock', timeout=5):
+                requested = self.read_manual_run(now)
+                if requested is None:
+                    return False
+                write_file(str(self.manual_path), {
+                    'version': self.VERSION,
+                    'config_name': self.config_name,
+                    'requested_at': requested.isoformat(timespec='seconds'),
+                    'pending': False,
+                })
+                return True
+        except Timeout as exc:
+            raise OSError(f'MysteryShop manual request is busy: {self.manual_path}') from exc
 
     @classmethod
     def _validate_target(cls, target: datetime) -> datetime:

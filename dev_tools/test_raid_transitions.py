@@ -54,6 +54,7 @@ class World:
             cls = methods_from_source('tasks/Component/GeneralBattle/general_battle.py',
                                       'GeneralBattle', ['exit_battle', '_resolve_action'], namespace)
         self.task = cls()
+        self.task._check_battle_connection = Mock()
         self.task.screenshot = self.screenshot
         self.task.appear = lambda marker: marker in self.frame[1]
         self.task.click = self.click

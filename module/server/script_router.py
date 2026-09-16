@@ -282,7 +282,7 @@ async def script_task(script_name: str, task: str, group: str, argument: str, ty
                 value = bool(value)
             case 'string':
                 pass
-            case 'date_time':
+            case 'date_time' | 'next_run':
                 value = datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
             case 'time_delta':
                 # strptime 是个好东西，但是不能解析00的天数
@@ -295,7 +295,18 @@ async def script_task(script_name: str, task: str, group: str, argument: str, ty
     except Exception as e:
         # 类型不正确
         raise HTTPException(status_code=400, detail=f'Argument type error: {e}')
-    return mm.config_cache(script_name).model.script_set_arg(task, group, argument, value)
+    config = mm.config_cache(script_name)
+    saved = config.model.script_set_arg(task, group, argument, value)
+    if (saved and types == 'next_run'
+            and convert_to_underscore(task) == 'mystery_shop'
+            and group == 'scheduler' and argument == 'next_run'
+            and value <= datetime.now()):
+        # OASX 的立即执行按钮使用 next_run 类型；日期编辑使用 date_time。
+        # 保留账号独立自动调度，只为该次明确操作登记一次手动请求。
+        from tasks.MysteryShop.schedule import MysteryShopSchedule
+        MysteryShopSchedule(script_name).request_manual_run(datetime.now())
+        logger.info(f'[{script_name}] MysteryShop manual run requested')
+    return saved
 
 
 @script_app.put('/{script_name}/{task}/sync_next_run')

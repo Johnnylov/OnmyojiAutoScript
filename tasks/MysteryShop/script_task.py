@@ -9,6 +9,7 @@ from cached_property import cached_property
 
 from module.atom.click import RuleClick
 from module.atom.image import RuleImage
+from module.atom.ocr import RuleOcr
 from module.atom.swipe import RuleSwipe
 from module.exception import GameStuckError, RequestHumanTakeover, TaskEnd
 from module.image.rpc import get_image_client
@@ -41,19 +42,26 @@ class ScriptTask(FriendshipPoints, MysteryShopAssets, GeneralInvite):
                          mode='default', name='ms_down')
     S_MS_TO_TOP = RuleSwipe(roi_front=(590, 255, 30, 20), roi_back=(590, 455, 30, 20),
                            mode='default', name='ms_to_top')
+    O_MS_FRIEND_NAME = RuleOcr(roi=(1017, 660, 190, 38), area=(1017, 660, 190, 38),
+                              mode='Single', method='Default', keyword='', name='ms_friend_name')
 
     def run(self):
         logger.info('MysteryShop scroll mode: ADB 2s drag (KekkaiUtilize)')
         self._ensure_shop_due()
+        self._shop_reentry_used = False
         self.goto_page(page_mall)
-        self.ui_click(self.I_ME_ENTER, self.I_MS_SHARE)
+        self._enter_shop()
         logger.info('Enter MysteryShop')
         con = self.config.mystery_shop
         self.share(con.invite_config)
         while 1:
-            self.run_shop(con.shop_config)
-            if not self.next_one():
-                break
+            try:
+                self.run_shop(con.shop_config)
+                if not self.next_one():
+                    break
+            except GameStuckError:
+                if not self._recover_shop_page():
+                    raise
         self.shop_reward()
         logger.info('Exit MysteryShop')
         self.back_mall()
@@ -64,43 +72,68 @@ class ScriptTask(FriendshipPoints, MysteryShopAssets, GeneralInvite):
     def buy_one(self, start_click, check_image):
         return buy_shop_one(self, start_click, check_image)
 
+    def _enter_shop(self):
+        if not self.ui_click_until_appear_or_timeout(self.I_ME_ENTER, self.I_MS_SHARE,
+                                                    interval=1.2, timeout=12):
+            raise GameStuckError('MysteryShop entry could not be confirmed')
+
+    def _recover_shop_page(self):
+        """Re-enter once if the shelf was replaced by a verified parent page."""
+        if getattr(self, '_shop_reentry_used', False):
+            return False
+        self.screenshot()
+        if not (self.appear(self.I_CHECK_MAIN) or self.appear(self.I_CHECK_MALL)):
+            return False
+        self._ensure_shop_open()
+        self._shop_reentry_used = True
+        logger.warning('MysteryShop left the shop; re-enter once and recheck remaining stock')
+        self.goto_page(page_mall)
+        self._enter_shop()
+        # Sharing was already handled for this run. Re-entry only scans stock.
+        return True
+
     def next_one(self):
         """
         切换下一个好友的商店
         :return:
         """
-        self.screenshot()
+        self._wait_shop_stable()
         if not self.appear(self.I_MS_NEXT):
             sleep(0.5)
             self.screenshot()
-            if self.appear(self.I_MS_NEXT):
-                pass
-            else:
+            if not self._shop_page_visible():
+                raise GameStuckError('MysteryShop page disappeared before checking next friend')
+            if not self.appear(self.I_MS_NEXT):
                 logger.info('No next friend')
                 return False
 
         own_page = self.appear(self.I_MS_SHARE)
-        if own_page:
-            while 1:
-                self.screenshot()
-                if not self.appear(self.I_MS_SHARE):
-                    break
-                if self.appear_then_click(self.I_MS_NEXT, interval=1):
-                    continue
-            logger.info('Switch to next friend')
-            return True
-
-        present_friend = self.O_MS_FRIEND.ocr(self.device.image)
-        while 1:
+        present_friend = '' if own_page else self.O_MS_FRIEND_NAME.ocr(self.device.image).strip()
+        if not own_page and not present_friend:
+            raise GameStuckError('MysteryShop current friend could not be read')
+        self.click(self.I_MS_NEXT)
+        timeout = Timer(10).start()
+        previous, stable = None, 0
+        while not timeout.reached():
+            self._ensure_shop_open()
             self.screenshot()
-            next_friend = self.O_MS_FRIEND.ocr(self.device.image)
-            if present_friend != next_friend:
-                break
-            if self.appear_then_click(self.I_MS_NEXT, interval=2.5):
+            # A missing share button or blank OCR on the courtyard is not a
+            # successful shop switch. Require a real shelf and a stable name.
+            if not self._shop_page_visible() or self.appear(self.I_MS_SHARE):
+                previous, stable = None, 0
+                sleep(0.2)
                 continue
-
-        logger.info('Switch to next friend')
-        return True
+            friend = self.O_MS_FRIEND_NAME.ocr(self.device.image).strip()
+            if friend and friend != present_friend:
+                stable = stable + 1 if friend == previous else 1
+                previous = friend
+                if stable >= 2:
+                    logger.info('Switch to next friend')
+                    return True
+            else:
+                previous, stable = None, 0
+            sleep(0.2)
+        raise GameStuckError('MysteryShop next friend was not confirmed after one click')
 
 
 
@@ -257,13 +290,16 @@ class ScriptTask(FriendshipPoints, MysteryShopAssets, GeneralInvite):
         return MysteryShopSchedule(self.config.config_name)
 
     def _ensure_shop_due(self):
-        """OASX 重写通用 next_run 也不能提前触发已完成的商店。"""
+        """普通调度服从独立时间，明确的立即执行请求仅允许提前运行一次。"""
         now = datetime.now()
         try:
             next_run = self._independent_schedule.resolve_next_run(now)
+            manual_run = self._independent_schedule.consume_manual_run(now)
         except (OSError, ValueError) as exc:
             raise RequestHumanTakeover(f'Cannot read MysteryShop independent schedule: {exc}') from exc
-        if next_run is not None and now < next_run:
+        if manual_run:
+            logger.info('MysteryShop consumed explicit manual run request')
+        elif next_run is not None and now < next_run:
             logger.info(f'MysteryShop independent next run: {next_run}; skip external early trigger')
             self.set_next_run(task='MysteryShop', target=next_run, server=False, finish=True)
             raise TaskEnd('MysteryShop')

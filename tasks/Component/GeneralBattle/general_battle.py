@@ -6,6 +6,7 @@ from __future__ import annotations
 import difflib
 import random
 import time
+import cv2
 from dataclasses import dataclass, field
 from enum import Enum
 from tasks.GameUi.default_pages import random_click
@@ -807,6 +808,22 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             page_reward: self._handle_reward,
         }
 
+    def _check_battle_connection(self) -> None:
+        """Do not act on battle controls behind a confirmed disconnect dialog."""
+        if not self.appear(self.I_NETWORK_ERROR):
+            return
+        # Other confirmations share this scroll frame. Require the actual
+        # disconnect wording as well, using the same matched dialog position.
+        rule = self.I_NETWORK_ERROR
+        x, y, _, _ = rule.roi_front
+        text = rule.image[59:90, 9:405]
+        visible = self.device.image[y + 56:y + 93, x + 6:x + 408]
+        if visible.shape[:2] != (37, 402) or not text.size:
+            return
+        score = cv2.minMaxLoc(cv2.matchTemplate(visible, text, cv2.TM_CCOEFF_NORMED))[1]
+        if score > 0.90:
+            raise GameStuckError('Game server disconnected during battle; restart and retry the current task')
+
     def run_general_battle(
         self,
         config: GeneralBattleConfig = None,
@@ -844,6 +861,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         try:
             while True:
                 self.screenshot()
+                self._check_battle_connection()
                 self._tick_long_battle(context)
                 self._tick_timeout(context)
                 page = GameUi.detect_page_in(self, page_battle_prepare, page_battle, page_battle_result,
@@ -872,6 +890,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         """Submit exit and confirmation once; stop immediately on a settlement page."""
         if not skip_first:
             self.screenshot()
+        self._check_battle_connection()
         if GameUi.detect_page_in(self, page_battle_result, page_reward, include_global=False):
             return True
         page = GameUi.detect_page_in(self, page_battle_prepare, page_battle, include_global=False)
@@ -883,6 +902,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         confirm_clicked = False
         while time.monotonic() < deadline:
             self.screenshot()
+            self._check_battle_connection()
             # Check settlement separately so overlapping battle markers cannot win.
             if GameUi.detect_page_in(self, page_battle_result, page_reward, include_global=False):
                 logger.info('Exit battle success')
