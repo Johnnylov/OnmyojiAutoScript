@@ -124,6 +124,7 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, 
             self.goto_page(page_main)
             self.set_next_run(task='BondlingFairyland', finish=True, success=True)
             raise TaskEnd
+        self.wait_local_team_ready()
         match cong.bondling_config.user_status:
             case UserStatus.handoff1:
                 self.limit_count //= 2

@@ -34,8 +34,18 @@ class BattleTakeover(BaseModel):
     on_takeover: BattleTaskOverEnum = Field(default=BattleTaskOverEnum.FINISH, description='on_takeover_help')
 
 
+class LocalTeam(BaseModel):
+    enable: bool = Field(default=False, description='启用后，两份运行中的配置会相互调动组队任务')
+    partner_config: str = Field(default='', title='队友配置名', description='填写同一本机后端中的配置名，例如 oas2；两边需要相互绑定')
+    sync_orochi: bool = Field(default=True, title='八岐大蛇联动', description='需配成队长与队员，并启用双方任务')
+    sync_bondling: bool = Field(default=True, title='契灵联动', description='支持队长/队员以及 handoff1/handoff2')
+    ready_timeout: int = Field(default=600, ge=30, le=1800, title='就绪等待上限（秒）',
+                              description='队友结束当前战斗并完成准备的最长等待时间；超时后两分钟重试')
+
+
 class GlobalGame(BaseModel):
     emergency: Emergency = Field(default_factory=Emergency)
     costume_config: CostumeConfig = Field(default_factory=CostumeConfig)
     battle: BattleTakeover = Field(default_factory=BattleTakeover)
     team_flow: TeamFlow = Field(default_factory=TeamFlow)
+    local_team: LocalTeam = Field(default_factory=LocalTeam)

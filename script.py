@@ -35,6 +35,7 @@ from module.server.i18n import I18n
 from module.image.rpc import ensure_image_server_ready
 from module.ocr.rpc import ensure_ocr_server_ready
 from module.script import ScriptRuntimeController, ScriptRuntimeDecision
+from module.script.team_sync import LocalTeamCoordinator
 from tasks.Restart.server_update import delay_pending_tasks_for_server_update, is_server_update_window
 from module.server.log_service import build_error_log_dir_name
 
@@ -50,6 +51,7 @@ class Script:
         self.runtime = ScriptRuntimeController(self)
         self.gui_update_task: Callable = None  # 回调函数, gui进程注册当每次config更新任务的时候更新gui的信息
         self.config_name = config_name
+        self.team_sync = LocalTeamCoordinator(config_name)
         # Skip first restart
         self.is_first_task = True
         # Failure count of tasks
@@ -67,6 +69,7 @@ class Script:
         try:
             from module.config.config import Config
             config = Config(config_name=self.config_name)
+            config.team_sync = self.team_sync
             return config
         except RequestHumanTakeover:
             logger.critical('Request human takeover')
@@ -306,7 +309,12 @@ class Script:
             #         logger.info(f"[{self.config_name}] exited. Reason: Update")
             #         exit(0)
 
-            time.sleep(5)
+            team_sync = getattr(self, 'team_sync', None)
+            if team_sync:
+                requested = team_sync.pending_task()
+                if requested and requested != getattr(self, '_waiting_team_request', None):
+                    return False
+            time.sleep(1 if team_sync else 5)
 
             if self.config.should_reload():
                 return False
@@ -352,16 +360,30 @@ class Script:
         """
         while True:
             task = self.config.get_next()
+            team_sync = getattr(self, 'team_sync', None)
+            requested = team_sync.pending_task() if team_sync else None
+            self._waiting_team_request = requested
+            if requested and (task.command != 'Restart' or task.next_run > datetime.now()):
+                from module.config.config import Function
+                key = convert_to_underscore(requested)
+                task = Function(key, getattr(self.config.model, key).model_dump())
+                task.next_run = datetime.now().replace(microsecond=0)
+                self.config.pending_task = [task] + [
+                    item for item in self.config.pending_task if item.command != requested]
+                self.config.waiting_task = [item for item in self.config.waiting_task if item.command != requested]
             now = datetime.now()
             antiban_wake = self.anti_ban_guard.wake_time(now, self.config.script.anti_ban)
             if antiban_wake is not None:
                 task.next_run = max(task.next_run, antiban_wake)
-            task = self._hoard_next_task(task, now)
+            if not requested:
+                task = self._hoard_next_task(task, now)
             self.config.task = task
             if self.state_queue:
                 self.state_queue.put({"schedule": self.config.get_schedule_data()})
             # 任务时间到了返回任务名称
             if task.next_run <= now:
+                if team_sync and team_sync.request(task.command) != task.command:
+                    continue
                 return task.command
             # 根据策略执行等待逻辑
             wait_until = task.next_run
@@ -440,7 +462,11 @@ class Script:
             logger.error(f'Invalid command `{command}`')
 
         self._reset_task_runtime_outcome()
+        team_sync = getattr(self, 'team_sync', None)
+        completed = False
         try:
+            if team_sync:
+                team_sync.begin(command)
             self.device.screenshot()
             module_name = 'script_task'
             module_path = str(Path.cwd() / 'tasks' / command / (module_name + '.py'))
@@ -448,7 +474,14 @@ class Script:
             task_module = load_module(module_name, module_path)
             task_module.ScriptTask(config=self.config, device=self.device).run()
         except Exception as e:
-            return self._handle_task_exception(e, command)
+            result = self._handle_task_exception(e, command)
+            completed = isinstance(e, TaskEnd) or (
+                isinstance(self.last_task_runtime_outcome, dict) and
+                self.last_task_runtime_outcome.get('status') == 'team_partner_finished')
+            return result
+        finally:
+            if team_sync:
+                team_sync.finish(command, completed)
         return False
 
     def loop(self):
@@ -456,100 +489,112 @@ class Script:
         Main loop of scheduler.
         :return:
         """
-        with _log_switch_lock:
-            logger.set_file_logger(self.config_name, do_cleanup=True)
-        start_day = date.today()
-        logger.info(f'Start scheduler loop: {self.config_name}')
-        self.config.model.running_task = ''
-        self.anti_ban_guard.reset()
+        team_sync = getattr(self, 'team_sync', None)
+        try:
+            if team_sync:
+                team_sync.start()
+            with _log_switch_lock:
+                logger.set_file_logger(self.config_name, do_cleanup=True)
+            start_day = date.today()
+            logger.info(f'Start scheduler loop: {self.config_name}')
+            self.config.model.running_task = ''
+            self.anti_ban_guard.reset()
 
-        # Update GUI 防呆, 读取设置并立刻显示后台模拟器到前台
-        if not self.config.script.device.run_background_only and IS_WINDOWS:
-            from module.device.platform2.platform_windows import minimize_by_name, show_window_by_name
-            target_window_name = self.config.script.device.handle  # 在这里输入你的具体窗口名称
-            if self.config.script.device.emulator_window_minimize:
-                minimize_by_name(target_window_name, serial=self.config.script.device.serial)
-            else:
-                show_window_by_name(target_window_name, serial=self.config.script.device.serial)
-                
-        while 1:
-            if date.today() > start_day:
-                with _log_switch_lock:
-                    logger.set_file_logger(self.config_name, do_cleanup=True)
-                start_day = date.today()
+            # Update GUI 防呆, 读取设置并立刻显示后台模拟器到前台
+            if not self.config.script.device.run_background_only and IS_WINDOWS:
+                from module.device.platform2.platform_windows import minimize_by_name, show_window_by_name
+                target_window_name = self.config.script.device.handle  # 在这里输入你的具体窗口名称
+                if self.config.script.device.emulator_window_minimize:
+                    minimize_by_name(target_window_name, serial=self.config.script.device.serial)
+                else:
+                    show_window_by_name(target_window_name, serial=self.config.script.device.serial)
 
-            task = ""
-            try:
-                # Get task
-                task = self.get_next_task()
-                # Skip first restart
-                if self.is_first_task and task == 'Restart':
-                    logger.info('Skip task `Restart` at scheduler start')
-                    self.config.task_delay(task='Restart', success=True, server=True)
+            while 1:
+                if date.today() > start_day:
+                    with _log_switch_lock:
+                        logger.set_file_logger(self.config_name, do_cleanup=True)
+                    start_day = date.today()
+
+                task = ""
+                try:
+                    # Get task
+                    task = self.get_next_task()
+                    # Skip first restart
+                    if self.is_first_task and task == 'Restart':
+                        logger.info('Skip task `Restart` at scheduler start')
+                        self.config.task_delay(task='Restart', success=True, server=True)
+                        del_cached_property(self, 'config')
+                        continue
+                    decision = self.runtime.prepare_task_execution(task)
+                except Exception as e:
+                    self._handle_task_exception(e, task)
+                    # 本轮 prepare 失败,重新调度
                     del_cached_property(self, 'config')
                     continue
-                decision = self.runtime.prepare_task_execution(task)
-            except Exception as e:
-                self._handle_task_exception(e, task)
-                # 本轮 prepare 失败,重新调度
-                del_cached_property(self, 'config')
-                continue
 
-            if decision == ScriptRuntimeDecision.RESCHEDULE:
-                logger.info(f'Runtime preparation for `{task}` requested reschedule, reload config and retry scheduling')
-                del_cached_property(self, 'config')
-                continue
-            if decision == ScriptRuntimeDecision.FAILED:
-                logger.warning(f'Runtime preparation for `{task}` failed, reload config and retry scheduling')
-                del_cached_property(self, 'config')
-                continue
+                if decision == ScriptRuntimeDecision.RESCHEDULE:
+                    logger.info(f'Runtime preparation for `{task}` requested reschedule, reload config and retry scheduling')
+                    del_cached_property(self, 'config')
+                    continue
+                if decision == ScriptRuntimeDecision.FAILED:
+                    logger.warning(f'Runtime preparation for `{task}` failed, reload config and retry scheduling')
+                    del_cached_property(self, 'config')
+                    continue
 
-            # Run
-            logger.info(f'Scheduler: Start task `{task}`')
-            self.device.stuck_record_clear()
-            self.device.click_record_clear()
-            logger.hr(task, level=0)
-            self.config.model.running_task = task
-            _task_start = datetime.now()
-            success = self.run(inflection.camelize(task))
-            self.config.model.running_task = ''
-            logger.info(f'Scheduler: End task `{task}`')
-            self.is_first_task = False
-            self.anti_ban_guard.record_active((datetime.now() - _task_start).total_seconds())
+                # Run
+                logger.info(f'Scheduler: Start task `{task}`')
+                self.device.stuck_record_clear()
+                self.device.click_record_clear()
+                logger.hr(task, level=0)
+                self.config.model.running_task = task
+                _task_start = datetime.now()
+                success = self.run(inflection.camelize(task))
+                self.config.model.running_task = ''
+                logger.info(f'Scheduler: End task `{task}`')
+                self.is_first_task = False
+                self.anti_ban_guard.record_active((datetime.now() - _task_start).total_seconds())
 
-            # Check failures
-            # failed = deep_get(self.failure_record, keys=task, default=0)
-            failed = self.failure_record[task] if task in self.failure_record else 0
-            failed = 0 if success else failed + 1
-            # deep_set(self.failure_record, keys=task, value=failed)
-            self.failure_record[task] = failed
-            if failed >= 3:
-                logger.critical(f"Task `{task}` failed 3 or more times.")
-                logger.critical("Possible reason #1: You haven't used it correctly. "
-                                "Please read the help text of the options.")
-                logger.critical("Possible reason #2: There is a problem with this task. "
-                                "Please contact developers or try to fix it yourself.")
-                logger.critical('Request human takeover')
-                # 添加失败三次的推送通知
-                self.config.notifier.push(
-                    title=f'{I18n.trans_zh_cn(task)}{task}',
-                    content=f"<{self.config_name}> 任务连续失败三次，请上线查看"
-                )
-                # 关闭模拟器
-                if self.config.script.error.error_repeated:
-                    self.device.emulator_stop()
-                exit(1)
+                outcome = getattr(self, 'last_task_runtime_outcome', None)
+                if isinstance(outcome, dict) and outcome.get('status') == 'team_preempted':
+                    del_cached_property(self, 'config')
+                    continue
 
-            if success:
-                del_cached_property(self, 'config')
-                continue
-            elif self.config.script.error.handle_error:
-                # self.config.task_delay(success=False)
-                del_cached_property(self, 'config')
-                # self.checker.check_now()
-                continue
-            else:
-                break
+                # Check failures
+                # failed = deep_get(self.failure_record, keys=task, default=0)
+                failed = self.failure_record[task] if task in self.failure_record else 0
+                failed = 0 if success else failed + 1
+                # deep_set(self.failure_record, keys=task, value=failed)
+                self.failure_record[task] = failed
+                if failed >= 3:
+                    logger.critical(f"Task `{task}` failed 3 or more times.")
+                    logger.critical("Possible reason #1: You haven't used it correctly. "
+                                    "Please read the help text of the options.")
+                    logger.critical("Possible reason #2: There is a problem with this task. "
+                                    "Please contact developers or try to fix it yourself.")
+                    logger.critical('Request human takeover')
+                    # 添加失败三次的推送通知
+                    self.config.notifier.push(
+                        title=f'{I18n.trans_zh_cn(task)}{task}',
+                        content=f"<{self.config_name}> 任务连续失败三次，请上线查看"
+                    )
+                    # 关闭模拟器
+                    if self.config.script.error.error_repeated:
+                        self.device.emulator_stop()
+                    exit(1)
+
+                if success:
+                    del_cached_property(self, 'config')
+                    continue
+                elif self.config.script.error.handle_error:
+                    # self.config.task_delay(success=False)
+                    del_cached_property(self, 'config')
+                    # self.checker.check_now()
+                    continue
+                else:
+                    break
+        finally:
+            if team_sync:
+                team_sync.close()
 
     def _handle_task_exception(self, e: Exception, command: str) -> bool:
         """
@@ -561,6 +606,23 @@ class Script:
         对致命异常 (ScriptError / RequestHumanTakeover / 未识别 Exception)
         在内部直接 exit(1)。
         """
+        from module.script.team_sync import TeamTaskSwitch, TeamSyncUnavailable, TeamPartnerFinished
+        if isinstance(e, TeamTaskSwitch):
+            logger.info(f'{command}: {e}')
+            self._set_task_runtime_outcome(task=command, status='team_preempted')
+            return True
+        if isinstance(e, (TeamSyncUnavailable, TeamPartnerFinished)):
+            command = command or self.config.task.command
+            retry_at = datetime.now().replace(microsecond=0) + timedelta(minutes=2)
+            status = 'team_wait_failed'
+            if isinstance(e, TeamPartnerFinished):
+                retry_at = max(datetime.now().replace(microsecond=0) + timedelta(seconds=1), e.next_run)
+                status = 'team_partner_finished'
+            logger.warning(f'{command}: {e}; next run {retry_at}')
+            self.config.task_delay(task=command, target=retry_at, server=False)
+            self._set_task_runtime_outcome(task=command, status=status, wait_until=retry_at)
+            return True
+
         if isinstance(e, TaskEnd):
             self._capture_task_runtime_outcome(command)
             return True

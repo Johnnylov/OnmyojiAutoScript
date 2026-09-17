@@ -60,6 +60,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 self.soul(is_open=True)
                 self.close_buff()
 
+        self.wait_local_team_ready()
         success = True
         match config.orochi_config.user_status:
             case UserStatus.LEADER: success = self.run_leader()

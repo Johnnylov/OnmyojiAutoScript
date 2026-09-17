@@ -126,6 +126,7 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         self.device.screenshot()
         # 判断勾协
         self._burst()
+        self.local_team_checkpoint()
 
         # # 判断网络异常
         # if self.appear(self.I_NETWORK_ABNORMAL):
@@ -138,6 +139,43 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         #     raise GameStuckError
 
         return self.device.image
+
+    def local_team_checkpoint(self):
+        """Yield on a confirmed navigation page, never within a battle or settlement."""
+        coordinator = self.config.__dict__.get('team_sync')
+        if not coordinator or getattr(self, '_checking_local_team', False):
+            return
+        if getattr(self, '_battle_context', None) is not None:
+            return
+        reason = coordinator.interruption()
+        if reason is None or not hasattr(self, 'navigator'):
+            return
+        self._checking_local_team = True
+        try:
+            from tasks.GameUi.default_pages import page_battle_prepare, page_battle, page_battle_result, page_reward
+            # Explicitly test overlays before accepting a navigation page underneath.
+            if self.detect_page_in(page_battle_prepare, page_battle, page_battle_result,
+                                   page_reward, include_global=False):
+                return
+            page = self.get_current_page(skip_first_screenshot=True)
+            if page is None:
+                return
+            room_page = page.name in {'page_battle_team', 'page_battle_team_exit'}
+            if not room_page and any(word in page.name.lower() for word in
+                                     ('battle', 'reward', 'login', 'loading', 'prepare')):
+                return
+            raise reason
+        finally:
+            self._checking_local_team = False
+
+    def wait_local_team_ready(self):
+        coordinator = self.config.__dict__.get('team_sync')
+        if coordinator and coordinator.session_id:
+            coordinator.ready()
+            # Waiting for another process is not a stuck game or active grinding time.
+            self.device.stuck_record_clear()
+            self.device.click_record_clear()
+            self.start_time = datetime.now()
 
     def maybe_screenshot(self, soft_skip: bool = False):
         """

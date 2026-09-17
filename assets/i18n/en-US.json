@@ -1,4 +1,5 @@
 {
+  "local_team": "Local team coordination",
   "Exit Four": "Random four retreats",
   "exit_four": "Random four retreats",
   "exit_four_help": "At 0, 9, 18 and 27 completed normal attacks in this task run, independently trigger with 50% probability. Randomly choose an unattacked opponent, retreat four times, then fight normally. Normal wins and losses count; deliberate retreats do not. Refreshing preserves progress and each milestone is checked once. Skip when no unattacked target is available."
