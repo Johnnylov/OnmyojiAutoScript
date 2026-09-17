@@ -6,6 +6,7 @@ import sys
 import unittest
 from unittest.mock import Mock, patch
 from concurrent.futures import ThreadPoolExecutor
+from copy import copy
 import tempfile
 import time
 
@@ -137,6 +138,34 @@ class TrueOrochiFlowTests(unittest.TestCase):
             ('click', 'TRUE_OROCHI_CREATE'),
         ])
         self.assertEqual(task.config.true_orochi.true_orochi_config.current_success, 0)
+
+    def test_one_entry_uses_actual_ocr_and_opens_the_top_left_dragon(self):
+        from module.ocr.ppocr import TextSystem
+        task, clock = self.task([{}])
+        task.O_TRUE_TEXT = copy(ScriptTask.O_TRUE_TEXT)
+        task.O_TRUE_TEXT.model = TextSystem()
+        fixtures = Path(__file__).with_name('fixtures') / 'true_orochi'
+        screens = {name: np.array(Image.open(fixtures / f'{name}.png').convert('RGB'))
+                   for name in ('exploration_one', 'detail')}
+        state = SimpleNamespace(page='exploration_one')
+        task._leave_true_room = Mock()
+        def screenshot():
+            clock.now += .5
+            task.device.image = screens[state.page]
+            task._true_view = TrueOrochiView(task.device.image)
+        def tap(region, name):
+            self.assertEqual(name, 'TRUE_OROCHI_ENTRY')
+            x, y, width, height = region
+            self.assertTrue(0 < x < x+width < 100 and 100 < y < y+height < 185)
+            state.page = 'detail'
+            return True
+        task.screenshot.side_effect = screenshot
+        task._tap.side_effect = tap
+        # One available entry is independent of the detail's reward allowance.
+        self.assertEqual(task._inspect_counts(), (1, 2))
+        task.goto_page.assert_called_once_with(runtime.page_exploration)
+        task._tap.assert_called_once()
+        self.assertEqual(state.page, 'detail')
 
     def test_rejected_connection_defers_without_touching_game_or_success_count(self):
         task = self.runnable_task()

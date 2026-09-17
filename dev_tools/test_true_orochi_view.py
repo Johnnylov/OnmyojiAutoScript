@@ -114,6 +114,27 @@ class TrueOrochiViewTests(unittest.TestCase):
         self.assertEqual(TrueOrochiView(image).entry_count(read), 1)
         read.assert_not_called()
 
+    def test_blank_red_badge_is_unknown_instead_of_one(self):
+        image = screenshot('entry')
+        image[0:27, 65:96] = (200, 40, 40)
+        read = Mock(return_value='')
+        self.assertIsNone(TrueOrochiView(image).entry_count(read))
+
+    def test_real_ocr_reads_one_and_two_at_different_sizes(self):
+        from module.ocr.ppocr import TextSystem
+        model = TextSystem()
+        def read(image):
+            text, score = model.ocr_single_line(cv2.resize(image, None, fx=2, fy=2))
+            return text if score >= .6 else ''
+        for name, expected in (('exploration_one', 1), ('entry', 2)):
+            for scale in (.8, 1., 1280/1160, 1.125, 1.25, 1.5):
+                with self.subTest(name=name, scale=scale):
+                    image = cv2.resize(screenshot(name), None, fx=scale, fy=scale)
+                    h, w = image.shape[:2]
+                    canvas = np.full((h+40, w+60, 3), 55, dtype=np.uint8)
+                    canvas[17:17+h, 29:29+w] = image
+                    self.assertEqual(TrueOrochiView(canvas).entry_count(read), expected)
+
     def test_reward_count_is_not_the_used_counter(self):
         for text, expected in [('2/2', 2), ('1/2', 1), ('0/2', 0),
                                ('本周剩余奖励次数：２／２', 2),

@@ -120,7 +120,41 @@ class TrueOrochiView:
         # A visible icon without a red stack badge represents one entry.
         if np.count_nonzero(red) < 8:
             return 1
-        return parse_entries(read_text(badge))
+        count = parse_entries(read_text(badge))
+        if count is not None:
+            return count
+        for threshold in (140, 120):
+            digit = self._entry_digit(badge, red, threshold)
+            if digit is not None:
+                count = parse_entries(read_text(digit))
+                if count is not None:
+                    return count
+        return None
+
+    @staticmethod
+    def _entry_digit(badge, red, threshold):
+        # A narrow white "1" on the red circle gets very low OCR confidence.
+        # Isolate its strokes and add padding, keeping the normal OCR threshold.
+        contours, _ = cv2.findContours(red.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return None
+        inside = np.zeros(red.shape, dtype=np.uint8)
+        cv2.drawContours(inside, [max(contours, key=cv2.contourArea)], -1, 255, cv2.FILLED)
+        inside = cv2.erode(inside, np.ones((3, 3), dtype=np.uint8))
+        strokes = ((badge[:, :, 1] > threshold) & (inside > 0)).astype(np.uint8) * 255
+        contours, _ = cv2.findContours(strokes, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return None
+        glyph = max(contours, key=cv2.contourArea)
+        x, y, width, height = cv2.boundingRect(glyph)
+        if height < max(3, badge.shape[0] / 4):
+            return None
+        mask = np.zeros_like(strokes)
+        cv2.drawContours(mask, [glyph], -1, 255, cv2.FILLED)
+        padding = max(2, round(height * .3))
+        digit = cv2.copyMakeBorder(mask[y:y+height, x:x+width], padding, padding, padding, padding,
+                                   cv2.BORDER_CONSTANT, value=0)
+        return cv2.cvtColor(digit, cv2.COLOR_GRAY2RGB)
 
     def detail(self):
         panel = self._find('detail')

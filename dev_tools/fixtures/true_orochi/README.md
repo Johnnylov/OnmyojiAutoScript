@@ -18,3 +18,8 @@ fourth tab without including account names or the friend list.
 stays empty, followed by the configuration page with its Ready drum. Tests
 replay both images at their supplied size and at 1280x720 with two local task
 instances and real name OCR, including a missing member-side room acknowledgement.
+
+`exploration_one.png` is the subsequent user screenshot with a red "1" badge
+on the top-left dragon. Its unprocessed badge has low OCR confidence; tests
+exercise contrast isolation, the normal confidence threshold, and clicking
+this entry using the real task counter reader.

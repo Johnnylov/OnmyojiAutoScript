@@ -155,7 +155,7 @@ class ScriptTask(OrochiScriptTask, TrueOrochiAssets):
 
     def _inspect_counts(self):
         self._leave_true_room()
-        # The numbered True Orochi icon is on Exploration's bottom bar.
+        # Locate the numbered True Orochi icon on the Exploration page.
         self.goto_page(page_exploration)
         previous = None
         entries = None
