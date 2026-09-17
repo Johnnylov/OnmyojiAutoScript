@@ -12,3 +12,9 @@ remove a private check mark, and obscure a room slot to check transitions.
 `invite_tabs.png` contains only the invitation tab labels from the 2026-09-17
 stuck-screen log. It reproduces the different True Orochi tab order and wide
 fourth tab without including account names or the friend list.
+
+`room_joined.png` and `prepare.png` are the follow-up screenshots supplied on
+2026-09-17: the configured friend occupies the middle slot while the third slot
+stays empty, followed by the configuration page with its Ready drum. Tests
+replay both images at their supplied size and at 1280x720 with two local task
+instances and real name OCR, including a missing member-side room acknowledgement.

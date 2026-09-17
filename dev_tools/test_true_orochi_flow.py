@@ -54,7 +54,7 @@ class TrueOrochiFlowTests(unittest.TestCase):
             clock.index = min(clock.index+1, len(frames)-1)
             frame = frames[clock.index]
             task._true_view = Mock()
-            for name in ('entry', 'detail', 'confirm', 'private', 'room'):
+            for name in ('entry', 'detail', 'confirm', 'private', 'room', 'prepare'):
                 getattr(task._true_view, name).return_value = Panel(0, 0, 1) if frame.get(name) else None
             task._true_view.private_selected.return_value = frame.get('selected', False)
             task._true_view.empty_slot.return_value = frame.get('empty', True)
@@ -279,6 +279,38 @@ class TrueOrochiFlowTests(unittest.TestCase):
         task._wait_true_invitation(0)
         task._team_sync.joined.assert_called_once_with(0)
         task._tap.assert_not_called()
+
+    def test_member_can_reach_configuration_without_recognizing_room_footer(self):
+        task, _ = self.task([{}, {'prepare': True}])
+        task._team_sync = SimpleNamespace(joined=Mock())
+        task._wait_true_invitation(0)
+        task._team_sync.joined.assert_called_once_with(0)
+
+    def test_visual_member_verification_requires_two_consecutive_frames(self):
+        task, clock = self.task([
+            {'room': True, 'empty': False},
+            {'room': True, 'empty': True},
+            {'room': True, 'empty': False},
+            {'room': True, 'empty': False},
+            {'prepare': True},
+        ])
+        task._team_sync = SimpleNamespace(peer='b', round_state=lambda _: {'ready': {'b': {}}, 'joined': []})
+        task._room_friend_present = Mock(return_value=True)
+        clicks = []
+        task._tap.side_effect = lambda *_: clicks.append(clock.index) or True
+        task._start_true_room(0)
+        self.assertEqual(clicks, [3])
+
+    def test_occupied_slot_without_exact_friend_does_not_start_or_reinvite(self):
+        task, _ = self.task([{'room': True, 'empty': False}])
+        task.config.true_orochi.invite_config.wait_time = datetime.min.time().replace(second=25)
+        task._team_sync = SimpleNamespace(peer='b', round_state=lambda _: {'ready': {'b': {}}, 'joined': []})
+        task._room_friend_present = Mock(return_value=False)
+        task._invite_true_friend = Mock()
+        with self.assertRaises(TrueOrochiError):
+            task._start_true_room(0)
+        task._tap.assert_not_called()
+        task._invite_true_friend.assert_not_called()
 
     def test_ten_floor_auto_and_frame_cleanup_before_success(self):
         task, clock = self.task([

@@ -50,16 +50,18 @@ class Panel:
 
 class TrueOrochiView:
     ANCHORS = {'entry': (10, 53), 'detail': (184, 331),
-               'confirm': (375, 201), 'private': (207, 21), 'room': (78, 19)}
+               'confirm': (375, 201), 'private': (207, 21), 'room': (78, 19),
+               'prepare': (540, 6)}
 
     def __init__(self, image):
         self.image = image
         self.gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
         self.cache = {}
 
-    def _find(self, name):
-        if name in self.cache:
-            return self.cache[name]
+    def _find(self, name, verify=None):
+        key = (name, verify)
+        if key in self.cache:
+            return self.cache[key]
         source = template(name)
         # Work at a bounded resolution, retaining enough pixels for label text.
         reduction = min(1., 960 / self.gray.shape[1])
@@ -79,10 +81,14 @@ class TrueOrochiView:
             if abs(float(search[y:y+h, x:x+w].mean()) - float(scaled.mean())) > 32:
                 continue
             ax, ay = self.ANCHORS[name]
-            best = (score, Panel(x / reduction - ax * scale,
-                                 y / reduction - ay * scale, scale))
-        self.cache[name] = best[1] if best else None
-        return self.cache[name]
+            panel = Panel(x / reduction - ax * scale, y / reduction - ay * scale, scale)
+            # A small header can match at neighboring scales. Validate the
+            # distant control before choosing the best candidate, not after.
+            if verify and not self._at(panel, *verify):
+                continue
+            best = (score, panel)
+        self.cache[key] = best[1] if best else None
+        return self.cache[key]
 
     def crop(self, roi):
         x, y, w, h = roi
@@ -145,6 +151,9 @@ class TrueOrochiView:
 
     def empty_slot(self, panel):
         return self._at(panel, 'room_plus', (550, 196, 55, 62), .7)
+
+    def prepare(self):
+        return self._find('prepare', verify=('prepare_ready', (1011, 518, 98, 52)))
 
     def rewards(self, read_text):
         if panel := self.confirm():

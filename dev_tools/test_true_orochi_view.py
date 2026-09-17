@@ -21,10 +21,10 @@ def screenshot(name):
 
 class TrueOrochiViewTests(unittest.TestCase):
     def test_supplied_screens_have_distinct_states(self):
-        for name in ('entry', 'detail', 'confirm', 'private', 'room'):
+        for name in ('entry', 'detail', 'confirm', 'private', 'room', 'prepare'):
             with self.subTest(name=name):
                 view = TrueOrochiView(screenshot(name))
-                for state in ('entry', 'detail', 'confirm', 'private', 'room'):
+                for state in ('entry', 'detail', 'confirm', 'private', 'room', 'prepare'):
                     self.assertEqual(bool(getattr(view, state)()), name == state, (name, state))
 
     def test_translation_and_scaling_preserve_located_panels(self):
@@ -39,6 +39,23 @@ class TrueOrochiViewTests(unittest.TestCase):
                     self.assertIsNotNone(panel)
                     self.assertAlmostEqual(panel.x, 37, delta=3)
                     self.assertAlmostEqual(panel.y, 23, delta=3)
+
+    def test_scaled_configuration_locates_ready_inside_the_button(self):
+        # Its small top-center header has nearly identical neighboring scales;
+        # validate the actual distant click region instead of the extrapolated
+        # top-left panel origin, which is not a control on this screen.
+        for scale in (.8, 1., 1.125, 1.25):
+            with self.subTest(scale=scale):
+                image = cv2.resize(screenshot('prepare'), None, fx=scale, fy=scale)
+                h, w = image.shape[:2]
+                canvas = np.full((h+47, w+93, 3), 55, dtype=np.uint8)
+                canvas[23:23+h, 37:37+w] = image
+                panel = TrueOrochiView(canvas).prepare()
+                self.assertIsNotNone(panel)
+                x, y, width, height = panel.roi(1011, 518, 98, 52)
+                self.assertAlmostEqual(x, 37+1011*scale, delta=7)
+                self.assertAlmostEqual(y, 23+518*scale, delta=7)
+                self.assertTrue(x+width < 37+1130*scale and y+height < 23+600*scale)
 
     def test_private_must_have_blue_tick(self):
         image = screenshot('private')
@@ -63,6 +80,25 @@ class TrueOrochiViewTests(unittest.TestCase):
         image = screenshot('room')
         image[565:615, 825:980] = 45
         self.assertIsNone(TrueOrochiView(image).room())
+
+    def test_supplied_joined_room_has_one_partner_despite_unused_third_slot(self):
+        for size in (None, (1280, 720)):
+            image = screenshot('room_joined')
+            if size:
+                image = cv2.resize(image, size)
+            view = TrueOrochiView(image)
+            self.assertIsNotNone(view.room())
+            self.assertFalse(view.empty_slot(view.room()))
+            self.assertIsNone(view.prepare())
+
+    def test_prepare_requires_both_configuration_header_and_ready_button(self):
+        for box in ((530, 0, 625, 90), (990, 490, 1135, 610)):
+            image = screenshot('prepare')
+            x1, y1, x2, y2 = box
+            image[y1:y2, x1:x2] = 45
+            self.assertIsNone(TrueOrochiView(image).prepare())
+        dimmed = (screenshot('prepare').astype(float)*.4).astype(np.uint8)
+        self.assertIsNone(TrueOrochiView(dimmed).prepare())
 
     def test_no_blind_fallback_for_unreadable_red_badge(self):
         view = TrueOrochiView(screenshot('entry'))

@@ -342,8 +342,28 @@ class ScriptTask(OrochiScriptTask, TrueOrochiAssets):
         raise TrueOrochiError('指定好友已选中，但邀请面板未关闭')
 
     def _at_true_battle_start(self):
-        return (self.appear(self.I_ST_FIRE_PREPARE) or self.appear(self.I_BUFF) or
-                self.is_in_real_battle(False))
+        return bool(self._true_view.prepare() or self.appear(self.I_ST_FIRE_PREPARE) or
+                    self.appear(self.I_BUFF) or self.is_in_real_battle(False))
+
+    def _room_friend_present(self, panel):
+        names = self.config.true_orochi.invite_config.friend_list_v
+        if len(names) != 1:
+            return False
+        # Only the occupied middle slot belongs to the invited partner. Use
+        # the same full-name matcher as the shared Orochi invitation list.
+        region = panel.roi(505, 86, 205, 42)
+        rule = RuleOcr(roi=region, area=region, mode='Full', method='Default',
+                       keyword='', name='true_orochi_room_friend')
+        return self._find_exact_friend_area(rule, names[0]) is not None
+
+    def _click_true_prepare(self):
+        if panel := self._true_view.prepare():
+            clicked = self._tap(panel.roi(1011, 518, 98, 52), 'TRUE_OROCHI_PREPARE')
+        else:
+            clicked = self.appear_then_click(self.I_ST_FIRE_PREPARE, interval=1.5)
+        if clicked:
+            logger.info('真蛇配置页：已点击准备')
+        return clicked
 
     def _start_true_room(self, number=None):
         # The game's room automatically starts at five minutes. Leave a minute
@@ -354,6 +374,8 @@ class ScriptTask(OrochiScriptTask, TrueOrochiAssets):
         timer = Timer(wait_seconds).start()
         retry = Timer(20).start()
         fired = False
+        friend_frames = 0
+        waiting = None
         while not timer.reached():
             self._keep_long_wait()
             self.screenshot()
@@ -363,27 +385,54 @@ class ScriptTask(OrochiScriptTask, TrueOrochiAssets):
                 return
             panel = self._true_view.room()
             if not panel:
+                friend_frames = 0
                 continue
             if number is not None:
                 row = self._team_sync.round_state(number)
-                if self._team_sync.peer not in row['joined'] or self._true_view.empty_slot(panel):
-                    if self._team_sync.peer not in row['joined'] and retry.reached():
+                empty = self._true_view.empty_slot(panel)
+                acknowledged = self._team_sync.peer in row.get('joined', [])
+                # A member's room layout can miss the footer template and
+                # never publish joined. Two fresh full-name observations in
+                # our verified True Orochi room also prove that partner is in.
+                if (not empty and not acknowledged and self._team_sync.peer in row.get('ready', {}) and
+                        self._room_friend_present(panel)):
+                    friend_frames += 1
+                else:
+                    friend_frames = 0
+                if empty or (not acknowledged and friend_frames < 2):
+                    reason = '等待真蛇好友入队' if empty else '等待核验房间中的指定好友'
+                    if reason != waiting:
+                        logger.info(reason)
+                        waiting = reason
+                    # Do not click an occupied portrait to reopen invitations.
+                    if empty and retry.reached():
                         self._invite_true_friend()
                         retry.reset()
+                    sleep(.3)
                     continue
-            fired = self._tap(panel.roi(1070, 549, 53, 48), 'TRUE_OROCHI_ROOM_FIRE') or fired
+            if self._tap(panel.roi(1070, 549, 53, 48), 'TRUE_OROCHI_ROOM_FIRE'):
+                if not fired:
+                    logger.info('真蛇队伍核验通过：已点击挑战，等待配置页准备')
+                fired = True
         raise TrueOrochiError('等待队友进入或开启挑战超时')
 
     def _wait_true_invitation(self, number):
         timer = Timer(self.config.true_orochi.invite_config.wait_time_v.total_seconds()).start()
         accepted = False
+        joined = False
         while not timer.reached():
             self._keep_long_wait()
             self.screenshot()
             if self._at_true_battle_start():
+                if not joined:
+                    self._team_sync.joined(number)
+                logger.info('真蛇队员已进入挑战，开始处理准备')
                 return
             if self._true_view.room():
-                self._team_sync.joined(number)
+                if not joined:
+                    self._team_sync.joined(number)
+                    joined = True
+                    logger.info('真蛇队员已入队，等待队长挑战')
                 sleep(.3)
                 continue
             if self.appear_then_click(self.I_I_ACCEPT, interval=1) or self.appear_then_click(self.I_I_ACCEPT_APPRENTICE, interval=1):
@@ -431,7 +480,7 @@ class ScriptTask(OrochiScriptTask, TrueOrochiAssets):
                     self._click_reward_exit()
                     sleep(.4)
                     continue
-                if self.appear_then_click(self.I_ST_FIRE_PREPARE, interval=1.5):
+                if self._click_true_prepare():
                     continue
                 if self.appear(self.I_BUFF):
                     self.appear_then_click(self.I_ST_AUTO_FALSE, interval=1.8)
