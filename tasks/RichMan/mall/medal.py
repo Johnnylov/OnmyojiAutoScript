@@ -23,42 +23,63 @@ class Medal(FriendshipPoints):
             return
         self._enter_medal()
 
+        not_found = []
+
+        def item_visible(item, name):
+            self.screenshot()
+            if self.appear(item):
+                return True
+            not_found.append(name)
+            return False
+
         # 黑蛋
-        if con.black_daruma:
+        if con.black_daruma and item_visible(self.I_ME_BLACK, 'black_daruma'):
             self.buy_mall_one(buy_button=self.I_ME_BLACK, buy_check=self.I_ME_CHECK_BLACK,
                               money_ocr=self.O_MALL_RESOURCE_3, buy_money=480)
         # 蓝票
-        if con.mystery_amulet:
+        if con.mystery_amulet and item_visible(self.I_ME_BLUE, 'mystery_amulet'):
             self.buy_mall_one(buy_button=self.I_ME_BLUE, buy_check=self.I_ME_CHECK_BLUE,
                               money_ocr=self.O_MALL_RESOURCE_3, buy_money=180)
         # 体力100
-        if con.ap_100:
+        if con.ap_100 and item_visible(self.I_ME_AP, 'ap_100'):
             self.buy_mall_one(buy_button=self.I_ME_AP, buy_check=self.I_ME_CHECK_AP,
                               money_ocr=self.O_MALL_RESOURCE_3, buy_money=120)
         # 随机御魂
-        if con.random_soul:
+        if con.random_soul and item_visible(self.I_ME_SOULS, 'random_soul'):
             self.buy_mall_one(buy_button=self.I_ME_SOULS, buy_check=self.I_ME_CHECK_SOULS,
                               money_ocr=self.O_MALL_RESOURCE_5, buy_money=320)
         # 两颗白蛋
-        if con.white_daruma:
+        if con.white_daruma and item_visible(self.I_ME_WHITE, 'white_daruma'):
             self.buy_mall_more(buy_button=self.I_ME_WHITE, remain_number=True, money_ocr=self.O_MALL_RESOURCE_3,
                                buy_number=2, buy_max=2, buy_money=100)
         # 十张挑战券
-        if con.challenge_pass:
+        if con.challenge_pass and item_visible(self.I_ME_CHALLENGE_PASS, 'challenge_pass'):
             self.buy_mall_more(buy_button=self.I_ME_CHALLENGE_PASS, remain_number=True, money_ocr=self.O_MALL_RESOURCE_3,
                                buy_number=con.challenge_pass, buy_max=10, buy_money=30)
         # 红蛋
-        if con.red_daruma:
+        if con.red_daruma and item_visible(self.I_ME_RED, 'red_daruma'):
             self.buy_mall_more(buy_button=self.I_ME_RED, remain_number=False,
                                money_ocr=self.O_MALL_RESOURCE_3,
                                buy_number=con.red_daruma, buy_max=99, buy_money=30)
         # 破碎的咒符
-        if con.broken_amulet:
+        if con.broken_amulet and item_visible(self.I_ME_BROKEN, 'broken_amulet'):
             self.buy_mall_more(buy_button=self.I_ME_BROKEN, remain_number=False,
                                money_ocr=self.O_MALL_RESOURCE_3,
                                buy_number=con.broken_amulet, buy_max=99, buy_money=20)
 
+        if not_found:
+            self.screenshot()
+            soldout_count = self.count_soldout()
+            logger.warning(f'Medal: skipped undetected items: {", ".join(not_found)}. '
+                           f'Page sold-out labels: {soldout_count} (reference only; '
+                           f'cannot confirm whether these items are sold out)')
+
         time.sleep(1)
+
+    def count_soldout(self) -> int:
+        """Count page-wide sold-out labels for diagnostics, using the latest screenshot."""
+        results = self.O_SOLD_OUT.detect_and_ocr(self.device.image, logDisplay=False)
+        return sum(1 for result in (results or []) if '售' in result.ocr_text)
 
 
 if __name__ == '__main__':
