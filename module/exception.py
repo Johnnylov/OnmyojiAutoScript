@@ -68,3 +68,11 @@ class RequestHumanTakeover(Exception):
 
 class TaskEnd(Exception):
     pass
+
+
+class TaskDeferred(Exception):
+    """An unfinished task should be retried without reporting completion."""
+
+    def __init__(self, message: str, retry_after: float = 120):
+        super().__init__(message)
+        self.retry_after = retry_after

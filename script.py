@@ -623,6 +623,14 @@ class Script:
             self._set_task_runtime_outcome(task=command, status=status, wait_until=retry_at)
             return True
 
+        from module.exception import TaskDeferred
+        if isinstance(e, TaskDeferred):
+            retry_at = datetime.now().replace(microsecond=0) + timedelta(seconds=max(60, e.retry_after))
+            logger.warning(f'{command}: 未完成，等待重试；{e}; next run {retry_at}')
+            self.config.task_delay(task=command, target=retry_at, server=False)
+            self._set_task_runtime_outcome(task=command, status='retry_scheduled', wait_until=retry_at)
+            return True
+
         if isinstance(e, TaskEnd):
             self._capture_task_runtime_outcome(command)
             return True

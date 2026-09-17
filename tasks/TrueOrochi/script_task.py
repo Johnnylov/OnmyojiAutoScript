@@ -9,7 +9,7 @@ import cv2
 from module.atom.click import RuleClick
 from module.atom.ocr import RuleOcr
 from module.base.timer import Timer
-from module.exception import TaskEnd
+from module.exception import TaskDeferred, TaskEnd
 from module.logger import logger
 from tasks.GameUi.page import page_main, page_shikigami_records
 from tasks.Orochi.config import Layer
@@ -103,26 +103,41 @@ class ScriptTask(OrochiScriptTask, TrueOrochiAssets):
     def run(self):
         self._reset_week()
         successful = False
+        started = False
         error = ''
+        sync = None
         try:
-            if self.config.true_orochi.team_config.enable:
-                self._team_sync = self._connect_team()
-            self.switch_true_orochi_souls()
-            successful = self._run_team() if self._team_sync else self._run_solo()
-        except (TrueOrochiError, TeamSyncError) as exc:
-            error = str(exc)
-            logger.warning(error)
-        except BaseException as exc:
-            if self._team_sync:
-                self._team_sync.close(str(exc) or type(exc).__name__)
-            raise
-        finally:
-            if self._team_sync:
-                self._team_sync.close(error or ('' if successful else '真蛇任务未完成'))
+            try:
+                if self.config.true_orochi.team_config.enable:
+                    self._team_sync = self._connect_team()
+                started = True
+                self.switch_true_orochi_souls()
+                successful = self._run_team() if self._team_sync else self._run_solo()
+            except (TrueOrochiError, TeamSyncError) as exc:
+                error = str(exc)
+                logger.warning(error)
+            except BaseException as exc:
+                error = str(exc) or type(exc).__name__
+                raise
+            finally:
+                # Stop polling an aborted session during UI cleanup, but keep
+                # this account's process lock until it has left the room.
+                sync = self._team_sync
                 self._team_sync = None
-        self._leave_true_room()
-        self.goto_page(page_main)
-        self.check_times(successful)
+            # A rejected duplicate has not acquired ownership of the game UI.
+            if started:
+                try:
+                    self._leave_true_room()
+                    self.goto_page(page_main)
+                except (TrueOrochiError, TeamSyncError) as exc:
+                    error, successful = str(exc), False
+        finally:
+            if sync:
+                sync.close(error or ('' if successful else '真蛇任务未完成'))
+        if not successful:
+            retry_after = 120 if error else self.config.true_orochi.scheduler.failure_interval.total_seconds()
+            raise TaskDeferred(error or '真蛇任务未完成，等待下次尝试', retry_after=retry_after)
+        self.check_times(True)
         raise TaskEnd('TrueOrochi')
 
     def switch_true_orochi_souls(self):

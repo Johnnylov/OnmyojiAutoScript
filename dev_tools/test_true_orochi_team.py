@@ -12,6 +12,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tasks.TrueOrochi.team import LocalTeam, TeamSyncError, choose_plan, week_key
 
 
+def interruptible_player(directory, connection):
+    team = LocalTeam('a', 'b', 'a', 'true_orochi_random', directory,
+                     clock=lambda: 1000, week='2026-38')
+    team.ready(0, 2, 2)
+    connection.send(team.session)
+    # The test terminates the real process, bypassing close/finally just like
+    # the OAS stop button. A pipe avoids a sleep or queue flush race.
+    connection.recv()
+
+
 def concurrent_player(directory, name, result):
     try:
         peer = 'b' if name == 'a' else 'a'
@@ -36,8 +46,10 @@ class TrueOrochiTeamTests(unittest.TestCase):
         self.now = 1000
 
     def player(self, name, mode='true_orochi_leader_twice', week='2026-38'):
-        return LocalTeam(name, 'b' if name == 'a' else 'a', 'a', mode,
+        team = LocalTeam(name, 'b' if name == 'a' else 'a', 'a', mode,
                          self.directory.name, clock=lambda: self.now, week=week)
+        self.addCleanup(team.close)
+        return team
 
     def pair(self, mode='true_orochi_leader_twice'):
         return self.player('a', mode), self.player('b', mode)
@@ -133,6 +145,75 @@ class TrueOrochiTeamTests(unittest.TestCase):
         with self.assertRaises(TeamSyncError):
             self.player('a')
         a.heartbeat(); b.heartbeat()
+
+    def test_live_runner_cannot_be_replaced_after_heartbeat_expiry(self):
+        a, b = self.pair()
+        self.now += 181
+        with self.assertRaises(TeamSyncError):
+            self.player('a')
+        self.assertEqual(json.loads(a.path.read_text(encoding='utf-8'))['session'], a.session)
+
+    def test_force_stop_can_restart_immediately_without_reusing_rounds(self):
+        context = multiprocessing.get_context('spawn')
+        parent, child = context.Pipe()
+        worker = context.Process(target=interruptible_player, args=(self.directory.name, child))
+        worker.start()
+        try:
+            self.assertTrue(parent.poll(10), 'Child did not register')
+            old_session = parent.recv()
+            b = self.player('b', 'true_orochi_random')
+            b.ready(0, 2, 2)
+            before = json.loads(b.path.read_text(encoding='utf-8'))
+            self.assertIn('decision', before['rounds']['0'])
+            worker.terminate()
+            worker.join(timeout=5)
+            self.assertFalse(worker.is_alive())
+            # No heartbeat timeout has elapsed since the interruption.
+            self.assertEqual(self.now, before['members']['a']['updated'])
+            resumed = self.player('a', 'true_orochi_random')
+            self.assertNotEqual(resumed.session, old_session)
+            self.assertEqual(resumed.round_state(0), {})
+            self.assertEqual(json.loads(resumed.path.read_text(encoding='utf-8'))['plan'], before['plan'])
+            with self.assertRaises(TeamSyncError):
+                b.heartbeat()
+            b.close('old process cleanup')
+            b = self.player('b', 'true_orochi_random')
+            self.assertEqual(self.decision(resumed, b, 0, entries=(1, 1), rewards=(1, 1)),
+                             before['plan'][1])
+        finally:
+            if worker.is_alive():
+                worker.terminate()
+                worker.join(timeout=5)
+            parent.close()
+            child.close()
+
+    def test_legacy_interrupted_journal_is_recovered(self):
+        # Pre-fix journals have no process lock and can contain fresh records
+        # for both accounts after the user stops both scripts.
+        a, b = self.pair('true_orochi_random')
+        self.decision(a, b, 0)
+        original = a.path.read_text(encoding='utf-8')
+        a.close(); b.close()
+        a.path.write_text(original, encoding='utf-8')
+        resumed, peer = self.pair('true_orochi_random')
+        self.assertNotEqual(resumed.session, a.session)
+        self.assertEqual(resumed.session, peer.session)
+        self.assertEqual(resumed.round_state(0), {})
+        self.assertEqual(json.loads(resumed.path.read_text(encoding='utf-8'))['plan'],
+                         json.loads(original)['plan'])
+
+    def test_failed_registration_releases_runner_lock(self):
+        a = self.player('a')
+        with self.assertRaises(TeamSyncError):
+            self.player('b', 'true_orochi_split')
+        b = self.player('b')
+        self.assertEqual(a.session, b.session)
+
+    def test_finished_runner_cannot_refresh_its_heartbeat(self):
+        a = self.player('a')
+        a.close()
+        with self.assertRaises(TeamSyncError):
+            a.heartbeat()
 
     def test_weekly_random_plan_persists_across_retries(self):
         a, b = self.pair('true_orochi_random')

@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from filelock import FileLock
+from filelock import FileLock, Timeout
 
 
 class TeamSyncError(RuntimeError):
@@ -54,26 +54,40 @@ class LocalTeam:
         directory.mkdir(parents=True, exist_ok=True)
         self.path = directory / f'{key}.json'
         self.lock = FileLock(str(self.path) + '.lock', timeout=5)
-        with self.lock:
-            state = self._read()
-            members = state.get('members', {})
-            live = any(clock() - p['updated'] < self.STALE_SECONDS and
-                       p['stage'] != 'finished' for p in members.values())
-            reset = (state.get('week') != self.week or state.get('aborted') or not live)
-            if reset:
-                # Keep this week's random draw even after a deferred attempt.
-                plan = state.get('plan') if (state.get('week') == self.week and
-                       state.get('leader') == leader and state.get('mode') == mode) else None
-                state = dict(week=self.week, pair=pair, leader=leader, mode=mode,
-                             plan=plan or choose_plan(leader, peer if leader == name else name, mode),
-                             session=uuid.uuid4().hex, members={}, rounds={}, aborted='')
-            elif state['leader'] != leader or state['mode'] != mode:
-                raise TeamSyncError('两个配置的队长/开车模式与正在运行的真蛇会话不一致')
-            elif name in members:
-                raise TeamSyncError('本配置的上一次真蛇会话尚未结束，请等待双方退出后重试')
-            self.session = state['session']
-            state['members'][name] = dict(token=self.token, updated=clock(), stage='checking')
-            self._write(state)
+        # Stop uses Process.terminate(), so finally/close cannot be relied on.
+        # The OS releases this account's lock even after a forced termination.
+        runner_key = hashlib.sha256(name.encode()).hexdigest()[:24]
+        self.runner_lock = FileLock(directory / f'{runner_key}.runner.lock',
+                                    timeout=0, thread_local=False)
+        try:
+            self.runner_lock.acquire()
+        except Timeout as exc:
+            raise TeamSyncError('本配置已有真蛇任务正在运行，请勿重复启动') from exc
+        try:
+            with self.lock:
+                state = self._read()
+                members = state.get('members', {})
+                live = any(clock() - p['updated'] < self.STALE_SECONDS and
+                           p['stage'] != 'finished' for p in members.values())
+                # Owning the lock proves a previous registration of this
+                # account has stopped, even if its heartbeat is still fresh.
+                reset = (state.get('week') != self.week or state.get('aborted') or
+                         not live or name in members)
+                if reset:
+                    # Keep this week's random draw even after a deferred attempt.
+                    plan = state.get('plan') if (state.get('week') == self.week and
+                           state.get('leader') == leader and state.get('mode') == mode) else None
+                    state = dict(week=self.week, pair=pair, leader=leader, mode=mode,
+                                 plan=plan or choose_plan(leader, peer if leader == name else name, mode),
+                                 session=uuid.uuid4().hex, members={}, rounds={}, aborted='')
+                elif state['leader'] != leader or state['mode'] != mode:
+                    raise TeamSyncError('两个配置的队长/开车模式与正在运行的真蛇会话不一致')
+                self.session = state['session']
+                state['members'][name] = dict(token=self.token, updated=clock(), stage='checking')
+                self._write(state)
+        except BaseException:
+            self.runner_lock.release()
+            raise
 
     def _read(self):
         if not self.path.exists():
@@ -89,6 +103,8 @@ class LocalTeam:
         os.replace(temporary, self.path)
 
     def _checked(self):
+        if not self.runner_lock.is_locked:
+            raise TeamSyncError('本配置的真蛇会话已结束')
         state = self._read()
         if (state.get('session') != self.session or
                 state.get('members', {}).get(self.name, {}).get('token') != self.token):
@@ -155,13 +171,18 @@ class LocalTeam:
             self._write(state)
 
     def close(self, error=''):
-        with self.lock:
-            state = self._read()
-            # Never let cleanup by an old process cancel a replacement session.
-            if (state.get('session') != self.session or
-                    state.get('members', {}).get(self.name, {}).get('token') != self.token):
-                return
-            if error:
-                state['aborted'] = str(error)
-            state['members'][self.name].update(stage='finished', updated=self.clock())
-            self._write(state)
+        if not self.runner_lock.is_locked:
+            return
+        try:
+            with self.lock:
+                state = self._read()
+                # Never let cleanup by an old process cancel a replacement session.
+                if (state.get('session') != self.session or
+                        state.get('members', {}).get(self.name, {}).get('token') != self.token):
+                    return
+                if error:
+                    state['aborted'] = str(error)
+                state['members'][self.name].update(stage='finished', updated=self.clock())
+                self._write(state)
+        finally:
+            self.runner_lock.release()

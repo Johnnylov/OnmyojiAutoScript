@@ -17,6 +17,8 @@ from tasks.TrueOrochi.config import TrueOrochi
 from tasks.TrueOrochi.script_task import ScriptTask, TrueOrochiError
 from tasks.TrueOrochi.view import Panel
 from tasks.TrueOrochi.team import LocalTeam
+from tasks.TrueOrochi.team import TeamSyncError
+from module.exception import TaskDeferred, TaskEnd
 
 
 class TrueOrochiFlowTests(unittest.TestCase):
@@ -63,6 +65,93 @@ class TrueOrochiFlowTests(unittest.TestCase):
         task.appear_then_click = Mock(side_effect=appear)
         task.is_in_real_battle = Mock(return_value=False)
         return task, clock
+
+    def runnable_task(self):
+        task, _ = self.task([{}])
+        task.config.true_orochi.team_config.enable = True
+        task._connect_team = Mock(return_value=SimpleNamespace(close=Mock()))
+        task.switch_true_orochi_souls = Mock()
+        task._run_team = Mock(return_value=True)
+        task._leave_true_room = Mock()
+        return task
+
+    def test_rejected_connection_defers_without_touching_game_or_success_count(self):
+        task = self.runnable_task()
+        task._connect_team.side_effect = TeamSyncError('duplicate runner')
+        with self.assertRaises(TaskDeferred) as raised:
+            task.run()
+        self.assertEqual(raised.exception.retry_after, 120)
+        self.assertEqual(task.config.true_orochi.true_orochi_config.current_success, 0)
+        task.switch_true_orochi_souls.assert_not_called()
+        task._run_team.assert_not_called()
+        task._leave_true_room.assert_not_called()
+        task.goto_page.assert_not_called()
+        task.set_next_run.assert_not_called()
+
+    def test_interrupted_partner_defers_and_preserves_earned_reward(self):
+        task = self.runnable_task()
+        task.config.true_orochi.true_orochi_config.current_success = 1
+        task._run_team.side_effect = TeamSyncError('peer stopped')
+        sync = task._connect_team.return_value
+        with self.assertRaises(TaskDeferred) as raised:
+            task.run()
+        self.assertEqual(raised.exception.retry_after, 120)
+        self.assertEqual(task.config.true_orochi.true_orochi_config.current_success, 1)
+        sync.close.assert_called_once_with('peer stopped')
+        task._leave_true_room.assert_called_once()
+        self.assertIsNone(task._team_sync)
+        task.set_next_run.assert_not_called()
+
+    def test_unknown_counts_defer_instead_of_ending_as_completed(self):
+        task = self.runnable_task()
+        task._run_team.side_effect = TrueOrochiError('unknown counts')
+        with self.assertRaises(TaskDeferred):
+            task.run()
+        task.set_next_run.assert_not_called()
+        self.assertEqual(task.config.true_orochi.true_orochi_config.current_success, 0)
+
+    def test_no_entries_retains_failure_interval_without_reporting_completion(self):
+        task = self.runnable_task()
+        task._run_team.return_value = False
+        with self.assertRaises(TaskDeferred) as raised:
+            task.run()
+        self.assertEqual(raised.exception.retry_after,
+                         task.config.true_orochi.scheduler.failure_interval.total_seconds())
+        self.assertEqual(task.config.true_orochi.true_orochi_config.current_success, 0)
+
+    def test_successful_run_still_ends_and_schedules_normally(self):
+        task = self.runnable_task()
+        task.config.true_orochi.true_orochi_config.current_success = 2
+        with self.assertRaises(TaskEnd):
+            task.run()
+        task.set_next_run.assert_called_once()
+        task._connect_team.return_value.close.assert_called_once_with('')
+
+    def test_cleanup_timeout_is_unfinished(self):
+        task = self.runnable_task()
+        task._leave_true_room.side_effect = TrueOrochiError('room cleanup timeout')
+        with self.assertRaises(TaskDeferred):
+            task.run()
+        task.set_next_run.assert_not_called()
+        task._connect_team.return_value.close.assert_called_once_with('room cleanup timeout')
+
+    def test_account_stays_exclusive_until_room_cleanup_finishes(self):
+        task = self.runnable_task()
+        with tempfile.TemporaryDirectory() as directory:
+            team = LocalTeam('a', 'b', 'a', 'true_orochi_random', directory)
+            task._connect_team.return_value = team
+            def leave():
+                self.assertIsNone(task._team_sync)
+                with self.assertRaises(TeamSyncError):
+                    LocalTeam('a', 'b', 'a', 'true_orochi_random', directory)
+            task._leave_true_room.side_effect = leave
+            try:
+                with self.assertRaises(TaskEnd):
+                    task.run()
+                resumed = LocalTeam('a', 'b', 'a', 'true_orochi_random', directory)
+                resumed.close()
+            finally:
+                team.close()
 
     def test_private_tick_is_verified_before_create(self):
         task, clock = self.task([{'private': True}, {'private': True, 'selected': True}, {'room': True}])
