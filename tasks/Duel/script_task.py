@@ -9,6 +9,7 @@ from datetime import time, datetime, timedelta
 from module.logger import logger
 from module.exception import GameStuckError, TaskEnd
 from module.base.timer import Timer
+from module.atom.image import RuleImage
 
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.Component.SwitchOnmyoji.switch_onmyoji import SwitchOnmyoji
@@ -24,6 +25,23 @@ from tasks.GameUi.page import page_main, page_shikigami_records
 
 class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
     # TODO: 斗技适配页面模块
+
+    # The scheduler reloads this module, while GameUi may still hold the old
+    # DuelAssets class. Define newly added gift rules here as well so a running
+    # process can load the fix without reloading the shared navigation graph.
+    # Keep these declarations in sync with duel/image.json and assets.py.
+    I_D_EVENT_GIFT_PROTECT = RuleImage(
+        roi_front=(806, 220, 179, 40), roi_back=(797, 209, 204, 66),
+        threshold=0.9, method='Template matching',
+        file='./tasks/Duel/duel/duel_d_event_gift_protect.png')
+    I_D_EVENT_GIFT_COUPON = RuleImage(
+        roi_front=(758, 375, 246, 43), roi_back=(747, 365, 269, 64),
+        threshold=0.9, method='Template matching',
+        file='./tasks/Duel/duel/duel_d_event_gift_coupon.png')
+    I_D_EVENT_GIFT_ACCEPT = RuleImage(
+        roi_front=(776, 502, 120, 38), roi_back=(722, 490, 225, 65),
+        threshold=0.9, method='Template matching',
+        file='./tasks/Duel/duel/duel_d_event_gift_accept.png')
 
     battle_win_count = 0
     battle_lose_count = 0
