@@ -11,7 +11,7 @@ from module.atom.ocr import RuleOcr
 from module.base.timer import Timer
 from module.exception import TaskDeferred, TaskEnd
 from module.logger import logger
-from tasks.GameUi.page import page_main, page_shikigami_records
+from tasks.GameUi.page import page_exploration, page_main, page_shikigami_records
 from tasks.Orochi.config import Layer
 from tasks.Orochi.page import page_orochi
 from tasks.Orochi.script_task import ScriptTask as OrochiScriptTask
@@ -151,7 +151,8 @@ class ScriptTask(OrochiScriptTask, TrueOrochiAssets):
 
     def _inspect_counts(self):
         self._leave_true_room()
-        self.goto_page(page_orochi)
+        # The numbered True Orochi icon is on Exploration's bottom bar.
+        self.goto_page(page_exploration)
         previous = None
         entries = None
         for _ in range(5):
@@ -246,7 +247,7 @@ class ScriptTask(OrochiScriptTask, TrueOrochiAssets):
         return True
 
     def _create_true_room(self, expected_rewards):
-        self.goto_page(page_orochi)
+        self.goto_page(page_exploration)
         timer = Timer(45).start()
         private_confirmed = False
         while not timer.reached():

@@ -10,12 +10,13 @@ import tempfile
 import time
 
 import numpy as np
+from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tasks.TrueOrochi import script_task as runtime
 from tasks.TrueOrochi.config import TrueOrochi
 from tasks.TrueOrochi.script_task import ScriptTask, TrueOrochiError
-from tasks.TrueOrochi.view import Panel
+from tasks.TrueOrochi.view import Panel, TrueOrochiView
 from tasks.TrueOrochi.team import LocalTeam
 from tasks.TrueOrochi.team import TeamSyncError
 from module.exception import TaskDeferred, TaskEnd
@@ -74,6 +75,68 @@ class TrueOrochiFlowTests(unittest.TestCase):
         task._run_team = Mock(return_value=True)
         task._leave_true_room = Mock()
         return task
+
+    def test_exploration_icon_opens_details_and_private_room(self):
+        # Replay all five supplied screens. The True Orochi icon is available
+        # only on Exploration; ordinary soul navigation loses that entry.
+        task, clock = self.task([{}])
+        fixtures = Path(__file__).with_name('fixtures') / 'true_orochi'
+        screens = {name: np.array(Image.open(fixtures / (name+'.png')).convert('RGB'))
+                   for name in ('entry', 'detail', 'confirm', 'private', 'room')}
+        exploration = np.full((720, 1280, 3), 55, dtype=np.uint8)
+        icon_x, icon_y = 250, 620
+        h, w = screens['entry'].shape[:2]
+        exploration[icon_y:icon_y+h, icon_x:icon_x+w] = screens['entry']
+        screens['entry'] = exploration
+        screens['ordinary_souls'] = np.zeros_like(exploration)
+        state = SimpleNamespace(page='entry')
+        actions = []
+
+        def screenshot():
+            clock.now += .5
+            task.device.image = screens[state.page]
+            task._true_view = TrueOrochiView(task.device.image)
+
+        def navigate(page):
+            actions.append(('navigate', page.name))
+            state.page = 'entry' if page is runtime.page_exploration else 'ordinary_souls'
+
+        transitions = {
+            ('entry', 'TRUE_OROCHI_ENTRY'): 'detail',
+            ('detail', 'TRUE_OROCHI_CLOSE'): 'entry',
+            ('detail', 'TRUE_OROCHI_CHALLENGE'): 'confirm',
+            ('confirm', 'TRUE_OROCHI_CONFIRM'): 'private',
+            ('private', 'TRUE_OROCHI_CREATE'): 'room',
+        }
+        def tap(region, name):
+            actions.append(('click', name))
+            if name == 'TRUE_OROCHI_ENTRY':
+                # A translated screenshot must still click inside image 1's
+                # dragon icon, away from the adjacent ordinary soul button.
+                x, y, width, height = region
+                self.assertTrue(icon_x < x < x+width < icon_x+w)
+                self.assertTrue(icon_y < y < y+height < icon_y+h)
+            state.page = transitions[(state.page, name)]
+            return True
+
+        task.goto_page.side_effect = navigate
+        task.screenshot.side_effect = screenshot
+        task._tap.side_effect = tap
+        task._read_text = Mock(side_effect=lambda _: '2' if state.page == 'entry' else '2/2')
+        self.assertEqual(task._inspect_counts(), (2, 2))
+        task._create_true_room(2)
+        self.assertEqual(state.page, 'room')
+        self.assertEqual(actions, [
+            ('navigate', runtime.page_exploration.name),
+            ('click', 'TRUE_OROCHI_ENTRY'),
+            ('click', 'TRUE_OROCHI_CLOSE'),
+            ('navigate', runtime.page_exploration.name),
+            ('click', 'TRUE_OROCHI_ENTRY'),
+            ('click', 'TRUE_OROCHI_CHALLENGE'),
+            ('click', 'TRUE_OROCHI_CONFIRM'),
+            ('click', 'TRUE_OROCHI_CREATE'),
+        ])
+        self.assertEqual(task.config.true_orochi.true_orochi_config.current_success, 0)
 
     def test_rejected_connection_defers_without_touching_game_or_success_count(self):
         task = self.runnable_task()
