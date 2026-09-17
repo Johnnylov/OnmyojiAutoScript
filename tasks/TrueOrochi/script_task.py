@@ -31,6 +31,10 @@ class ScriptTask(OrochiScriptTask, TrueOrochiAssets):
     _true_battling = False
     O_TRUE_TEXT = RuleOcr(roi=(0, 0, 1, 1), area=(0, 0, 1, 1), mode='Single',
                           method='Default', keyword='', name='true_orochi_count')
+    O_TRUE_FRIEND_TABS = RuleOcr(roi=(350, 85, 580, 65), area=(350, 85, 580, 65),
+                               mode='Full', method='Default', keyword='', name='true_orochi_friend_tabs')
+    O_TRUE_INVITE_CANCEL = RuleOcr(roi=(435, 540, 143, 70), area=(435, 540, 143, 70),
+                                 mode='Full', method='Default', keyword='取消', name='true_orochi_invite_cancel')
 
     def _default_detect_categories(self) -> set[str]:
         categories = super()._default_detect_categories()
@@ -291,6 +295,52 @@ class ScriptTask(OrochiScriptTask, TrueOrochiAssets):
                 self._tap(panel.roi(555, 209, 40, 38), 'TRUE_OROCHI_INVITE')
         raise TrueOrochiError('打开好友邀请列表超时')
 
+    def _read_friend_classes(self):
+        # Keep Orochi's shared name OCR and selected-checkmark verification.
+        # True Orochi has different tabs (including a wide fourth tab), so
+        # bind each recognized label to its actual box instead of old flags.
+        rule = self.O_TRUE_FRIEND_TABS
+        tabs = []
+        for result in rule.detect_and_ocr(self.device.image):
+            name = self._normalize_friend_class_name(self._normalize_friend_name_text(result.ocr_text))
+            if name not in ('好友', '最近', '寮友', '跨区', '大蛇印记拥有者'):
+                continue
+            box = result.box
+            x, y = box.min(axis=0)
+            right, bottom = box.max(axis=0)
+            tabs.append((name, (int(rule.roi[0]+x), int(rule.roi[1]+y),
+                                max(1, int(right-x)), max(1, int(bottom-y)))))
+        self._true_friend_tabs = sorted(tabs, key=lambda tab: tab[1][0])
+        names = [name for name, _ in self._true_friend_tabs]
+        logger.info(f'真蛇好友页签: {names}')
+        return names
+
+    def _switch_friend_class(self, index):
+        name, region = self._true_friend_tabs[index]
+        self._tap(region, f'TRUE_OROCHI_FRIEND_TAB_{index}')
+        logger.info(f'切换真蛇好友页签: {name}')
+
+    def _select_auto_mode_friends(self, friend_class, friend_list, selected_set):
+        # The named friend may already be visible in the initially open tab.
+        self._select_current_page_friends(friend_list, selected_set)
+        super()._select_auto_mode_friends(friend_class, friend_list, selected_set)
+
+    def _confirm_invite_and_validate(self, selected_set, friend_list, confirm_rule=None):
+        if set(friend_list) != selected_set:
+            logger.warning('未能通过御魂通用 OCR 选中指定真蛇好友，取消本次邀请')
+            return False
+        confirm_rule = confirm_rule or self.I_INVITE_ENSURE
+        timer = Timer(8).start()
+        clicked = False
+        while not timer.reached():
+            self.screenshot()
+            if self.appear(confirm_rule):
+                clicked = self.appear_then_click(confirm_rule, interval=1) or clicked
+            elif clicked and self._true_view.room():
+                return True
+            sleep(.2)
+        raise TrueOrochiError('指定好友已选中，但邀请面板未关闭')
+
     def _at_true_battle_start(self):
         return (self.appear(self.I_ST_FIRE_PREPARE) or self.appear(self.I_BUFF) or
                 self.is_in_real_battle(False))
@@ -415,6 +465,9 @@ class ScriptTask(OrochiScriptTask, TrueOrochiAssets):
         while not timer.reached():
             self.screenshot()
             if self.appear_then_click(self.I_ST_FRAME, interval=1):
+                continue
+            if self.appear(self.I_INVITE_ENSURE):
+                self.ocr_appear_click(self.O_TRUE_INVITE_CANCEL, interval=1, exact=True)
                 continue
             if leaving and self.appear_then_click(self.I_GI_SURE, interval=1):
                 continue

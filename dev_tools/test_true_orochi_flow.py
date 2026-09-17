@@ -245,6 +245,18 @@ class TrueOrochiFlowTests(unittest.TestCase):
         task.invite_friends.assert_called_once_with(task.config.true_orochi.invite_config, open_invite=False)
         task._tap.assert_not_called()
 
+    def test_invitation_popup_is_cancelled_before_leaving_the_room(self):
+        task, clock = self.task([
+            {'room': True, 'markers': [ScriptTask.I_INVITE_ENSURE.name]},
+            {'room': True}, {},
+        ])
+        actions = []
+        task.ocr_appear_click = Mock(side_effect=lambda *a, **kw: actions.append(('cancel', clock.index)) or True)
+        task._tap.side_effect = lambda *a: actions.append(('leave', clock.index)) or True
+        task._leave_true_room()
+        self.assertEqual(actions, [('cancel', 0), ('leave', 1)])
+        task.ocr_appear_click.assert_called_once_with(task.O_TRUE_INVITE_CANCEL, interval=1, exact=True)
+
     def test_leader_waits_for_acknowledged_and_occupied_room(self):
         task, clock = self.task([
             {'room': True, 'empty': True},
