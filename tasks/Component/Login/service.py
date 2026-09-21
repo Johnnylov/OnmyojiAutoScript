@@ -11,12 +11,18 @@ from module.exception import RequestHumanTakeover, GameTooManyClickError, GameSt
 from module.handler.sensitive_info import handle_sensitive_image
 from module.logger import logger
 from tasks.GameUi.assets import GameUiAssets
+from tasks.GameUi.chess_battle import ChessBattleNavigationMixin
 from tasks.Restart.assets import RestartAssets
 from tasks.base_task import BaseTask
 from tasks.Component.Login.recovery import LoginRecovery
 
 
-class LoginService(BaseTask, RestartAssets, GameUiAssets):
+class LoginService(
+    ChessBattleNavigationMixin,
+    BaseTask,
+    RestartAssets,
+    GameUiAssets,
+):
     character: str
     LOGIN_RETRY_COUNT = 3
 
@@ -37,7 +43,7 @@ class LoginService(BaseTask, RestartAssets, GameUiAssets):
 
     def _app_handle_login(self) -> bool:
         """
-        最终是在庭院界面
+        最终处于庭院或已恢复的百鬼棋局大厅。
         :return:
         """
         logger.hr('App login')
@@ -62,6 +68,27 @@ class LoginService(BaseTask, RestartAssets, GameUiAssets):
                 confirm_timer.reset()
                 skip_login_animation = False
                 continue
+            if self.appear_then_click(
+                self.I_RETURN_CHESS_CANCEL,
+                interval=0.8,
+            ):
+                logger.info(
+                    'Cancel returning to interrupted Chess battle; '
+                    'wait for result flow'
+                )
+                continue
+            if self.appear(self.I_CHECK_CHESS):
+                logger.info(
+                    'Login recovery reached Chess lobby; '
+                    'finish recovery without returning to courtyard'
+                )
+                return True
+            if self.chess_result_flow_visible():
+                logger.info(
+                    'Login recovery detected unfinished Chess result flow'
+                )
+                self.return_to_chess_lobby()
+                return True
             if self.appear_then_click(self.I_CANCEL_BATTLE, interval=0.8):
                 logger.info('Cancel continue battle')
                 continue

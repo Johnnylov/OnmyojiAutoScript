@@ -9,9 +9,16 @@ from module.logger import logger
 from module.base.timer import Timer
 
 from tasks.GameUi.game_ui import GameUi
-from tasks.GameUi.page import page_main, page_area_boss, page_secret_zones, page_summon, random_click
+from tasks.GameUi.page import (
+    page_main,
+    page_area_boss,
+    page_secret_zones,
+    page_summon,
+    page_guild,
+    random_click,
+)
 from tasks.WeeklyTrifles.assets import WeeklyTriflesAssets
-from tasks.WeeklyTrifles.page import page_shikigami_share
+from tasks.WeeklyTrifles.page import page_shikigami_share, page_touch_fish
 
 
 class ScriptTask(GameUi, WeeklyTriflesAssets):
@@ -24,6 +31,8 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
             self._share_area_boss()
         if con.share_secret:
             self._share_secret()
+        if con.save_touch_fish:
+            self._save_touch_fish()
         if con.broken_amulet:
             self._broken_amulet(con.broken_amulet)
 
@@ -52,11 +61,92 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
             if self.ui_reward_appear_click():
                 logger.info('Get reward')
                 return True
-            if self.appear_then_click(self.I_WT_QR_CODE, self.C_WT_WECHAT, interval=4.8):
+            if self.appear_then_click(
+                self.I_WT_QR_CODE, self.C_WT_WECHAT, interval=4.8
+            ):
                 continue
             if get_timer.reached():
                 logger.warning('Share timeout. The reward may have been obtained')
                 return False
+
+    def _save_touch_fish(self):
+        """
+        惠比寿的摸鱼行动
+        :return:
+        """
+        logger.hr('Touch fish start')
+        self.goto_page(page_guild)
+        # 防止入口被折叠
+        fold_timer = Timer(12).start()
+        while not fold_timer.reached():
+            # 等个折叠窗口展开动画
+            sleep(1)
+            self.screenshot()
+            if self.appear(self.I_WT_FOLD_WINDOW):
+                break
+            self.appear_then_click(self.I_WT_OPEN_FOLD_WINDOW, interval=1.5)
+        else:
+            logger.warning('Touch fish entrance is unavailable, exit!')
+            self.goto_page(page_main)
+            return False
+        # 保存次数，后续做了也会邮件返还福运御守
+        self.goto_page(page_touch_fish)
+        get_timer = Timer(15).start()
+        save_clicked = False
+        ocr_failures = 0
+        saved = False
+        while not get_timer.reached():
+            sleep(0.5)
+            self.screenshot()
+            if self.appear(self.I_WT_LAST_SAVE):
+                self.click(
+                    random_click(ltrb=(True, False, False, False)), interval=1.5
+                )
+                continue
+            if self.appear_then_click(self.I_WT_HAPPY_GET, interval=1.5):
+                continue
+            if self.appear(self.I_WT_TF_SAVE_SUCCESS) and not self.appear(
+                self.I_WT_SAVE_ALL
+            ):
+                logger.info('Touch fish save success')
+                saved = True
+                break
+            if save_clicked:
+                # 保存后等待确认框和成功标志，不用清零余额模拟已点击状态。
+                self.appear_then_click(self.I_WT_TF_CONFIRM, interval=1.5)
+                continue
+            if not self.appear(self.I_WT_SAVE_ALL):
+                continue
+            tickets = self.O_WT_LUCKY_TICKETS.ocr(self.device.image)
+            cost_tickets = self.O_WT_SAVE_COST.ocr(self.device.image)
+            valid_counter = (
+                isinstance(tickets, (tuple, list))
+                and len(tickets) == 3
+                and all(isinstance(value, int) and not isinstance(value, bool)
+                        and value >= 0 for value in tickets)
+                and tickets[2] > 0
+                and tickets[0] + tickets[1] == tickets[2]
+            )
+            if not valid_counter or not (
+                isinstance(cost_tickets, int)
+                and not isinstance(cost_tickets, bool)
+                and cost_tickets > 0
+            ):
+                ocr_failures += 1
+                if ocr_failures >= 3:
+                    logger.warning('Cannot read touch fish tickets or save cost, exit!')
+                    break
+                continue
+            if tickets[1] < cost_tickets:
+                logger.warning('Touch fish tickets not enough, exit!')
+                break
+            if self.appear_then_click(self.I_WT_SAVE_ALL, interval=1.5):
+                save_clicked = True
+        else:
+            logger.warning('Touch fish timeout, exit!')
+        logger.hr('Touch fish finished')
+        self.goto_page(page_main)
+        return saved
 
     def _share_collect(self):
         """
@@ -66,7 +156,9 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
         logger.hr('Share collect')
         self.goto_page(page_shikigami_share)
         # 点击分享
-        appeared = self.ui_click_until_appear_or_timeout(self.I_WT_COLLECT_WECHAT, self.I_WT_QR_CODE, 1.2, 5)
+        appeared = self.ui_click_until_appear_or_timeout(
+            self.I_WT_COLLECT_WECHAT, self.I_WT_QR_CODE, 1.2, 5
+        )
         if not appeared:
             logger.info('Not appear qr code, maybe already shared, skip')
             return
@@ -80,7 +172,9 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
                 logger.info('Get reward')
                 break
 
-            if self.appear_then_click(self.I_WT_QR_CODE, self.C_WT_WECHAT, interval=0.8):
+            if self.appear_then_click(
+                self.I_WT_QR_CODE, self.C_WT_WECHAT, interval=0.8
+            ):
                 continue
             if get_timer.reached():
                 logger.warning('Share timeout. The reward may have been obtained')
@@ -167,6 +261,7 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
         :param dest_num:
         :return:
         """
+
         def exit_amulet():
             while True:
                 self.screenshot()
@@ -194,7 +289,9 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
             if real_num <= 0:
                 exit_amulet()
                 return
-            if self.appear_then_click(self.I_BM_ENTER, interval=1) or self.appear_then_click(self.I_BM_AGAIN, interval=1):
+            if self.appear_then_click(
+                self.I_BM_ENTER, interval=1
+            ) or self.appear_then_click(self.I_BM_AGAIN, interval=1):
                 sleep(0.4)  # 等待动画开始
                 timeout_timer = Timer(5).start()
                 # 随机点击直到再次召唤出现或者超时
@@ -206,7 +303,9 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
                     if self.appear(self.I_BM_AGAIN, interval=0.8):
                         break
                 else:
-                    logger.warning(f'Wait for again timeout:Count[{count}], Remain[{real_num}]')
+                    logger.warning(
+                        f'Wait for again timeout:Count[{count}], Remain[{real_num}]'
+                    )
                     exit_amulet()
                     return
             else:
@@ -215,21 +314,33 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
                 return
             x_10, _, _, _ = self.O_BA_TIMES.ocr(self.device.image, '10次')
             x_50, _, _, _ = self.O_BA_TIMES.ocr(self.device.image, '50次')
-            self.I_BMT_CHECK.match(self.device.image, frame_id=self.device.image_frame_id)
+            self.I_BMT_CHECK.match(
+                self.device.image, frame_id=self.device.image_frame_id
+            )
             x_check, y_check, width_check, height_check = self.I_BMT_CHECK.roi_front
-            selected_10 = min(abs(x_10 - x_check), abs(x_50 - x_check)) == abs(x_10 - x_check)
+            selected_10 = min(abs(x_10 - x_check), abs(x_50 - x_check)) == abs(
+                x_10 - x_check
+            )
             logger.info(f'Current selected {"10" if selected_10 else "50"} amulet')
             count += 10 if selected_10 else 50
             logger.info(f'Broken amulet:Count[{count}], Remain[{real_num}]')
             # 一次50票不超过限制且当前选择的是10票则切换50票
             if count + 50 < dest_num and selected_10:
                 logger.hr('Switch to 50 amulet')
-                self.device.click(x=x_50 - width_check // 2, y=y_check + height_check // 2, control_name='Click_50')
+                self.device.click(
+                    x=x_50 - width_check // 2,
+                    y=y_check + height_check // 2,
+                    control_name='Click_50',
+                )
                 self.device.click_record_clear()
             # 一次50票会超过限制且当前选择的是50票则切换10票
             if count + 50 >= dest_num and not selected_10:
                 logger.hr('Switch to 10 amulet')
-                self.device.click(x=x_10 - width_check // 2, y=y_check + height_check // 2, control_name='Click_10')
+                self.device.click(
+                    x=x_10 - width_check // 2,
+                    y=y_check + height_check // 2,
+                    control_name='Click_10',
+                )
                 self.device.click_record_clear()
         # 正常结束且还有票, 则执行一次退出
         exit_amulet()
@@ -238,9 +349,9 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
 if __name__ == '__main__':
     from module.config.config import Config
     from module.device.device import Device
+
     c = Config('oas1')
     d = Device(c)
     t = ScriptTask(c, d)
     t.screenshot()
     t.run()
-
