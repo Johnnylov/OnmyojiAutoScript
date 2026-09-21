@@ -31,7 +31,9 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
             self._share_area_boss()
         if con.share_secret:
             self._share_secret()
-        if con.save_touch_fish:
+        # Tasks reload from disk while a running process can retain the old
+        # config model. Use the new setting's default until it is refreshed.
+        if getattr(con, 'save_touch_fish', False):
             self._save_touch_fish()
         if con.broken_amulet:
             self._broken_amulet(con.broken_amulet)

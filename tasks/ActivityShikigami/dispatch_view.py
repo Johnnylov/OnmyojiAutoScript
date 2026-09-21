@@ -199,6 +199,20 @@ class DispatchView:
                 return DispatchObservation(kind='success', dismiss_roi=dismiss)
         return None
 
+    def _level_up(self, gray):
+        # This acknowledgement can follow dispatch returns before the map.
+        # Require its full, distinct title and the distant dismissal prompt;
+        # level digits and the changing unlock message are not anchors.
+        for title in _matches(gray, 'level_up_title', .84, limit=2):
+            for scale in (title.scale, title.scale - .025, title.scale + .025):
+                transform = (title.x - 311 * scale, title.y - 125 * scale, scale)
+                prompt = _near(gray, 'success_dismiss', (358, 436, 112, 19), transform, .8)
+                if prompt is not None:
+                    dismiss = prompt.roi(10, 3, 92, 13)
+                    if _inside(gray, dismiss):
+                        return DispatchObservation(kind='level_up', dismiss_roi=dismiss)
+        return None
+
     def _result_overlay(self, image, gray, title_name, kind):
         # Returned/interrupted dispatches share a dismissal prompt, but each
         # requires its own title. Character art and reward amounts vary.
@@ -314,6 +328,9 @@ class DispatchView:
                 or image.shape[2] != 3 or min(image.shape[:2]) < 100):
             return DispatchObservation()
         gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        level_up = self._level_up(gray)
+        if level_up is not None:
+            return level_up
         interrupted = self._result_overlay(image, gray, 'interrupt_title', 'interrupted')
         if interrupted is not None:
             return interrupted

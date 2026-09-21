@@ -1,0 +1,8 @@
+[
+  {
+    "itemName": "story_continue",
+    "roiFront": "566,643,108,31",
+    "roiBack": "566,643,108,31",
+    "description": "仅在委派剧情双锚点命中时推进对白"
+  }
+]

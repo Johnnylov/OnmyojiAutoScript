@@ -11,6 +11,18 @@ class SecretAssets:
 
 
 	# Click Rule Assets
+	# 关闭已核验的普通秘闻详情
+	C_NORMAL_CLOSE = RuleClick(roi_front=(1166,106,28,28), roi_back=(1166,106,28,28), name="normal_close")
+
+
+	# Image Rule Assets
+	# 误入普通秘闻棺中奇梦的标题
+	I_NORMAL_TITLE = RuleImage(roi_front=(546,57,174,45), roi_back=(542,53,182,53), threshold=0.9, method="Template matching", file="./tasks/Secret/recovery/recovery_normal_title.png")
+	# 普通秘闻详情关闭按钮
+	I_NORMAL_CLOSE = RuleImage(roi_front=(1144,82,74,74), roi_back=(1140,78,82,82), threshold=0.9, method="Template matching", file="./tasks/Secret/recovery/recovery_normal_close.png")
+
+
+	# Click Rule Assets
 	# description 
 	C_SE_CLICK_LAYER = RuleClick(roi_front=(434,155,100,100), roi_back=(434,155,100,100), name="se_click_layer")
 

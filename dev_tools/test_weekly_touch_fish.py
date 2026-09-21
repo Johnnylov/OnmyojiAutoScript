@@ -5,8 +5,61 @@ from pathlib import Path
 from types import SimpleNamespace
 import unittest
 
+from pydantic import BaseModel
+
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class WeeklyTriflesConfigCompatibilityTests(unittest.TestCase):
+    def run_weekly(self, config):
+        tree = ast.parse((ROOT / 'tasks/WeeklyTrifles/script_task.py').read_text(encoding='utf-8'))
+        cls = next(node for node in tree.body if isinstance(node, ast.ClassDef))
+        run = next(node for node in cls.body if isinstance(node, ast.FunctionDef) and node.name == 'run')
+
+        class TaskEnd(Exception):
+            pass
+
+        namespace = {'TaskEnd': TaskEnd}
+        exec(compile(ast.Module(body=[run], type_ignores=[]), str(ROOT), 'exec'), namespace)
+        calls = []
+        task = SimpleNamespace(
+            config=SimpleNamespace(weekly_trifles=SimpleNamespace(trifles=config)),
+            _share_collect=lambda: calls.append('collect'),
+            _share_area_boss=lambda: calls.append('area_boss'),
+            _share_secret=lambda: calls.append('secret'),
+            _save_touch_fish=lambda: calls.append('touch_fish'),
+            _broken_amulet=lambda count: calls.append(('amulet', count)),
+            set_next_run=lambda **kwargs: calls.append(kwargs),
+        )
+        with self.assertRaises(TaskEnd):
+            namespace['run'](task)
+        self.assertEqual(calls[-1], {'task': 'WeeklyTrifles', 'success': True, 'finish': True})
+        return calls[:-1]
+
+    def test_pre_update_pydantic_model_can_finish_remaining_weekly_tasks(self):
+        class OldTrifles(BaseModel):
+            share_collect: bool = True
+            share_area_boss: bool = True
+            share_secret: bool = True
+            broken_amulet: int = 20
+
+        self.assertEqual(self.run_weekly(OldTrifles()),
+                         ['collect', 'area_boss', 'secret', ('amulet', 20)])
+
+    def test_new_setting_keeps_both_enabled_and_disabled_behavior(self):
+        from pydantic import Field
+
+        tree = ast.parse((ROOT / 'tasks/WeeklyTrifles/config.py').read_text(encoding='utf-8'))
+        cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == 'Trifles')
+        namespace = {'BaseModel': BaseModel, 'Field': Field}
+        exec(compile(ast.Module(body=[cls], type_ignores=[]), str(ROOT), 'exec'), namespace)
+        for enabled in (False, True):
+            with self.subTest(enabled=enabled):
+                config = namespace['Trifles'](share_collect=False, share_area_boss=False,
+                                              share_secret=False, broken_amulet=0,
+                                              save_touch_fish=enabled)
+                self.assertEqual(self.run_weekly(config), ['touch_fish'] if enabled else [])
 
 
 class FakeClock:

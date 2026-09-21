@@ -175,6 +175,9 @@ class BaseTask(GlobalGameAssets, CostumeBase):
             # Waiting for another process is not a stuck game or active grinding time.
             self.device.stuck_record_clear()
             self.device.click_record_clear()
+            # The barrier may outlive the image cache TTL, and the game can
+            # change while waiting. Resume with a fresh registered screenshot.
+            self.device.screenshot()
             self.start_time = datetime.now()
 
     def maybe_screenshot(self, soft_skip: bool = False):

@@ -39,7 +39,7 @@ class World:
                 locked=self.locked, running=self.running)
         if self.kind == 'unknown':
             return Observation()
-        if self.kind in ('success', 'interrupted'):
+        if self.kind in ('success', 'interrupted', 'level_up'):
             return Observation(kind=self.kind, dismiss_roi=DISMISS)
         if self.kind == 'running_details':
             return Observation(kind='running_details', close_roi=CLOSE)
@@ -116,6 +116,71 @@ def dispatcher(world, **kwargs):
 
 
 class DispatchFlowTests(unittest.TestCase):
+    def test_level_up_after_return_is_acknowledged_before_confirming_map(self):
+        world = ReturnWorld(['源赖光'])
+        world.after_returns, world.after_success = 'level_up', 'map'
+        result = dispatcher(world).run()
+        self.assertTrue(result.completed)
+        self.assertEqual(result.dispatched, 0)
+        self.assertEqual(world.controls, ['dispatch_return_close', 'dispatch_level_up_close'])
+
+    def test_level_up_can_precede_return_and_drawer_cleanup(self):
+        world = ReturnWorld(['源赖光'])
+        world.kind, world.after_success = 'level_up', 'returned'
+        world.after_returns = 'running_details'
+        self.assertTrue(dispatcher(world).restore_map())
+        self.assertEqual(world.controls,
+                         ['dispatch_level_up_close', 'dispatch_return_close', 'dispatch_collapse'])
+
+    def test_stuck_level_up_is_clicked_once_even_when_frames_flicker(self):
+        class FlickeringLevelUp(World):
+            def screenshot(self):
+                if self.clicks:
+                    self.kind = 'unknown' if self.reads % 2 else 'level_up'
+                return super().screenshot()
+
+        for world in (World(), FlickeringLevelUp()):
+            with self.subTest(world=type(world).__name__):
+                world.kind, world.stall = 'level_up', DISMISS
+                with self.assertRaises(DispatchError):
+                    dispatcher(world).run()
+                self.assertEqual(world.controls, ['dispatch_level_up_close'])
+                self.assertLessEqual(world.reads, 9)
+
+    def test_level_up_reappearing_after_return_cannot_be_clicked_twice(self):
+        world = ReturnWorld(['源赖光'])
+        world.kind, world.after_success, world.after_returns = 'level_up', 'returned', 'level_up'
+        with self.assertRaises(DispatchError):
+            dispatcher(world).run()
+        self.assertEqual(world.controls, ['dispatch_level_up_close', 'dispatch_return_close'])
+
+    def test_single_map_frame_cannot_hide_pending_level_up(self):
+        world = ReturnWorld([])
+        world.kind, world.after_success = 'level_up', 'map'
+        world.prefix = [Observation(kind='map', running=4)]
+        self.assertTrue(dispatcher(world).restore_map())
+        self.assertEqual(world.controls, ['dispatch_level_up_close'])
+
+    def test_post_submit_level_up_does_not_repeat_resource_submission(self):
+        class LevelUpSubmit(World):
+            def click(self, roi, name):
+                super().click(roi, name)
+                if roi == SUBMIT:
+                    self.kind = 'level_up'
+
+        for confirmed in (True, False):
+            with self.subTest(confirmed=confirmed):
+                world = LevelUpSubmit()
+                world.confirm_submit, world.after_success = confirmed, 'map'
+                if confirmed:
+                    self.assertTrue(dispatcher(world).run().completed)
+                else:
+                    with self.assertRaises(DispatchError):
+                        dispatcher(world).run()
+                self.assertEqual(world.controls,
+                                 ['dispatch_slot', 'dispatch_portrait', 'dispatch_submit',
+                                  'dispatch_level_up_close'])
+
     def test_interrupted_dispatch_acknowledgement_never_recalls_or_submits(self):
         world = World()
         world.kind, world.after_success = 'interrupted', 'map'

@@ -1,0 +1,20 @@
+[
+  {
+    "itemName": "story_map",
+    "imageName": "story_story_map.png",
+    "roiFront": "267,190,92,84",
+    "roiBack": "263,186,100,92",
+    "method": "Template matching",
+    "threshold": 0.9,
+    "description": "弥助的画剧情的委派地图地标"
+  },
+  {
+    "itemName": "story_panel",
+    "imageName": "story_story_panel.png",
+    "roiFront": "337,563,244,44",
+    "roiBack": "333,559,252,52",
+    "method": "Template matching",
+    "threshold": 0.9,
+    "description": "委派剧情底部波纹面板"
+  }
+]

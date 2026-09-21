@@ -17,6 +17,7 @@ ANCHORS = {
     # The first-entry illustrated story uses a 1280 x 720 reference layout.
     'intro_logo': (89, 162), 'intro_speaker': (601, 564),
     'intro_skip': (1159, 37), 'intro_confirm': (707, 442),
+    'completion_caption': (221, 631),
     # Reward layout uses the 1280 x 720 runtime screenshots.
     'reward_title': (481, 234), 'reward_frame': (312, 421),
 }
@@ -58,7 +59,12 @@ def _candidates(gray, name, threshold=.8):
     reduction = min(1., 1000 / max(gray.shape))
     search = _scaled(gray, reduction) if reduction < 1 else gray
     choices = []
-    for scale in sorted(set(np.arange(.55, 2.61, .05).round(3)) | {1., 1280 / 956}):
+    scales = set(np.arange(.55, 2.61, .05).round(3)) | {1., 1280 / 956}
+    if name == 'completion_caption':
+        # A long sentence needs the exact supported downscales: rounding
+        # 840/1280 to .65 shifts its last glyphs by several pixels.
+        scales.update((840 / 1280, 956 / 1280))
+    for scale in sorted(scales):
         match = _best(search, _scaled(_template(name), scale * reduction))
         if match is not None and match[0] >= threshold:
             score, (x, y) = match
@@ -214,45 +220,47 @@ class ColoringView:
                 max(1, round(49 * scale)), max(1, round(43 * scale)))
 
     def find_intro(self, image):
-        """Only the illustrated anniversary guide may expose a story control.
+        """Recognize the opening guide or the completed painting's story.
 
-        A generic skip or confirm button is insufficient. The drawing's logo
-        and distant paper-doll speaker must also match their supplied layout.
-        A dimmed guide exposes only the explicit existing Confirm Skip button,
-        allowing a restart at that confirmation without clicking other modals.
+        The completed painting has no opening logo. Its exact completion
+        sentence, speaker and distant action identify that second layout.
+        Neither a generic story skip nor the speaker alone authorizes a click.
+        A dimmed story exposes only its verified Confirm Skip button.
         """
         gray = _gray(image)
         if gray is None:
             return None
         # Coarse downscaling can weaken the narrow vertical logo; every
         # candidate is rechecked at full resolution with both distant anchors.
-        for _, x, y, scale in _candidates(gray, 'intro_logo', threshold=.72)[:8]:
-            page = PaintingPage(x - 89 * scale, y - 162 * scale, scale)
-            speaker = self._anchor(gray, 'intro_speaker', page, threshold=.8, search_margin=16)
-            if speaker is None:
-                continue
-            delta = np.array(ANCHORS['intro_speaker']) - ANCHORS['intro_logo']
-            observed = np.array(speaker) - (x, y)
-            fitted = float(np.dot(observed, delta) / np.dot(delta, delta))
-            if abs(fitted - scale) > .035 or np.linalg.norm(observed - delta * fitted) > 5 * scale:
-                continue
-            scale = fitted
-            page = PaintingPage(x - 89 * scale, y - 162 * scale, scale)
-            if not all(self._anchor(gray, name, page, threshold=.82)
-                       for name in ('intro_logo', 'intro_speaker')):
-                continue
-            confirm = self._anchor(gray, 'intro_confirm', page, threshold=.86,
-                                   undimmed=True, search_margin=12)
-            if confirm is not None:
-                cx, cy = confirm
-                return PaintingIntro('confirm', (round(cx + 20 * scale), round(cy + 7 * scale),
-                                                   max(1, round(95 * scale)), max(1, round(24 * scale))))
-            if not all(self._anchor(gray, name, page, threshold=.82, undimmed=True)
-                       for name in ('intro_logo', 'intro_speaker', 'intro_skip')):
-                continue
-            sx, sy = self._anchor(gray, 'intro_skip', page, threshold=.82, undimmed=True)
-            return PaintingIntro('skip', (round(sx + 4 * scale), round(sy + 2 * scale),
-                                          max(1, round(43 * scale)), max(1, round(18 * scale))))
+        for identity, threshold in (('intro_logo', .72), ('completion_caption', .8)):
+            ax, ay = ANCHORS[identity]
+            for _, x, y, scale in _candidates(gray, identity, threshold=threshold)[:8]:
+                page = PaintingPage(x - ax * scale, y - ay * scale, scale)
+                speaker = self._anchor(gray, 'intro_speaker', page, threshold=.8, search_margin=16)
+                if speaker is None:
+                    continue
+                delta = np.array(ANCHORS['intro_speaker']) - ANCHORS[identity]
+                observed = np.array(speaker) - (x, y)
+                fitted = float(np.dot(observed, delta) / np.dot(delta, delta))
+                if abs(fitted - scale) > .035 or np.linalg.norm(observed - delta * fitted) > 5 * scale:
+                    continue
+                scale = fitted
+                page = PaintingPage(x - ax * scale, y - ay * scale, scale)
+                if not all(self._anchor(gray, name, page, threshold=.82)
+                           for name in (identity, 'intro_speaker')):
+                    continue
+                confirm = self._anchor(gray, 'intro_confirm', page, threshold=.86,
+                                       undimmed=True, search_margin=12)
+                if confirm is not None:
+                    cx, cy = confirm
+                    return PaintingIntro('confirm', (round(cx + 20 * scale), round(cy + 7 * scale),
+                                                       max(1, round(95 * scale)), max(1, round(24 * scale))))
+                if not all(self._anchor(gray, name, page, threshold=.82, undimmed=True)
+                           for name in (identity, 'intro_speaker', 'intro_skip')):
+                    continue
+                sx, sy = self._anchor(gray, 'intro_skip', page, threshold=.82, undimmed=True)
+                return PaintingIntro('skip', (round(sx + 4 * scale), round(sy + 2 * scale),
+                                              max(1, round(43 * scale)), max(1, round(18 * scale))))
         return None
 
     def find_reward(self, image):

@@ -46,14 +46,15 @@ class World:
                         ['__init__', 'start', 'started', 'reached', 'reset'],
                         dict(time=SimpleNamespace(time=lambda: self.now)))
         subject = methods('tasks/Delegation/script_task.py', 'ScriptTask',
-                          ['click_completed_delegation', 'check_reward'],
+                          ['click_completed_delegation', 'check_reward', 'painting_dialogue_visible'],
                           dict(RuleClick=SimpleNamespace, Timer=timer))
         self.task = subject()
         self.task.O_D_DONE = completion_rule()
         self.task.O_D_DONE.detect_and_ocr = Mock(side_effect=self.detect)
         self.task.device = SimpleNamespace(image=None)
         names = ('I_REWARDS_GET', 'I_REWARDS_CHAT', 'I_CHAT_1', 'I_CHAT_2',
-                 'I_REWARDS_DONE', 'I_REWARDS_FALSE', 'I_REWARDS_MIN')
+                 'I_REWARDS_DONE', 'I_REWARDS_FALSE', 'I_REWARDS_MIN',
+                 'I_STORY_MAP', 'I_STORY_PANEL')
         for name in names:
             setattr(self.task, name, name)
         self.task.screenshot = Mock(side_effect=self.screenshot)

@@ -322,6 +322,16 @@ class DailyIntegrationTests(unittest.TestCase):
         self.task.config.save.assert_not_called()
         self.assertEqual(self.task.conf.daily_dispatch_record.date, '')
 
+    def test_level_up_is_closed_before_navigation_without_redeploying_or_completing_task(self):
+        self.task._dispatch_view.observe.return_value = SimpleNamespace(
+            kind='level_up', dismiss_roi=(1, 2, 3, 4), close_roi=None)
+        self.task._restore_daily_activity_map()
+        self.dispatcher.restore_map.assert_called_once()
+        self.dispatcher.run.assert_not_called()
+        self.task.goto_page.assert_not_called()
+        self.task.config.save.assert_not_called()
+        self.assertEqual(self.task.conf.daily_dispatch_record.date, '')
+
     def test_unclosed_success_popup_requests_preparation_retry_without_daily_record(self):
         self.task._dispatch_view.observe.return_value = SimpleNamespace(kind='success', close_roi=None)
         for failure in (False, DispatchError('popup did not close')):

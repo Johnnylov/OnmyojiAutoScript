@@ -73,3 +73,15 @@ class DelegationAssets:
 	O_D_DONE = RuleOcr(roi=(100,90,840,590), area=(100,90,840,590), mode="Full", method="Default", keyword="完成", name="d_done")
 
 
+	# Click Rule Assets
+	# 仅在委派剧情双锚点命中时推进对白
+	C_STORY_CONTINUE = RuleClick(roi_front=(566,643,108,31), roi_back=(566,643,108,31), name="story_continue")
+
+
+	# Image Rule Assets
+	# 弥助的画剧情的委派地图地标
+	I_STORY_MAP = RuleImage(roi_front=(267,190,92,84), roi_back=(263,186,100,92), threshold=0.9, method="Template matching", file="./tasks/Delegation/story/story_story_map.png")
+	# 委派剧情底部波纹面板
+	I_STORY_PANEL = RuleImage(roi_front=(337,563,244,44), roi_back=(333,559,252,52), threshold=0.9, method="Template matching", file="./tasks/Delegation/story/story_story_panel.png")
+
+

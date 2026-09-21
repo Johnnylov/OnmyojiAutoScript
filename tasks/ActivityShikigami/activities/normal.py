@@ -140,7 +140,7 @@ class NormalClimbAct(BaseAct):
                     raise ColoringError('未确认从百鬼夜行图返回地图')
                 image = self.screenshot()
             observation = self._dispatch_view.observe(image)
-            if (require_map or observation.kind in ('success', 'returned', 'interrupted', 'portraits', 'setup')
+            if (require_map or observation.kind in ('success', 'returned', 'interrupted', 'level_up', 'portraits', 'setup')
                     or getattr(observation, 'close_roi', None) is not None):
                 dispatcher = DailyDispatcher(self.screenshot, self._activity_click_roi,
                                              view=self._dispatch_view)

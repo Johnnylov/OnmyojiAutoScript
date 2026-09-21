@@ -72,8 +72,8 @@ class DailyDispatcher:
                 # A single map frame can be the gap before the next return.
                 return map_stable >= 2
             map_stable = 0
-            if (previous.kind in ('success', 'returned', 'interrupted')
-                    and observation.kind not in ('success', 'returned', 'interrupted')
+            if (previous.kind in ('success', 'returned', 'interrupted', 'level_up')
+                    and observation.kind not in ('success', 'returned', 'interrupted', 'level_up')
                     and observation.close_roi is not None):
                 return True
             if observation.kind == 'returned':
@@ -93,6 +93,10 @@ class DailyDispatcher:
                 stable = stable + 1 if candidate == 'interrupted' else 1
                 candidate = 'interrupted'
                 return stable >= 2
+            if observation.kind == 'level_up' and previous.kind != 'level_up':
+                stable = stable + 1 if candidate == 'level_up' else 1
+                candidate = 'level_up'
+                return stable >= 2
             candidate, stable = None, 0
             return False
 
@@ -110,13 +114,13 @@ class DailyDispatcher:
                     map_stable += 1
                     return map_stable >= 2
                 map_stable = 0
-                return observation.kind in ('success', 'returned', 'interrupted') or observation.close_roi is not None
+                return observation.kind in ('success', 'returned', 'interrupted', 'level_up') or observation.close_roi is not None
 
             observation = self._wait(
                 ready,
                 'Cannot identify the dispatch map, result overlay or its drawer')
             closed_returns, return_count = set(), 0
-            success_closed = interrupted_closed = drawer_closed = False
+            success_closed = interrupted_closed = drawer_closed = level_up_closed = False
             for _ in range(8):
                 if observation.kind == 'map':
                     return True
@@ -137,6 +141,11 @@ class DailyDispatcher:
                         raise DispatchError('Dispatch interruption overlay appeared again without progress')
                     self._click(observation.dismiss_roi, 'dispatch_interrupt_close')
                     interrupted_closed = True
+                elif observation.kind == 'level_up':
+                    if level_up_closed:
+                        raise DispatchError('Dispatch level-up overlay appeared again without a confirmed map')
+                    self._click(observation.dismiss_roi, 'dispatch_level_up_close')
+                    level_up_closed = True
                 elif observation.close_roi is not None:
                     if drawer_closed:
                         raise DispatchError('Dispatch drawer appeared again without a confirmed map')

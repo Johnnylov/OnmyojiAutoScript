@@ -5,7 +5,8 @@ import time
 from cached_property import cached_property
 from datetime import datetime
 
-from module.exception import TaskEnd
+from module.exception import TaskEnd, TaskDeferred
+from module.base.timer import Timer
 from module.logger import logger
 from module.atom.ocr import RuleOcr
 
@@ -46,6 +47,50 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
         battle_result = self.navigator.resolve_page(page_battle_result)
         battle_result.recognizer = any_of(self.I_SE_BATTLE_WIN, battle_result.recognizer)
 
+    def normal_secret_visible(self):
+        """The saved stall is an ordinary dungeon, not the weekly race."""
+        return self.appear(self.I_NORMAL_TITLE) and self.appear(self.I_NORMAL_CLOSE)
+
+    def enter_weekly_secret(self):
+        # Enter can open the previously selected ordinary dungeon. Only a
+        # verified race page may proceed to battles or weekly completion.
+        for attempt in range(3):
+            timer = Timer(12).start()
+            wrong_page = False
+            entry_clicks = 0
+            while not timer.reached():
+                self.screenshot()
+                if self.normal_secret_visible():
+                    wrong_page = True
+                    break
+                if self.appear(self.I_SE_FIRE) and self.appear(self.I_SE_PLACEMENT):
+                    return
+                if self.appear(self.I_SE_ENTER):
+                    if entry_clicks >= 3:
+                        raise TaskDeferred('周秘闻进入按钮未响应，保留任务稍后重试')
+                    if self.click(self.I_SE_ENTER, interval=1):
+                        entry_clicks += 1
+            if not wrong_page or attempt == 2:
+                break
+
+            logger.warning('普通秘闻详情遮挡周秘闻入口，关闭后重新导航')
+            close_timer = Timer(6).start()
+            close_clicks = 0
+            while not close_timer.reached():
+                self.screenshot()
+                if not self.normal_secret_visible():
+                    break
+                if close_clicks >= 3:
+                    raise TaskDeferred('普通秘闻关闭按钮未响应，保留任务稍后重试')
+                if self.click(self.C_NORMAL_CLOSE, interval=1):
+                    close_clicks += 1
+            else:
+                break
+            # Reopen from the courtyard so navigation gets a fresh selection.
+            self.goto_page(page_main)
+            self.goto_page(page_secret_zones)
+        raise TaskDeferred('未能确认周秘闻挑战页面，保留任务稍后重试')
+
     def run(self):
         self.before_run()
         self.check_time()
@@ -61,12 +106,7 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, SecretAssets):
 
         # 进入
         success = True
-        self.ui_click(self.I_SE_ENTER, self.I_SE_FIRE)
-        time.sleep(1)  # 有一个很傻逼的动画
-        self.screenshot()
-        if not self.appear(self.I_SE_PLACEMENT):
-            logger.warning('Unsuccessful entry. You must have entered the secret zone before.')
-            success = False
+        self.enter_weekly_secret()
 
         # 开始
         logger.info('Start secret zone')

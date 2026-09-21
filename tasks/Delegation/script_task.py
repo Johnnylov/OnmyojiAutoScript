@@ -5,7 +5,7 @@ from time import sleep
 from datetime import time, datetime, timedelta
 
 from module.logger import logger
-from module.exception import TaskEnd
+from module.exception import TaskEnd, TaskDeferred
 from module.atom.click import RuleClick
 from module.base.timer import Timer
 
@@ -57,10 +57,20 @@ class ScriptTask(GameUi, DelegationAssets):
         if not self.ocr_appear(self.O_D_NAME):
             logger.warning(f'Delegation: {name} not found')
             return False
-        while 1:
+        entry_timer = Timer(45).start()
+        while not entry_timer.reached():
             self.screenshot()
             if self.appear(self.I_D_START):
                 break
+            if self.painting_dialogue_visible():
+                # A completed story mission also appears in the mission list.
+                # Claim its dialogue/reward before looking for a new assignment.
+                self.check_reward()
+                self.screenshot()
+                if not self.ocr_appear(self.O_D_NAME):
+                    logger.info(f'Delegation: {name} story reward collected')
+                    return False
+                continue
             # 如果出现’召回‘ ’返回‘ 说明这个是现在委派中
             # 需要退出
             if self.appear(self.I_D_BACK):
@@ -74,6 +84,8 @@ class ScriptTask(GameUi, DelegationAssets):
                 continue
             if self.ocr_appear_click(self.O_D_NAME, interval=1):
                 continue
+        else:
+            raise TaskDeferred(f'委派 {name} 未能进入出发页面，稍后重试')
         # 进入委派  fefe e  fe
         logger.info(f'Enter Delegation: {name}')
         ui_click(self.C_D_1, self.I_D_SELECT_1)
@@ -110,11 +122,24 @@ class ScriptTask(GameUi, DelegationAssets):
             return self.click(action, interval=1.5)
         return False
 
+    def painting_dialogue_visible(self):
+        """Require both the known delegation map and the dialogue overlay."""
+        return self.appear(self.I_STORY_MAP) and self.appear(self.I_STORY_PANEL)
+
     def check_reward(self):
         check_timer = Timer(3)
         check_timer.start()
-        while 1:
+        recovery_timer = Timer(45).start()
+        dialogue_clicks = 0
+        while not recovery_timer.reached():
             self.screenshot()
+            if self.painting_dialogue_visible():
+                if dialogue_clicks >= 8:
+                    raise TaskDeferred('委派剧情未能结束，保留任务稍后重试')
+                if self.click(self.C_STORY_CONTINUE, interval=1):
+                    dialogue_clicks += 1
+                check_timer.reset()
+                continue
             if self.appear_then_click(self.I_REWARDS_GET, interval=1):
                 check_timer.reset()
                 continue
@@ -141,7 +166,8 @@ class ScriptTask(GameUi, DelegationAssets):
                 check_timer.reset()
                 continue
             if check_timer.reached():
-                break
+                return
+        raise TaskDeferred('委派奖励页面未能恢复，保留任务稍后重试')
 
 
 if __name__ == '__main__':
@@ -154,6 +180,4 @@ if __name__ == '__main__':
 
     # t.delegate_one('弥助的画')
     t.run()
-
-
 
