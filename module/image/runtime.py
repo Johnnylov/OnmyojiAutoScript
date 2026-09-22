@@ -16,6 +16,7 @@ import numpy as np
 from numpy import fromfile, uint8
 
 from module.base.utils import is_approx_rectangle
+from module.base.rpc import in_worker, wait_for_future
 from module.logger import logger
 
 
@@ -248,6 +249,7 @@ class ImageRuntime:
             "last_access_at": entry.last_access_at,
         }
 
+    @in_worker
     def prepare_template(self, template_path: str, include_sift: bool = False) -> dict[str, Any]:
         """
         预加载模板缓存，并按需准备 SIFT 特征。
@@ -273,6 +275,7 @@ class ImageRuntime:
             "descriptor_shape": descriptor_shape,
         }
 
+    @in_worker
     def match_rule(
         self,
         rule_data: dict[str, Any],
@@ -292,6 +295,7 @@ class ImageRuntime:
         image = self._resolve_image(frame_id=frame_id, image_bytes=image_bytes)
         return self._match_rule_payload(image=image, rule_data=rule_data, threshold=threshold)
 
+    @in_worker
     def match_rule_with_brightness_window(
         self,
         rule_data: dict[str, Any],
@@ -358,8 +362,9 @@ class ImageRuntime:
             )
             for rule_data in rules_data
         ]
-        return [future.result() for future in futures]
+        return [wait_for_future(future) for future in futures]
 
+    @in_worker
     def match_all(
         self,
         rule_data: dict[str, Any],
@@ -379,6 +384,7 @@ class ImageRuntime:
         matches = self._match_all_template(image=image, rule=rule)
         return {"matches": [list(item) for item in matches]}
 
+    @in_worker
     def match_all_any(
         self,
         rule_data: dict[str, Any],
@@ -419,8 +425,9 @@ class ImageRuntime:
             )
             for rule_data in rules_data
         ]
-        return [future.result() for future in futures]
+        return [wait_for_future(future) for future in futures]
 
+    @in_worker
     def match_dynamic_template(
         self,
         template_bytes: bytes,

@@ -160,8 +160,13 @@ class NormalClimbAct(BaseAct):
         # Entering the map may itself open an expired dispatch's reward popup.
         # Recover it even when today's dispatch check has already been saved.
         # The bounded worker also waits through the popup's opening animation.
-        self._restore_daily_activity_map(require_map=True)
-        if self._dispatch_view.observe(self.screenshot()).kind != 'map':
+        for _ in range(2):
+            self._restore_daily_activity_map(require_map=True)
+            if self._dispatch_view.observe(self.screenshot()).kind == 'map':
+                break
+            # A delayed drawer can finish opening after the two map frames
+            # used by restore_map. Give that verified panel one recovery.
+        else:
             raise ActivityPreparationTimeout('无法确认上阵地图，等待恢复后再开始爬塔')
         # Navigation/recovery may cross midnight or reload the selected role.
         day, owner = server_date(), self._activity_owner()

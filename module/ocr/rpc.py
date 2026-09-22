@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import zerorpc
 
+from module.base.rpc import call_with_reconnect, wait_for_future
 from module.exception import ScriptError
 from module.logger import logger
 from module.ocr.ppocr import TextSystem
@@ -158,7 +159,7 @@ class OcrRuntime:
             self._request_stats["requests_total"] += 1
         future = self._scheduler.submit(func, *args, **kwargs)
         try:
-            result = future.result()
+            result = wait_for_future(future)
         except Exception:
             with self._lock:
                 self._request_stats["requests_failed"] += 1
@@ -374,7 +375,7 @@ class ModelProxy:
 
     def ocr_single_line(self, image: np.ndarray):
         payload = pickle.dumps(image, protocol=4)
-        return self.client.ocr_single_line(payload)
+        return call_with_reconnect(self, 'ocr_single_line', payload)
 
     def detect_and_ocr(
         self,
@@ -385,7 +386,8 @@ class ModelProxy:
         vertical: bool = False,
     ):
         payload = pickle.dumps(image, protocol=4)
-        results = self.client.detect_and_ocr(payload, drop_score, unclip_ratio, box_thresh, vertical)
+        results = call_with_reconnect(
+            self, 'detect_and_ocr', payload, drop_score, unclip_ratio, box_thresh, vertical)
         from ppocronnx.predict_system import BoxedResult
         return [
             BoxedResult(np.array(item["box"]), None, item["ocr_text"], item["score"])

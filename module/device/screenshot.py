@@ -72,6 +72,9 @@ class Screenshot(Adb, DroidCast, Scrcpy, Window, NemuIpc):
                 self.screenshot_adb  # 第二个参数默认的是screenshot_adb
             )
             self.image = method()
+            # Never leave an older frame ID attached to newly captured pixels
+            # if registration/reconnection fails.
+            self.image_frame_id = None
             frame_info = get_image_client().register_frame(self.image, self.config.config_name)
             self.image_frame_id = frame_info["frame_id"]
 

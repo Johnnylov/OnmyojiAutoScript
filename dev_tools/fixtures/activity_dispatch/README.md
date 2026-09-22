@@ -13,6 +13,13 @@ amounts are removed. They remain available after error logs are cleared.
 - `level_up_6_to_7.png`: the same panel with a different unlock message, from
   `oas2_1789797877521/2026-09-19_14-04-35-040079.png`.
   Both level-up fixtures remove the surrounding account/map information.
+- `setup_12_hours.png`: boss-name anchor, setup controls, collapse arrow and
+  portrait cards from `oas1_1790042509872/2026-09-22_10-01-44-024544.png`.
+  The centered duration reads `12/12时`, moving its label left compared with
+  the original single-digit reference. All top resource counters are removed.
+- `setup_9_hours.png`: the same UI areas from the originally supplied setup
+  reference `4909a6ae-dd6d-416e-817f-3962c2642354`, kept at 1111 by 625.
+  It preserves the `9/9时` line and following decoration for real OCR checks.
 
 Tests explicitly label rearranged copies of these card strips as synthetic
 layout variations; they are not additional real account screenshots.

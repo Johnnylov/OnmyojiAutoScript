@@ -146,6 +146,23 @@ class DailyIntegrationTests(unittest.TestCase):
         self.task.after_run()
         self.task._colorer.assert_not_called()
 
+    def test_delayed_drawer_gets_one_more_recovery_before_daily_dispatch(self):
+        self.task._dispatch_view.observe.side_effect = [
+            SimpleNamespace(kind='map'), SimpleNamespace(kind='setup'),
+            SimpleNamespace(kind='setup'), SimpleNamespace(kind='map')]
+        self.task._dispatch_once_today()
+        self.assertEqual(self.dispatcher.restore_map.call_count, 2)
+        self.dispatcher.run.assert_called_once()
+        self.task.config.save.assert_called_once()
+
+    def test_delayed_drawer_recovery_is_bounded_and_never_records_failure_as_done(self):
+        self.task._dispatch_view.observe.return_value = SimpleNamespace(kind='setup')
+        with self.assertRaises(PreparationError):
+            self.task._dispatch_once_today()
+        self.assertEqual(self.dispatcher.restore_map.call_count, 2)
+        self.dispatcher.run.assert_not_called()
+        self.task.config.save.assert_not_called()
+
     def test_config_reload_during_dispatch_saves_current_model(self):
         original = self.task.conf
         replacement = ActivityShikigami()

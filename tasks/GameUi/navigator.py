@@ -24,6 +24,7 @@ from module.logger import logger
 from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
 from tasks.GameUi.action import ActionSequence, ConditionalAction
 from tasks.GameUi.assets import GameUiAssets
+from tasks.GameUi.cache_cleanup import cache_cleanup_visible, CANCEL as CACHE_CLEANUP_CANCEL
 from tasks.GameUi.chess_battle import ChessBattleNavigationMixin
 from tasks.GameUi.common import infer_tasks_category_from_parts, infer_tasks_category_from_path
 from tasks.GameUi.matcher import collect_rule_images
@@ -711,7 +712,15 @@ class GameUi(ChessBattleNavigationMixin, BaseTask, GameUiAssets):
 
         self.maybe_screenshot(skip_first_screenshot)
         logger.warning("Try switch to a supported page")
-        for action in [*self.navigator.local_unknown_closers, *self.DEFAULT_UNKNOWN_CLOSERS]:
+        if cache_cleanup_visible(self):
+            # This popup's Confirm opens cache management and cannot dismiss
+            # an empty selection. Prefer Cancel before every generic closer.
+            if self.navigator.unknown_close_history[-3:] == [CACHE_CLEANUP_CANCEL.name] * 3:
+                return False
+            actions = [CACHE_CLEANUP_CANCEL]
+        else:
+            actions = [*self.navigator.local_unknown_closers, *self.DEFAULT_UNKNOWN_CLOSERS]
+        for action in actions:
             action_name = self._action_name(action)
             # 若最后3次执行的都是该动作，则跳过该动作尝试其他动作
             if len(self.navigator.unknown_close_history) >= 3 and \

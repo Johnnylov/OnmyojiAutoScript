@@ -23,6 +23,7 @@ from dev_tools.test_activity_preparation_retry import source_methods
 with patch.dict(sys.modules, {'module.logger': SimpleNamespace(logger=Mock())}):
     from module.image.rpc import ImageClient
     from module.image.runtime import ImageRuntime
+    from module.base.rpc import call_with_reconnect
 
 
 class LocalRpc:
@@ -107,7 +108,7 @@ class FrameRecoveryTests(unittest.TestCase):
 
     def test_activity_ocr_delay_does_not_break_the_following_page_match(self):
         proxy_class = source_methods('module/ocr/rpc.py', 'ModelProxy', ['ocr_single_line'],
-                                     dict(pickle=pickle))
+                                     dict(pickle=pickle, call_with_reconnect=call_with_reconnect))
         proxy = proxy_class()
         frame_id = self.frame()
 
@@ -153,7 +154,6 @@ class FrameRecoveryTests(unittest.TestCase):
             zerorpc.RemoteError('KeyError', "'missing template field'", None),
             zerorpc.RemoteError('KeyError', "'Unknown frame id: other'", None),
             zerorpc.RemoteError('ValueError', "'Unknown frame id: stale'", None),
-            zerorpc.TimeoutExpired(10),
             KeyError('Unknown frame id: stale'),
         )
         for error in errors:

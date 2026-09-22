@@ -25,6 +25,8 @@ translation from the images; these are not absolute device coordinates.
 The occupied-slot reference was 956 by 538 and is matched independently.
 Name templates exclude the changing gold selection border. OCR regions exclude
 the clock icon before a countdown and the decoration after a duration.
+The centered duration label shifts when the current/maximum hours gain digits;
+its matched position anchors the OCR crop, including the full `12/12时` line.
 Busy characters can disappear from the drawer. Name templates are searched
 within each remaining card column; their original column is not an identity.
 The success-overlay and running-detail templates use an 840 by 473 reference.

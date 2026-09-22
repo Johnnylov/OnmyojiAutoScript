@@ -11,6 +11,7 @@ from typing import Any, Optional
 import numpy as np
 import zerorpc
 
+from module.base.rpc import call_with_reconnect
 from module.exception import ScriptError
 from module.image.runtime import ImageRuntime
 from module.logger import logger
@@ -251,7 +252,7 @@ class ImageClient:
             config_name: 当前脚本配置名；服务端用它删除同配置旧截图帧。
         """
         payload = pickle.dumps(image, protocol=4)
-        return self.client.register_frame(payload, config_name)
+        return call_with_reconnect(self, 'register_frame', payload, config_name)
 
     def get_frame_info(self, frame_id: str) -> dict[str, Any]:
         """
@@ -270,7 +271,7 @@ class ImageClient:
             template_path: 模板文件绝对路径。
             include_sift: 为真时会额外准备 SIFT 描述子，适合后续 SIFT/FLANN 匹配预热。
         """
-        return self.client.prepare_template(template_path, include_sift)
+        return call_with_reconnect(self, 'prepare_template', template_path, include_sift)
 
     @staticmethod
     def _encode_image_payload(image: np.ndarray | None, frame_id: str | None) -> bytes | None:
@@ -293,13 +294,12 @@ class ImageClient:
         OCR, team synchronization, or other work can outlive the server's frame
         TTL. Direct-image requests are already supported by older image servers;
         do not register a replacement that could evict another active screenshot.
-        Only the exact missing-frame error is recoverable here. Connection and
-        template failures, and any failure of the retry, must reach the caller.
+        Connection recovery is separately bounded to one retry. Template
+        failures and any failure of the direct-image retry reach the caller.
         """
-        remote_match = getattr(self.client, method)
         payload = self._encode_image_payload(image=image, frame_id=frame_id)
         try:
-            return remote_match(rule_data, frame_id, payload, *options)
+            return call_with_reconnect(self, method, rule_data, frame_id, payload, *options)
         except zerorpc.RemoteError as exc:
             if (
                 not frame_id or image is None or exc.name != "KeyError"
@@ -308,7 +308,7 @@ class ImageClient:
                 raise
             logger.debug(f"Image frame expired or evicted; retry {method} with original screenshot")
         payload = self._encode_image_payload(image=image, frame_id=None)
-        return remote_match(rule_data, None, payload, *options)
+        return getattr(self.client, method)(rule_data, None, payload, *options)
 
     def match_rule(
         self,

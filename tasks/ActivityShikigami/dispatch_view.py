@@ -306,15 +306,22 @@ class DispatchView:
                 return DispatchObservation(kind='running_details', close_roi=close)
             rewards = _near(gray, 'rewards', (866, 140, 90, 24), transform, .82)
             submit = _near(gray, 'submit', (825, 400, 169, 45), transform, .82)
-            duration = _near(gray, 'duration', (838, 271, 80, 25), transform, .8)
+            # The centered line shifts left when both counters have two
+            # digits (12/12). Recover its actual label before cropping OCR.
+            duration = _near(gray, 'duration', (838, 271, 80, 25), transform, .8, margin=22)
             plus = _near(gray, 'plus', (998, 302, 37, 37), transform, .82)
             minus = _near(gray, 'minus', (785, 303, 35, 36), transform, .82)
             if any((rewards, submit, duration, plus, minus)):
                 if not all((rewards, submit, duration, plus, minus)) or len(selected) != 1:
                     return DispatchObservation(close_roi=close)
-                # Exclude the decorative diamond following the duration; OCR
-                # otherwise reads it as an extra character at runtime scale.
-                counter = parse_duration(self._read(image, roi(833, 269, 148, 29)))
+                # Both ends move around the line's fixed center as digits
+                # are added. Mirror the detected left edge to keep the full
+                # counter while excluding the trailing decorative diamond.
+                left = round(duration.x - 2 * scale)
+                right = round(2 * (ox + 908 * scale) - left)
+                counter_roi = (left, round(duration.y - 2 * scale),
+                               right - left, round(29 * scale))
+                counter = parse_duration(self._read(image, counter_roi))
                 return DispatchObservation(kind='setup', available=tuple(available),
                     selected=selected[0], current=counter[0] if counter else None,
                     maximum=counter[1] if counter else None,
