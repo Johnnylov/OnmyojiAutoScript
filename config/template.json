@@ -1068,6 +1068,13 @@
       "continuous_battle": false,
       "max_continuous": 0,
       "quick_exit": false
+    },
+    "switch_soul": {
+      "enable": false,
+      "switch_group_team": "-1,-1",
+      "enable_switch_by_name": false,
+      "group_name": "",
+      "team_name": ""
     }
   },
   "meta_demon": {

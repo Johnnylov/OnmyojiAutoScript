@@ -351,5 +351,19 @@
   "preset_group": "预设组编号",
   "preset_team": "预设队伍编号",
   "green_enable": "启用绿标",
-  "random_click_swipt_enable": "战斗中随机点击或滑动"
+  "random_click_swipt_enable": "战斗中随机点击或滑动",
+  "switch_soul": "执行任务前切换御魂",
+  "Switch Soul": "执行任务前切换御魂",
+  "SwitchSoulConfig": "执行任务前切换御魂",
+  "MoonlightSwitchSoulConfig": "执行任务前切换御魂",
+  "Switch Group Team": "御魂装配分组设置",
+  "switch_group_team": "御魂装配分组设置",
+  "switch_group_team_help": "例如 1,2 表示第 1 个预设组、第 2 个队伍，使用英文逗号；预设组支持 1～7，队伍支持 1～4。默认 -1,-1 需要改为有效编号后再开启按编号切换。",
+  "Enable Switch By Name": "按名称切换御魂",
+  "enable_switch_by_name": "按名称切换御魂",
+  "enable_switch_by_name_help": "通过 OCR 查找式神录中保存的御魂分组名和队伍名；填写下方名称并启用此开关，预设队伍需保持锁定。两种方式同时启用时，先按编号切换，再按名称切换。",
+  "Group Name": "御魂分组名",
+  "Team Name": "队伍名",
+  "team_name": "队伍名",
+  "moonlight_switch_soul_enable_help": "进入月华流光活动前，从庭院进入式神录，按下方组号、队伍号装配御魂，完成后返回庭院。每次任务只切换一次，挑战次数为 0 时跳过；按名称切换使用下方独立开关。"
 }

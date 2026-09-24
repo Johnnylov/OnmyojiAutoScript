@@ -13,7 +13,8 @@ from module.exception import GamePageUnknownError, GameStuckError, TaskEnd
 from tasks.base_task import BaseTask
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.Component.RightActivity.assets import RightActivityAssets
-from tasks.GameUi.page import page_battle_prepare, page_main
+from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
+from tasks.GameUi.page import page_battle_prepare, page_main, page_shikigami_records
 from tasks.Moonlight.activity import MoonlightAct
 from tasks.Moonlight.assets import MoonlightAssets
 from tasks.Moonlight.config import Moonlight
@@ -67,8 +68,110 @@ class MoonlightTests(unittest.TestCase):
         self.assertEqual(first.general_config.limit_time_v, timedelta(minutes=90))
         first.general_config.challenge_limit = 7
         self.assertEqual(second.general_config.challenge_limit, 1)
+        first.switch_soul.enable = True
+        first.switch_soul.group_name = '月华流光'
+        self.assertFalse(second.switch_soul.enable)
+        self.assertFalse(second.switch_soul.enable_switch_by_name)
+        self.assertEqual(second.switch_soul.group_name, '')
         self.assertIs(ScriptTask.run_general_battle, GeneralBattle.run_general_battle)
         self.assertIs(ScriptTask.appear_then_click, BaseTask.appear_then_click)
+        self.assertIs(ScriptTask.run_switch_soul, SwitchSoul.run_switch_soul)
+        self.assertIs(ScriptTask.run_switch_soul_by_name, SwitchSoul.run_switch_soul_by_name)
+
+    def test_souls_switch_once_before_challenges_and_again_on_next_run(self):
+        for by_number, by_name in ((True, False), (False, True), (True, True)):
+            with self.subTest(by_number=by_number, by_name=by_name):
+                obj = task()
+                obj.conf.switch_soul.enable = by_number
+                obj.conf.switch_soul.switch_group_team = '2,3'
+                obj.conf.switch_soul.enable_switch_by_name = by_name
+                obj.conf.switch_soul.group_name = '活动'
+                obj.conf.switch_soul.team_name = '月华流光'
+                obj.conf.general_config.challenge_limit = 2
+                events = []
+                def navigate(destination, **kwargs):
+                    events.append(destination)
+                    return True
+                obj.goto_page.side_effect = navigate
+                obj.run_switch_soul = Mock(side_effect=lambda value: events.append(('number', value)))
+                obj.run_switch_soul_by_name = Mock(side_effect=lambda *names: events.append(('name', *names)))
+                obj._enter_moonlight_battle = Mock(return_value=True)
+                obj.run_general_battle = Mock(return_value=True)
+                obj.set_next_run = Mock()
+                expected = [page_main, page_shikigami_records]
+                if by_number:
+                    expected.append(('number', '2,3'))
+                if by_name:
+                    expected.append(('name', '活动', '月华流光'))
+                expected.append(page_main)
+                for run in range(1, 3):
+                    events.clear()
+                    with self.assertRaises(TaskEnd):
+                        obj.run()
+                    self.assertEqual(events[:len(expected)], expected)
+                    self.assertIs(events[len(expected)], page_moon_battle)
+                    self.assertEqual(events.count(page_shikigami_records), 1)
+                    self.assertEqual(obj.moonlight_count, 2)
+                    self.assertEqual(obj.run_switch_soul.call_count, run if by_number else 0)
+                    self.assertEqual(obj.run_switch_soul_by_name.call_count, run if by_name else 0)
+                self.assertEqual(obj.run_general_battle.call_count, 4)
+
+    def test_disabled_soul_switch_never_visits_records(self):
+        obj = task()
+        obj.run_switch_soul = Mock()
+        obj.run_switch_soul_by_name = Mock()
+        obj._enter_moonlight_battle = Mock(return_value=True)
+        obj.run_general_battle = Mock(return_value=True)
+        obj.set_next_run = Mock()
+        with self.assertRaises(TaskEnd):
+            obj.run()
+        self.assertNotIn(page_shikigami_records, [call.args[0] for call in obj.goto_page.call_args_list])
+        obj.run_switch_soul.assert_not_called()
+        obj.run_switch_soul_by_name.assert_not_called()
+
+    def test_zero_count_or_expired_time_skips_soul_switch(self):
+        for expired in (False, True):
+            with self.subTest(expired=expired):
+                obj = task()
+                obj.conf.switch_soul.enable = True
+                obj.conf.switch_soul.enable_switch_by_name = True
+                if expired:
+                    obj.conf.general_config.limit_time = datetime.min.time()
+                else:
+                    obj.conf.general_config.challenge_limit = 0
+                obj.run_switch_soul = Mock()
+                obj.run_switch_soul_by_name = Mock()
+                obj._enter_moonlight_battle = Mock()
+                obj.set_next_run = Mock()
+                with self.assertRaises(TaskEnd):
+                    obj.run()
+                obj.goto_page.assert_called_once_with(page_main, skip_first_screenshot=False, timeout=20)
+                obj.run_switch_soul.assert_not_called()
+                obj.run_switch_soul_by_name.assert_not_called()
+                obj._enter_moonlight_battle.assert_not_called()
+
+    def test_soul_switch_or_navigation_failure_prevents_challenge(self):
+        for stage in ('main', 'records', 'number', 'name', 'return'):
+            with self.subTest(stage=stage):
+                obj = task()
+                obj.conf.switch_soul.enable = True
+                obj.conf.switch_soul.switch_group_team = '1,1'
+                obj.conf.switch_soul.enable_switch_by_name = True
+                obj.conf.switch_soul.group_name = '活动'
+                obj.conf.switch_soul.team_name = '月华流光'
+                obj.goto_page.side_effect = [stage != 'main', stage != 'records', stage != 'return']
+                obj.run_switch_soul = Mock(side_effect=GameStuckError('switch failed') if stage == 'number' else None)
+                obj.run_switch_soul_by_name = Mock(side_effect=GameStuckError('switch failed') if stage == 'name' else None)
+                obj._enter_moonlight_battle = Mock()
+                obj.set_next_run = Mock()
+                with self.assertRaises((GamePageUnknownError, GameStuckError)):
+                    obj.run()
+                obj._enter_moonlight_battle.assert_not_called()
+                obj.set_next_run.assert_not_called()
+                self.assertIsNone(obj._moon_navigation_deadline)
+                if stage in ('main', 'records'):
+                    obj.run_switch_soul.assert_not_called()
+                    obj.run_switch_soul_by_name.assert_not_called()
 
     def test_wrong_page_never_clicks_a_challenge(self):
         obj = task()
