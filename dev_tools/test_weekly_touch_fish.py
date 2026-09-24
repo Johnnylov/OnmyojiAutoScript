@@ -104,7 +104,7 @@ class TouchFishHarness:
 
     def read_tickets(self, image):
         self.ticket_reads += 1
-        return self.options.get('tickets', (2, 8, 10))
+        return self.options.get('tickets', (8, 2, 10))
 
     def read_cost(self, image):
         self.cost_reads += 1
@@ -220,16 +220,25 @@ class WeeklyTouchFishTests(unittest.TestCase):
         self.assertFalse(self.warnings)
 
     def test_insufficient_tickets_do_not_attempt_save(self):
-        task, result = self.run_flow(tickets=(9, 1, 10), cost=3)
+        task, result = self.run_flow(tickets=(1, 9, 10), cost=3)
         self.assertFalse(result)
         self.assertNotIn(task.I_WT_SAVE_ALL, task.clicks)
         self.assertIn('not enough', self.warnings[-1])
 
     def test_zero_available_is_a_valid_insufficient_balance(self):
-        task, result = self.run_flow(tickets=(10, 0, 10))
+        task, result = self.run_flow(tickets=(0, 10, 10))
         self.assertFalse(result)
         self.assertEqual(task.ticket_reads, 1)
         self.assertIn('not enough', self.warnings[-1])
+
+    def test_current_balance_is_used_instead_of_gap_to_capacity(self):
+        for tickets in ((9, 1, 10), (10, 0, 10), (3, 7, 10)):
+            with self.subTest(tickets=tickets):
+                self.setUp()
+                task, result = self.run_flow(tickets=tickets, cost=3)
+                self.assertTrue(result)
+                self.assertEqual(task.clicks.count(task.I_WT_SAVE_ALL), 1)
+                self.assertFalse(self.warnings)
 
     def test_invalid_ocr_never_attempts_save_or_confirmation(self):
         for tickets, cost in (

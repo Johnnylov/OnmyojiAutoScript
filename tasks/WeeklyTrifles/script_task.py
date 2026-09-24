@@ -139,7 +139,8 @@ class ScriptTask(GameUi, WeeklyTriflesAssets):
                     logger.warning('Cannot read touch fish tickets or save cost, exit!')
                     break
                 continue
-            if tickets[1] < cost_tickets:
+            # DigitCounter returns (current, total - current, total).
+            if tickets[0] < cost_tickets:
                 logger.warning('Touch fish tickets not enough, exit!')
                 break
             if self.appear_then_click(self.I_WT_SAVE_ALL, interval=1.5):

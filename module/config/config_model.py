@@ -10,7 +10,7 @@ import re
 import inflection
 
 from pathlib import Path
-from pydantic import BaseModel, ValidationError, Field
+from pydantic import BaseModel, ValidationError, Field, field_validator
 
 from module.config.utils import *
 from module.logger import logger
@@ -56,6 +56,7 @@ from tasks.GuildActivityMonitor.config import GuildActivityMonitor
 
 # 这一部分是活动的配置-----------------------------------------------------------------------------------------------------
 from tasks.ActivityShikigami.config import ActivityShikigami
+from tasks.Moonlight.config import Moonlight
 from tasks.MartialTournament.config import MartialTournament
 from tasks.MetaDemon.config import MetaDemon
 from tasks.FrogBoss.config import FrogBoss
@@ -82,7 +83,6 @@ from tasks.Secret.config import Secret
 from tasks.WeeklyTrifles.config import WeeklyTrifles
 from tasks.MysteryShop.config import MysteryShop
 from tasks.Duel.config import Duel
-from tasks.Chess.config import Chess
 # ----------------------------------------------------------------------------------------------------------------------
 
 class ConfigModel(ConfigBase):
@@ -123,6 +123,7 @@ class ConfigModel(ConfigBase):
 
     # 这些是活动的
     activity_shikigami: ActivityShikigami = Field(default_factory=ActivityShikigami)
+    moonlight: Moonlight = Field(default_factory=Moonlight)
     martial_tournament: MartialTournament = Field(default_factory=MartialTournament)
     meta_demon: MetaDemon = Field(default_factory=MetaDemon)
     frog_boss: FrogBoss = Field(default_factory=FrogBoss)
@@ -148,7 +149,6 @@ class ConfigModel(ConfigBase):
     weekly_trifles: WeeklyTrifles = Field(default_factory=WeeklyTrifles)
     mystery_shop: MysteryShop = Field(default_factory=MysteryShop)
     duel: Duel = Field(default_factory=Duel)
-    chess: Chess = Field(default_factory=Chess)
 
     # 阴阳寮
     collective_missions: CollectiveMissions = Field(default_factory=CollectiveMissions)
@@ -158,6 +158,12 @@ class ConfigModel(ConfigBase):
     guild_banquet: GuildBanquet = Field(default_factory=GuildBanquet)
     demon_retreat: DemonRetreat = Field(default_factory=DemonRetreat)
     guild_activity_monitor: GuildActivityMonitor = Field(default_factory=GuildActivityMonitor)
+
+    @field_validator('running_task', mode='before')
+    @classmethod
+    def clear_removed_task(cls, value):
+        # Old user configs may still contain the removed task's resume marker.
+        return '' if value == 'Chess' else value
 
     def __init__(self, config_name: str=None, **data) -> None:
         """
@@ -370,60 +376,69 @@ class ConfigModel(ConfigBase):
         return result
 
     def script_set_arg(self, task: str, group: str, argument: str, value) -> bool:
-        # 验证参数
         task = convert_to_underscore(task)
         group = convert_to_underscore(group)
         argument = convert_to_underscore(argument)
 
-        # pandtic验证
-        if isinstance(value, str) and len(value) == 8:
-            try:
-                value = datetime.strptime(value, '%H:%M:%S').time()
-            except ValueError:
-                pass
-        if isinstance(value, str) and len(value) == 11:
-            try:
-                date_time = datetime.strptime(value, '%d %H:%M:%S')
-                value = TimeDelta(days=date_time.day, hours=date_time.hour, minutes=date_time.minute, seconds=date_time.second)
-            except ValueError:
-                pass
-        if isinstance(value, str) and len(value) == 19:
-            try:
-                value = datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
-            except ValueError:
-                pass
-        if isinstance(value, str) and value == 'true':
-            value = True
-        if isinstance(value, str) and value == 'false':
-            value = False
+        def find_group():
+            task_object = getattr(self, task, None)
+            if not isinstance(task_object, BaseModel):
+                return None
+            group_object = getattr(task_object, group, None)
+            if group_object is not None:
+                return group_object
+            # OASX numbers repeated configuration groups from one.
+            for name, items in dict(task_object).items():
+                match = re.fullmatch(re.escape(name) + r'_?(\d+)', group)
+                if match and isinstance(items, list):
+                    index = int(match.group(1)) - 1
+                    return items[index] if 0 <= index < len(items) else None
+            return None
 
-        task_object = getattr(self, task, None)
-        group_object = getattr(task_object, group, None)
-        if group_object is None:  # deal list
-            matchs = re.findall(r'\d+', group)
-            index = int(matchs[-1]) - 1 if matchs else None
-            task_object_list = list(dict(task_object))
-            for k, v in dict(task_object).items():
-                if k not in group:
-                    continue
-                group_object = v[index] if group_object is None else None
-        argument_object = getattr(group_object, argument, None)
-
-        if argument_object is None:
+        group_object = find_group()
+        if not isinstance(group_object, BaseModel) or argument not in type(group_object).model_fields:
             logger.error(f'Set arg {task}.{group}.{argument}.{value} failed')
             return False
 
-        # XXX temp implementation to enable oasx control the datetime configuration globally rather than a single task
-        if task == "restart" and group == "task_config" and argument == "reset_task_datetime_enable" and value == True:
-            date_time = self.restart.task_config.reset_task_datetime
-            logger.info(f"reset_task_datetime={date_time}")
-            self.reset_datetime_for_all_enabled_tasks(date_time)
+        try:
+            # The legacy TimeDelta validator substitutes one day for malformed
+            # strings. Reject invalid UI edits instead of silently changing them.
+            if type(group_object).model_fields[argument].annotation is timedelta and isinstance(value, str):
+                match = re.fullmatch(r'(\d+)\s+(\d{1,2}):(\d{1,2}):(\d{1,2})', value)
+                if not match:
+                    raise ValueError('Invalid interval; expected days HH:MM:SS')
+                days, hours, minutes, seconds = map(int, match.groups())
+                if hours >= 24 or minutes >= 60 or seconds >= 60:
+                    raise ValueError('Invalid interval clock value')
+                value = timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
 
-        # 设置参数
+            # Validate an isolated copy before touching live state or saving. Calling
+            # model_validate would invoke ConfigBase.__init__, which replaces some
+            # out-of-range values with defaults instead of rejecting the edit.
+            candidate = group_object.model_copy(deep=True)
+            type(candidate).__pydantic_validator__.validate_assignment(candidate, argument, value)
+            value = getattr(candidate, argument)
+
+            reset_datetime = None
+            if (task == 'restart' and group in ('task_config', 'tasks_config_reset')
+                    and argument == 'reset_task_datetime_enable' and value is True):
+                reset_datetime = candidate.reset_task_datetime
+                if isinstance(reset_datetime, str):
+                    reset_datetime = datetime.fromisoformat(reset_datetime)
+        except (ValidationError, ValueError, TypeError, OverflowError) as e:
+            logger.error(e)
+            return False
+
+        if reset_datetime is not None:
+            logger.info(f'reset_task_datetime={reset_datetime}')
+            self.reset_datetime_for_all_enabled_tasks(reset_datetime)
+            # Reset reloads the config; the old group now belongs to a stale model.
+            group_object = find_group()
+
         try:
             setattr(group_object, argument, value)
             logger.info(f'Set arg {self.config_name}.{task}.{group}.{argument}.{value}')
-            self.save()  # 我是没有想到什么方法可以使得属性改变自动保存的
+            self.save()
             return True
         except ValidationError as e:
             logger.error(e)
