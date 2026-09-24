@@ -9,10 +9,14 @@ from tasks.Component.config_scheduler import Scheduler
 
 
 class GeneralConfig(ConfigBase):
-    challenge_limit: int = Field(default=1, ge=0, title='挑战次数')
-    limit_time: Time = Field(default=Time(hour=1, minute=30), title='最长运行时间')
-    random_sleep: bool = Field(default=False, title='行动前随机休息')
-    active_souls_clean: bool = Field(default=False, title='结束后整理御魂')
+    challenge_limit: int = Field(default=1, ge=0, title='挑战次数',
+                                 description='moonlight_challenge_limit_help')
+    limit_time: Time = Field(default=Time(hour=1, minute=30), title='最长运行时间',
+                            description='moonlight_limit_time_help')
+    random_sleep: bool = Field(default=False, title='行动前随机休息',
+                               description='moonlight_random_sleep_help')
+    active_souls_clean: bool = Field(default=False, title='结束后整理御魂',
+                                     description='moonlight_active_souls_clean_help')
 
     @property
     def limit_time_v(self) -> timedelta:
@@ -22,6 +26,7 @@ class GeneralConfig(ConfigBase):
         return value
 
 class Moonlight(ConfigBase):
-    scheduler: Scheduler = Field(default_factory=Scheduler)
-    general_config: GeneralConfig = Field(default_factory=GeneralConfig)
-    moonlight_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
+    scheduler: Scheduler = Field(default_factory=Scheduler, title='任务调度')
+    general_config: GeneralConfig = Field(default_factory=GeneralConfig, title='通用设置')
+    moonlight_battle_conf: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig,
+                                                      title='战斗设置')

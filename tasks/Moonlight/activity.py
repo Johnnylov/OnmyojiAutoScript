@@ -19,7 +19,7 @@ class MoonlightAct:
     def _cancel_moon_confirmation(self) -> None:
         if not (self.appear_then_click(self.I_UI_CANCEL, interval=0)
                 or self.appear_then_click(self.I_UI_CANCEL_SAMLL, interval=0)):
-            raise GameStuckError('Moonlight confirmation dialog could not be cancelled')
+            raise GameStuckError('月华流光：无法取消确认弹窗')
 
     def screenshot(self):
         # The shared navigator has a progress timeout that resets on page changes.
@@ -28,18 +28,18 @@ class MoonlightAct:
         cancelled = False
         while True:
             if deadline is not None and time.monotonic() >= deadline:
-                raise GamePageUnknownError('Moonlight navigation exceeded its time limit')
+                raise GamePageUnknownError('月华流光：页面导航超时')
             image = super().screenshot()
             if deadline is None:
                 return image
             if time.monotonic() >= deadline:
-                raise GamePageUnknownError('Moonlight navigation exceeded its time limit')
+                raise GamePageUnknownError('月华流光：页面导航超时')
             if not self._moon_confirmation_visible():
                 return image
             # Intercept overlays before the generic navigator can confirm them,
             # even when the underlying page is still recognizable.
             if not cancelled:
-                logger.warning('Cancel unknown Moonlight navigation confirmation')
+                logger.warning('月华流光：取消导航过程中出现的未知确认弹窗')
                 self._cancel_moon_confirmation()
                 cancelled = True
             time.sleep(.3)
@@ -51,7 +51,7 @@ class MoonlightAct:
                                           if previous_deadline is not None else deadline)
         try:
             if not self.goto_page(destination, skip_first_screenshot=False, timeout=20):
-                raise GamePageUnknownError('Moonlight destination could not be reached')
+                raise GamePageUnknownError('月华流光：无法到达目标页面')
         finally:
             self._moon_navigation_deadline = previous_deadline
 
@@ -62,7 +62,7 @@ class MoonlightAct:
             self._cancel_moon_confirmation()
             return False
         if not self.appear(self.I_MOON_BATTLE):
-            raise GameStuckError('Moonlight challenge page is not visible')
+            raise GameStuckError('月华流光：未识别到挑战页面')
         resource = self.O_MOON_RESOURCE.ocr_digit(self.device.image)
         if resource < 6:
             time.sleep(.3)
@@ -71,13 +71,13 @@ class MoonlightAct:
                 self._cancel_moon_confirmation()
                 return False
             if not self.appear(self.I_MOON_BATTLE):
-                raise GameStuckError('Moonlight page changed while checking challenge resource')
+                raise GameStuckError('月华流光：复查挑战资源时页面发生变化')
             resource = self.O_MOON_RESOURCE.ocr_digit(self.device.image)
             if resource < 6:
-                logger.info('Moonlight resource below 6 on two reads; stop challenges')
+                logger.info('月华流光：连续两次识别到挑战资源不足 6 点，停止挑战')
                 return False
         if not self.appear_then_click(self.I_MOON_CHALLENGE, interval=0):
-            raise GameStuckError('Moonlight challenge button is not visible or click was blocked')
+            raise GameStuckError('月华流光：未识别到挑战按钮，或点击未执行')
         deadline = time.monotonic() + self.ENTRY_TIMEOUT
         reward_cap_confirmed = False
         while time.monotonic() < deadline:
@@ -90,11 +90,11 @@ class MoonlightAct:
                     if not reward_cap_confirmed:
                         if not (self.appear_then_click(self.I_UI_CONFIRM, interval=0)
                                 or self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=0)):
-                            raise GameStuckError('Moonlight reward-cap confirmation could not be clicked')
+                            raise GameStuckError('月华流光：无法确认奖励已达上限的提示')
                         reward_cap_confirmed = True
                     time.sleep(.3)
                     continue
-                logger.warning('Moonlight challenge blocked by unknown confirmation; stop')
+                logger.warning('月华流光：出现未知确认弹窗，取消并停止挑战')
                 self._cancel_moon_confirmation()
                 return False
             # A generic reward overlay is not evidence of a new challenge. The
@@ -104,13 +104,13 @@ class MoonlightAct:
             if entered and not self._moon_confirmation_visible():
                 return True
             time.sleep(.3)
-        raise GameStuckError('Moonlight did not enter battle after challenge')
+        raise GameStuckError('月华流光：点击挑战后等待进入战斗超时')
 
     def _moon_time_limit_reached(self) -> bool:
         return datetime.now() - self.start_time >= self.conf.general_config.limit_time_v
 
     def run_moonlight(self):
-        logger.hr('Start activity: 月华流光', 1)
+        logger.hr('开始活动：月华流光', 1)
         self.moonlight_count = 0
         self._battle_shared_state.pop('moonlight', None)
         general = self.conf.general_config
