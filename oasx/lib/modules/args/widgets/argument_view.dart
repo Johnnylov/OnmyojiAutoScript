@@ -96,7 +96,7 @@ class _ArgumentViewState extends State<ArgumentView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SelectableText(
+          Text(
             model.title.tr,
             style: theme.textTheme.bodyLarge?.copyWith(
               fontWeight: FontWeight.w600,
@@ -106,7 +106,7 @@ class _ArgumentViewState extends State<ArgumentView> {
           _buildFormSection(),
           if (description.isNotEmpty) ...[
             const SizedBox(height: 5),
-            SelectableText(
+            Text(
               description,
               maxLines: lengthy && !_descriptionExpanded ? 2 : null,
               style: theme.textTheme.bodySmall?.copyWith(
@@ -193,6 +193,15 @@ class _ArgumentViewState extends State<ArgumentView> {
       model.title,
     );
     final isLocked = _isProtectedImmediateScheduleField;
+    if (model.title == 'real_deadline') {
+      return DeadlinePicker(
+        key: ValueKey('deadline-${widget.getGroupName()}-${model.title}'),
+        value: model.value.toString(),
+        enabled: !isLocked,
+        errorText: errorText,
+        onChanged: (value) => _applyValue(value, 'string', useSetState: true),
+      );
+    }
     final child = switch (model.type) {
       'boolean' => Checkbox(
         value: model.value,
@@ -364,6 +373,10 @@ class _ArgumentViewState extends State<ArgumentView> {
 
   void _scheduleStringChange(String value) {
     timer?.cancel();
+    if (_argsController.isDraftMode.value) {
+      onStringChanged(value);
+      return;
+    }
     timer = Timer(
       const Duration(milliseconds: 150),
       () => onStringChanged(value),
@@ -372,6 +385,10 @@ class _ArgumentViewState extends State<ArgumentView> {
 
   void _scheduleNumberChange(String value) {
     timer?.cancel();
+    if (_argsController.isDraftMode.value) {
+      onNumberChanged(value);
+      return;
+    }
     timer = Timer(
       const Duration(milliseconds: 150),
       () => onNumberChanged(value),
@@ -380,6 +397,10 @@ class _ArgumentViewState extends State<ArgumentView> {
 
   void _scheduleIntegerChange(String value) {
     timer?.cancel();
+    if (_argsController.isDraftMode.value) {
+      onIntegerChanged(value);
+      return;
+    }
     timer = Timer(
       const Duration(milliseconds: 150),
       () => onIntegerChanged(value),

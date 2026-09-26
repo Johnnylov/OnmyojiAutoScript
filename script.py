@@ -39,8 +39,9 @@ from module.script.team_sync import LocalTeamCoordinator
 from tasks.Restart.server_update import delay_pending_tasks_for_server_update, is_server_update_window
 from module.server.log_service import build_error_log_dir_name
 from module.scheduling.runtime import (ExecutionRuntime, SafeBoundaryExit, ReconciliationRequired,
-                                      DispatchStopped, classify_outcome, cooperative_task)
+                                      DispatchStopped, DeadlineExpired, classify_outcome, cooperative_task)
 from module.scheduling.coordinator import LeaseLost
+from module.scheduling.deadline import is_expired
 
 _log_switch_lock = threading.Lock()#线程锁
 
@@ -376,6 +377,7 @@ class Script:
         :return:
         """
         from module.scheduling.coordinator import LeaseLost
+        from module.scheduling.deadline import is_expired
         while True:
             task = self.config.get_next()
             team_sync = getattr(self, 'team_sync', None)
@@ -384,11 +386,16 @@ class Script:
             if requested and (task.command != 'Restart' or task.next_run > datetime.now()):
                 from module.config.config import Function
                 key = convert_to_underscore(requested)
-                task = Function(key, getattr(self.config.model, key).model_dump())
-                task.next_run = datetime.now().replace(microsecond=0)
-                self.config.pending_task = [task] + [
-                    item for item in self.config.pending_task if item.command != requested]
-                self.config.waiting_task = [item for item in self.config.waiting_task if item.command != requested]
+                requested_task = Function(key, getattr(self.config.model, key).model_dump())
+                if is_expired(requested_task.scheduling.get('deadline'), time.time()):
+                    requested = None
+                    self._waiting_team_request = None
+                else:
+                    task = requested_task
+                    task.next_run = datetime.now().replace(microsecond=0)
+                    self.config.pending_task = [task] + [
+                        item for item in self.config.pending_task if item.command != requested]
+                    self.config.waiting_task = [item for item in self.config.waiting_task if item.command != requested]
             now = datetime.now()
             antiban_wake = self.anti_ban_guard.wake_time(now, self.config.script.anti_ban)
             if antiban_wake is not None:
@@ -611,7 +618,7 @@ class Script:
         :return:
         """
         from time import monotonic
-        from module.scheduling.runtime import DispatchStopped, ReconciliationRequired
+        from module.scheduling.runtime import DispatchStopped, ReconciliationRequired, DeadlineExpired
         from module.scheduling.coordinator import LeaseLost
         team_sync = getattr(self, 'team_sync', None)
         try:
@@ -659,6 +666,10 @@ class Script:
                         self.solana_execution.begin(task, task_config, cooperative_task(task, self.config),
                             device_config=self.config.script.device.model_dump(mode='json'))
                     decision = self.runtime.prepare_task_execution(task)
+                except DeadlineExpired:
+                    logger.info(f'活动截止时间已到，跳过任务 `{task}`')
+                    del_cached_property(self, 'config')
+                    continue
                 except Exception as e:
                     if isinstance(e, (LeaseLost, ReconciliationRequired)):
                         raise DispatchStopped(str(e)) from e
@@ -680,6 +691,14 @@ class Script:
                     # recovery fence and retry the same due task forever.
                     self._finish_preparation_reschedule()
                     logger.warning(f'Runtime preparation for `{task}` failed, reload config and retry scheduling')
+                    del_cached_property(self, 'config')
+                    continue
+
+                execution = getattr(self, 'solana_execution', None)
+                if execution is not None and execution.deadline_expired():
+                    # Login/environment preparation can cross the cutoff. No
+                    # activity should start afterward, in any scheduler mode.
+                    execution.finish('cancelled', 'deadline_expired')
                     del_cached_property(self, 'config')
                     continue
 
@@ -715,6 +734,9 @@ class Script:
                             'next_run': str((self.last_task_runtime_outcome or {}).get('wait_until'))})
                         reason = 'business_precondition:' + str((self.last_task_runtime_outcome or {}).get('reason'))
                     execution.finish(final_outcome, reason)
+                    if reason == 'deadline_expired' and control not in ('stop', 'safe_stop'):
+                        del_cached_property(self, 'config')
+                        continue
                     if final_outcome == 'cancelled' and (control in ('stop', 'safe_stop') or
                             not str(reason or '').startswith('business_precondition:')):
                         raise DispatchStopped(0)

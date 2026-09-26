@@ -24,6 +24,7 @@ from module.notify.notify import Notifier
 
 from module.exception import RequestHumanTakeover, ScriptError
 from module.logger import logger
+from module.scheduling.deadline import deadline_timestamp, is_expired
 
 
 class Function:
@@ -54,11 +55,9 @@ class Function:
             priority = int(priority)
         self.priority: int = priority
         deadline = data['scheduler'].get('real_deadline')
-        if isinstance(deadline, str) and deadline:
-            deadline = datetime.fromisoformat(deadline)
         self.scheduling = {'fair_weight': data['scheduler'].get('fair_weight', 1),
             'estimated_batch_seconds': data['scheduler'].get('estimated_batch_seconds', 120),
-            'deadline': deadline.timestamp() if isinstance(deadline, datetime) else None}
+            'deadline': deadline_timestamp(deadline)}
         from module.scheduling.runtime import config_revision
         self.scheduling['config_revision'] = config_revision(data)
         if not isinstance(self.priority, int):
@@ -189,10 +188,14 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
         """
         pending_task = []
         waiting_task = []
+        expired_task = []
         error = []
         self.scheduler_update_dt = datetime.now()
         for key, value in self.model.dict().items():
             func = Function(key, value)
+            if is_expired(getattr(func, 'scheduling', {}).get('deadline'), self.scheduler_update_dt.timestamp()):
+                expired_task.append(func)
+                continue
             if not func.enable:
                 continue
             if key == 'mystery_shop':
@@ -236,6 +239,7 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
 
         self.pending_task = pending_task
         self.waiting_task = waiting_task
+        self.expired_task = expired_task
 
     def get_next(self) -> Function:
         """
@@ -257,6 +261,12 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
             task = copy.deepcopy(self.waiting_task[0])
             # task.next_run = (task.next_run + self.hoarding).replace(microsecond=0)
             logger.attr("Task", task)
+            return task
+        elif self.expired_task:
+            # Keep the executor responsive to stop/config edits without running
+            # an expired activity or repeatedly logging it as a due task.
+            task = copy.deepcopy(self.expired_task[0])
+            task.next_run = datetime.now() + timedelta(seconds=60)
             return task
         else:
             logger.critical("No task waiting or pending")
@@ -288,6 +298,10 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
         for w in self.waiting_task:
             item = {"name": w.command, "next_run": str(w.next_run)}
             waiting.append(item)
+        for w in getattr(self, 'expired_task', []):
+            if w.enable:
+                waiting.append({'name': w.command, 'next_run': str(w.next_run),
+                                'reason': 'deadline_expired'})
 
         data = {"running": running, "pending": pending, "waiting": waiting}
         return data

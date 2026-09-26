@@ -5,6 +5,7 @@ Callers supply clocks; this module never sleeps or operates a device.
 """
 from dataclasses import asdict, dataclass, field
 import math
+from .deadline import is_expired
 
 
 @dataclass
@@ -55,7 +56,8 @@ class Candidate:
     ready_since: float | None = None
 
     def runnable(self, now):
-        return self.enabled and not self.blocked_reason and self.release_at <= now
+        return (self.enabled and not self.blocked_reason and self.release_at <= now
+                and not is_expired(self.deadline, now))
 
 
 class FairScheduler:

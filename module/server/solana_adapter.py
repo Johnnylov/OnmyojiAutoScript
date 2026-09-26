@@ -5,6 +5,7 @@ import json
 import re
 
 from module.server.solana_runtime import ServiceError
+from module.scheduling.deadline import deadline_timestamp, is_expired
 
 
 class ManagerAdapter:
@@ -50,7 +51,8 @@ class ManagerAdapter:
                 due = datetime.fromisoformat(schedule['next_run']).replace(tzinfo=None) <= now
             except (KeyError, TypeError, ValueError):
                 continue
-            if due and business_preflight(command, now) is None:
+            if (due and not is_expired(deadline_timestamp(schedule.get('real_deadline')), now.timestamp())
+                    and business_preflight(command, now) is None):
                 tasks.add(command)
         return sorted(tasks)
 
@@ -74,7 +76,8 @@ class ManagerAdapter:
                 except (TypeError, ValueError):
                     due = False
                 state = service.profile_state.get(profile_id, {}).get('state')
-                reason = ('profile_inactive' if not running else 'paused' if state in ('paused', 'pausing')
+                expired = is_expired(deadline_timestamp(schedule.get('real_deadline')), now.timestamp())
+                reason = ('deadline_expired' if expired else 'profile_inactive' if not running else 'paused' if state in ('paused', 'pausing')
                           else 'scheduled' if not due else 'waiting_device')
                 public_task = schedule.get('command') or task_id
                 if (profile_id, public_task) in active:
@@ -83,7 +86,7 @@ class ManagerAdapter:
                         'config_key': task_id, 'task': public_task, 'next_run': next_run,
                         'reason': reason, 'estimated_seconds': None,
                         'cooperative': task_id == 'orochi' and config.get('orochi_config', {}).get('user_status') == 'alone'}
-                (ready if running and due and state not in ('paused', 'pausing') else waiting).append(item)
+                (ready if running and due and not expired and state not in ('paused', 'pausing') else waiting).append(item)
         return {'ready': ready, 'waiting': waiting}
 
     async def control(self, service, receipt):
@@ -137,14 +140,14 @@ class ManagerAdapter:
             return timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
         return value
 
-    def save_value(self, service, data):
+    def save_value(self, service, data, *, source=None, reason=None):
         from module.config.utils import convert_to_underscore
         from module.server.config_manager import ConfigManager
         from module.config.edit_lock import config_edit_lock, ConfigConflict
         name = service.profile_name(data['profile_id'])
         with service.lock, config_edit_lock(self._path(name)):
             request_id = data['request_id']
-            source = {'type': 'client', 'client_id': str(data.get('client_id') or 'unspecified')[:128]}
+            source = source or {'type': 'client', 'client_id': str(data.get('client_id') or 'unspecified')[:128]}
             digest = hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
             previous_request = service.store.checkpoints.get('config_requests', request_id)
             if previous_request:
@@ -177,6 +180,7 @@ class ManagerAdapter:
                           'source': source,
                           'profile_id': service.profile_id(name), 'config_revision': revision,
                           'payload': {'action': 'config.change', 'path': f'{task}.{group}.{argument}',
+                                      **({'reason': reason, 'task_id': task} if reason else {}),
                                       'name': name, 'request_kind': 'config_requests', 'request_digest': digest}})
             record = {'digest': digest, 'previous_revision': revision, 'terminal': False,
                       'verified': False, 'path': f'{task}.{group}.{argument}',
@@ -233,7 +237,8 @@ class ManagerAdapter:
                 service.emit({'type': 'config.changed', 'request_id': request_id,
                               'source': source,
                               'profile_id': service.profile_id(name), 'config_revision': new_revision,
-                              'payload': {'changes': changes, 'previous_revision': revision, 'applies_to': 'next_run'}})
+                              'payload': {'changes': changes, 'previous_revision': revision, 'applies_to': 'next_run',
+                                          **({'reason': reason, 'task_id': task} if reason else {})}})
                 completion = service.emit({'type': 'control.completed', 'request_id': request_id,
                     'source': source,
                     'profile_id': service.profile_id(name), 'config_revision': new_revision,

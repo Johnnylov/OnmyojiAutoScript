@@ -81,6 +81,9 @@ class SolanaController extends ChangeNotifier {
       _feedbackFor(selectedProfile).failed = value;
   bool _disposed = false;
   bool _refreshing = false;
+  bool _liveRefreshPending = false;
+  final previewChanges = ChangeNotifier();
+  final deadlineChanges = ValueNotifier<JsonObject?>(null);
   bool _switchingBackend = false;
   int _filterGeneration = 0;
   Timer? _poll;
@@ -192,6 +195,7 @@ class SolanaController extends ChangeNotifier {
     _debounce?.cancel();
     _reconnect?.cancel();
     _refreshing = false;
+    _liveRefreshPending = false;
     final subscription = _subscription;
     final channel = _channel;
     _subscription = null;
@@ -254,11 +258,12 @@ class SolanaController extends ChangeNotifier {
     String path, {
     JsonObject? query,
     int? generation,
+    bool notify = true,
   }) async {
     if (_disposed || _switchingBackend) return;
     final backend = _backendGeneration;
     target.loading = true;
-    _emit();
+    if (notify && target.data == null) _emit();
     try {
       final value = await api.get(path, query: query);
       if (_disposed ||
@@ -301,7 +306,7 @@ class SolanaController extends ChangeNotifier {
           (generation == null || generation == _filterGeneration)) {
         target.loading = false;
       }
-      _emit();
+      if (notify) _emit();
     }
   }
 
@@ -310,26 +315,75 @@ class SolanaController extends ChangeNotifier {
     final backend = _backendGeneration;
     _refreshing = true;
     try {
-      await _load(overview, '/api/v2/overview');
+      await _load(overview, '/api/v2/overview', notify: false);
       if (_disposed || backend != _backendGeneration) return;
       final generation = _filterGeneration;
-      await Future.wait([
+      final reads = Future.wait([
         _load(
           scheduler,
           '/api/v2/scheduler',
           query: {if (selectedProfile != null) 'profile_id': selectedProfile},
           generation: generation,
+          notify: false,
         ),
-        _load(storage, '/api/v2/storage'),
-        refreshRecovery(),
-        refreshHistory(),
+        _load(storage, '/api/v2/storage', notify: false),
+        refreshRecovery(notify: false),
+        refreshHistory(notify: false),
       ]);
+      if (scheduler.data == null) _emit();
+      await reads;
     } finally {
-      if (backend == _backendGeneration) _refreshing = false;
+      if (backend == _backendGeneration) {
+        _refreshing = false;
+        _emit();
+        if (_liveRefreshPending) _scheduleLiveRefresh();
+      }
     }
   }
 
-  Future<void> refreshHistory() async {
+  /// Streaming events update the live workbench only. History/storage/recovery
+  /// remain on the 15-second poll and explicit user refreshes.
+  Future<void> refreshLive() async {
+    if (_disposed || _switchingBackend) return;
+    if (_refreshing) {
+      _liveRefreshPending = true;
+      return;
+    }
+    _liveRefreshPending = false;
+    _refreshing = true;
+    final backend = _backendGeneration;
+    try {
+      await _load(overview, '/api/v2/overview', notify: false);
+      if (_disposed || backend != _backendGeneration) return;
+      await _load(
+        scheduler,
+        '/api/v2/scheduler',
+        query: {if (selectedProfile != null) 'profile_id': selectedProfile},
+        generation: _filterGeneration,
+        notify: false,
+      );
+    } finally {
+      if (backend == _backendGeneration) {
+        _refreshing = false;
+        _emit();
+        if (_liveRefreshPending) _scheduleLiveRefresh();
+      }
+    }
+  }
+
+  void _scheduleLiveRefresh() {
+    if (_disposed || _switchingBackend || (_debounce?.isActive ?? false)) {
+      return;
+    }
+    // A fixed window also updates under a continuous stream; a trailing debounce
+    // could postpone the display forever while tasks keep producing events.
+    _debounce = Timer(const Duration(seconds: 1), () {
+      _debounce = null;
+      unawaited(refreshLive());
+    });
+  }
+
+  Future<void> refreshHistory({bool notify = true}) async {
     final generation = _filterGeneration;
     final query = filter;
     await Future.wait([
@@ -338,26 +392,31 @@ class SolanaController extends ChangeNotifier {
         '/api/v2/statistics',
         query: query,
         generation: generation,
+        notify: false,
       ),
       _load(
         runs,
         '/api/v2/runs',
         query: {...query, 'limit': 50},
         generation: generation,
+        notify: false,
       ),
       _load(
         audit,
         '/api/v2/audit',
         query: {...query, 'limit': 50},
         generation: generation,
+        notify: false,
       ),
     ]);
+    if (notify) _emit();
   }
 
   Future<void> selectProfile(String value) async {
     selectedProfile = value;
     preview.data = null;
     preview.error = null;
+    previewChanges.notifyListeners();
     preview.loading = false;
     ++_previewGeneration;
     _filterGeneration++;
@@ -420,24 +479,34 @@ class SolanaController extends ChangeNotifier {
       }
     } finally {
       if (generation == _previewGeneration) preview.loading = false;
-      _emit();
+      if (!_disposed && generation == _previewGeneration) {
+        previewChanges.notifyListeners();
+      }
     }
   }
 
-  Future<void> refreshRecovery() async {
+  Future<void> refreshRecovery({bool notify = true}) async {
     final query = <String, dynamic>{
       if (selectedProfile != null) 'profile_id': selectedProfile,
     };
     final generation = _filterGeneration;
     await Future.wait([
-      _load(recovery, '/api/v2/recovery', query: query, generation: generation),
+      _load(
+        recovery,
+        '/api/v2/recovery',
+        query: query,
+        generation: generation,
+        notify: false,
+      ),
       _load(
         recoveryOperations,
         '/api/v2/recovery/operations',
         query: query,
         generation: generation,
+        notify: false,
       ),
     ]);
+    if (notify) _emit();
   }
 
   Future<void> resolveOperation(
@@ -832,9 +901,19 @@ class SolanaController extends ChangeNotifier {
             if (seq != null && _streamSeq != null && seq <= _streamSeq!) return;
             if (seq != null) _streamSeq = seq;
             if (stream != null) _streamId = stream;
+            if (type == 'config.changed') {
+              final record = object(event['payload']);
+              final change = object(record['payload']);
+              if (change['reason'] == 'deadline_expired') {
+                deadlineChanges.value = {
+                  'profile_id': record['profile_id'],
+                  'task_id': change['task_id'],
+                  'event_id': event['event_id'],
+                };
+              }
+            }
             if (type != 'heartbeat' && type != 'connected') {
-              _debounce?.cancel();
-              _debounce = Timer(const Duration(milliseconds: 350), refreshAll);
+              _scheduleLiveRefresh();
             }
           } catch (_) {
             _resync();
@@ -898,6 +977,8 @@ class SolanaController extends ChangeNotifier {
     _channel?.sink.close();
     linker.removeListener(_emit);
     linker.dispose();
+    previewChanges.dispose();
+    deadlineChanges.dispose();
     api.dispose();
     super.dispose();
   }

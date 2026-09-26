@@ -664,6 +664,7 @@ String reasonLabel(String reason) {
     'recovery_backoff': '等待恢复重试间隔',
     'storage_reconciliation_required': '存储恢复后需要核验状态',
     'real_deadline': '活动即将截止，优先执行',
+    'deadline_expired': '活动已到期，任务已自动停用',
     'waiting_limit': '等待较久，安排一次执行机会',
     'legacy_order': '按原有任务顺序执行',
     'recovery_blocked': '异常恢复暂不可执行',

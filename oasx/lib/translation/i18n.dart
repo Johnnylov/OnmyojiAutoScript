@@ -63,6 +63,7 @@ part 'cn_parts/cn_demon_encounter_config.dart';
 part 'cn_parts/cn_memory_scrolls_config.dart';
 part 'cn_parts/cn_demon_retreat_config.dart';
 part 'cn_parts/cn_dye_trials_config.dart';
+part 'cn_parts/cn_backend_config.dart';
 
 class Messages extends Translations {
   @override
@@ -146,5 +147,7 @@ class Messages extends Translations {
     ..._cn_memory_scrolls_config,
     ..._cn_demon_retreat_config,
     ..._cn_dye_trials_config,
+    // Configuration pages also need the backend additions on first/offline load.
+    ..._cn_backend_config,
   };
 }

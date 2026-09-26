@@ -43,6 +43,7 @@ class RuntimeService(RecoveryMixin, ExecutionMetricsMixin):
         self.active_operations = set()
         self.latest_control_request = {}
         self.closed = False
+        self.deadline_monitor = None
         self.dispatch_blocked = False
         self._reducer_dirty = False
         if self.store.checkpoints.get('settings', 'reducer_cursor') is None:
@@ -570,9 +571,13 @@ class RuntimeService(RecoveryMixin, ExecutionMetricsMixin):
             return {'policy': validated, 'applies_at': 'safe_boundary'}
 
     def close(self):
+        if self.deadline_monitor is not None:
+            self.deadline_monitor.stop()
         with self.lock:
             self.closed = True
             self.store.close()
+        if self.deadline_monitor is not None:
+            self.deadline_monitor.join()
 
     def storage_status(self):
         result = self.store.storage_status()
@@ -603,6 +608,9 @@ def get_runtime():
                 reconcile_legacy_operations(service)
                 service.pending_operations()
                 _runtime = service
+                from module.server.solana_deadlines import DeadlineMonitor
+                service.deadline_monitor = DeadlineMonitor(service)
+                service.deadline_monitor.start()
             except Exception:
                 store.close()
                 raise

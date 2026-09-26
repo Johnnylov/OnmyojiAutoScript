@@ -8,6 +8,7 @@ import uuid
 from .coordinator import LeaseLost, normalize_device_id
 from .fence import DeviceProcessLock
 from .task_metrics import BATTLE_TASKS, battle_unavailable_reason
+from .deadline import task_deadline, is_expired
 
 
 TERMINAL = {'succeeded', 'failed', 'cancelled', 'interrupted', 'crashed'}
@@ -20,6 +21,10 @@ class SafeBoundaryExit(Exception):
 
 
 class ReconciliationRequired(RuntimeError):
+    pass
+
+
+class DeadlineExpired(RuntimeError):
     pass
 
 
@@ -74,11 +79,12 @@ def task_progress_targets(command, task_config):
 
 
 class ExecutionRuntime:
-    def __init__(self, bridge, profile_name, monotonic=time.monotonic):
+    def __init__(self, bridge, profile_name, monotonic=time.monotonic, clock=time.time):
         self.bridge = bridge
         self.profile_id = getattr(bridge, 'profile_id', None) or profile_name
         self.owner_id = getattr(bridge, 'owner_id', None) or str(uuid.uuid4())
         self.monotonic = monotonic
+        self.clock = clock
         self.lease = None
         self.lease_started = None
         self.active = None
@@ -378,10 +384,11 @@ class ExecutionRuntime:
         device_id = getattr(self.bridge, 'device_id', None) or normalize_device_id(raw_device)
         self.device_id = device_id
         candidates = []
-        for task in config.pending_task + config.waiting_task:
+        for task in config.pending_task + config.waiting_task + (getattr(config, 'expired_task', None) or []):
             command = task.command
             metadata = getattr(task, 'scheduling', {})
             candidates.append({'task': command, 'release_at': max(release_floor, task.next_run.timestamp()),
+                'enabled': getattr(task, 'enable', True),
                 'quantum': metadata.get('estimated_batch_seconds', self.batch_seconds),
                 'weight': metadata.get('fair_weight', 1), 'deadline': metadata.get('deadline'),
                 'config_revision': metadata.get('config_revision', ''),
@@ -442,6 +449,13 @@ class ExecutionRuntime:
     def begin(self, command, task_config, cooperative=False, device_config=None):
         if self.active:
             raise RuntimeError('Logical run is already executing')
+        deadline = task_deadline(task_config)
+        if is_expired(deadline, self.clock()):
+            # A deadline may pass while the worker waits for its lease/team.
+            # No new run or game action has started at this point.
+            self.event('scheduler.skipped', {'reason': 'deadline_expired'}, task_id=command)
+            self.release('deadline_expired')
+            raise DeadlineExpired('活动截止时间已到，跳过本次执行')
         revision = config_revision(task_config)
         if device_config is not None:
             revision = config_revision({'task_revision': revision, 'device': device_revision(device_config)})
@@ -476,6 +490,7 @@ class ExecutionRuntime:
             self._refresh_progress()
             self.event('run.started', dict(self.progress_snapshot(), task=command, cooperative=cooperative))
         self.business_success = None
+        self.active['real_deadline'] = deadline
         self.active['queue_wait_seconds'] = self.active.get('queue_wait_seconds', 0) + self.pending_queue_wait
         self.pending_queue_wait = 0.0
         self.active['segment_id'] = str(uuid.uuid4())
@@ -511,9 +526,14 @@ class ExecutionRuntime:
             return 'paused'
         if self.storage_failed or status.get('storage_degraded'):
             return 'interrupted'
+        if self.deadline_expired():
+            return 'deadline_expired'
         if self.mode == 'eevdf' and self.monotonic() - self.segment_started >= self.batch_seconds:
             return 'yielded'
         return None
+
+    def deadline_expired(self):
+        return bool(self.active and is_expired(self.active.get('real_deadline'), self.clock()))
 
     def safe_boundary(self, count, verified, outcome):
         if not verified:
@@ -571,7 +591,8 @@ class ExecutionRuntime:
         self.save()
         self.active = None
         self.segment_started = None
-        self.release(outcome)
+        # Expiry cancels this activity only, unlike the user's profile stop.
+        self.release('deadline_expired' if reason == 'deadline_expired' else outcome)
 
 
 def classify_outcome(success, legacy_outcome=None, business_success=None):
@@ -583,7 +604,7 @@ def classify_outcome(success, legacy_outcome=None, business_success=None):
         return 'recovery_requested'
     if status in ('team_preempted', 'team_partner_finished'):
         return 'interrupted'
-    if status == 'business_skipped':
+    if status in ('business_skipped', 'deadline_expired'):
         # Explicit prerequisite discovered after a run was already started
         # (e.g. crossing an activity-window boundary during preparation).
         return 'cancelled'

@@ -23,6 +23,7 @@ import 'solana_reference_icons.dart';
 import 'solana_connection_settings.dart';
 import 'solana_deployment.dart';
 import 'solana_profile_manager.dart';
+import 'solana_device_preview.dart';
 import 'solana_widgets.dart';
 
 part 'solana_panels.dart';
@@ -62,6 +63,8 @@ class _SolanaShellState extends State<SolanaShell> {
   Map<String, List<String>> _menu = {};
   int _menuGeneration = 0;
   Timer? _previewTimer;
+  Object? _taskEditorScope;
+  Widget? _taskEditorCache;
   static const _pageNames = [
     '总览',
     '任务配置',
@@ -417,10 +420,12 @@ class _SolanaShellState extends State<SolanaShell> {
           body: Stack(
             children: [
               Positioned.fill(
-                child: CustomPaint(
-                  painter: _ReferenceBackground(
-                    dark: _dark,
-                    simple: _lowEffects,
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    painter: _ReferenceBackground(
+                      dark: _dark,
+                      simple: _lowEffects,
+                    ),
                   ),
                 ),
               ),
@@ -1115,7 +1120,10 @@ class _SolanaShellState extends State<SolanaShell> {
         ),
       ),
       const SizedBox(height: 8),
-      AspectRatio(aspectRatio: 16 / 9, child: _preview()),
+      AspectRatio(
+        aspectRatio: 16 / 9,
+        child: SolanaDevicePreview(controller: c),
+      ),
     ],
   );
 
@@ -1226,73 +1234,6 @@ class _SolanaShellState extends State<SolanaShell> {
     ),
   );
 
-  Widget _preview() {
-    final data = c.preview.data;
-    Widget? frame;
-    if (data?['available'] == true && data?['image_base64'] is String) {
-      try {
-        frame = Image.memory(
-          base64Decode(data!['image_base64']),
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => _previewEmpty('画面无法显示'),
-        );
-      } catch (_) {
-        frame = null;
-      }
-    }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: DecoratedBox(
-        decoration: const BoxDecoration(color: Color(0xFF273141)),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            frame ??
-                _previewEmpty(c.preview.error == null ? '暂无设备画面' : '设备画面暂不可用'),
-            if (frame != null)
-              Positioned(
-                right: 5,
-                bottom: 5,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 5,
-                    vertical: 2,
-                  ),
-                  color: Colors.black45,
-                  child: Text(
-                    '${displayTime(data?['occurred_at'])}${data?['stale'] == true || !c.connected ? ' · 最近画面' : ''}',
-                    style: const TextStyle(fontSize: 9, color: Colors.white70),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _previewEmpty(String label) => Column(
-    mainAxisAlignment: MainAxisAlignment.center,
-    children: [
-      const Icon(
-        Icons.desktop_windows_outlined,
-        size: 29,
-        color: Color(0xFF8793A5),
-      ),
-      const SizedBox(height: 8),
-      Text(
-        label,
-        style: const TextStyle(fontSize: 11, color: Color(0xFFB2BDCE)),
-      ),
-      const SizedBox(height: 3),
-      const Text(
-        '等待执行器提供最近画面',
-        style: TextStyle(fontSize: 9, color: Color(0xFF8290A6)),
-      ),
-    ],
-  );
-
   Widget _mainColumn(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -1331,12 +1272,7 @@ class _SolanaShellState extends State<SolanaShell> {
       Expanded(
         child: switch (_page) {
           0 => _overviewCompact(context),
-          1 => SolanaTasks(
-            key: _tasksKey,
-            controller: c,
-            showCatalog: false,
-            initialTask: _selectedTask,
-          ),
+          1 => _taskEditor(),
           2 => _scheduler(context),
           3 => _statistics(context),
           4 => _audit(context),
@@ -1363,6 +1299,28 @@ class _SolanaShellState extends State<SolanaShell> {
       ),
     ],
   );
+
+  Widget _taskEditor() {
+    final scope = (
+      c.backendGeneration,
+      c.selectedProfile,
+      c.profile['name'],
+      _selectedTask,
+      c.connected,
+      c.canControl,
+      c.controlReviewRequired,
+    );
+    if (_taskEditorScope != scope || _taskEditorCache == null) {
+      _taskEditorScope = scope;
+      _taskEditorCache = SolanaTasks(
+        key: _tasksKey,
+        controller: c,
+        showCatalog: false,
+        initialTask: _selectedTask,
+      );
+    }
+    return _taskEditorCache!;
+  }
 
   Widget _operationFeedback() {
     final message = c.operationMessage!;

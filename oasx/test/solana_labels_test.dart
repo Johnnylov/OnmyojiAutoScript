@@ -116,6 +116,7 @@ void main() {
       const codes = [
         'scheduled',
         'real_deadline',
+        'deadline_expired',
         'waiting_limit',
         'recovery_blocked',
         'legacy_order',

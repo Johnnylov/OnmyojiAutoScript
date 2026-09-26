@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:oasx/modules/args/index.dart';
@@ -34,14 +36,105 @@ class SolanaTasksState extends State<SolanaTasks> {
   int _generation = 0;
   int _editorKey = 0;
   String? _loadedProfile;
+  Timer? _deadlinePoll;
+  bool _checkingDeadline = false;
+  int _deadlineGeneration = 0;
   ArgsController get args => Get.find<ArgsController>();
 
   @override
   void initState() {
     super.initState();
     if (!Get.isRegistered<ArgsController>()) Get.put(ArgsController());
+    widget.controller.deadlineChanges.addListener(_onDeadlineChange);
     if (widget.showCatalog) _loadMenu();
     if (widget.initialTask != null) _loadForm(widget.initialTask!);
+  }
+
+  @override
+  void dispose() {
+    _deadlinePoll?.cancel();
+    widget.controller.deadlineChanges.removeListener(_onDeadlineChange);
+    super.dispose();
+  }
+
+  void _onDeadlineChange() {
+    final change = widget.controller.deadlineChanges.value;
+    String normalize(Object? value) =>
+        value.toString().replaceAll('_', '').toLowerCase();
+    if (change?['profile_id'] == _loadedProfile &&
+        normalize(change?['task_id']) == normalize(_task)) {
+      unawaited(_showDeadlineDisabled());
+    }
+  }
+
+  void _armDeadlinePoll() {
+    final deadline = args.findArgument('scheduler', 'real_deadline')?.value;
+    _deadlinePoll?.cancel();
+    if (deadline != null && deadline.toString().trim().isNotEmpty) {
+      _deadlinePoll = Timer.periodic(const Duration(seconds: 15), (_) {
+        unawaited(_checkDeadlineStatus());
+      });
+    }
+  }
+
+  /// Recover a missed expiry event after reconnecting, only for a form with a
+  /// saved cutoff. Ordinary forms add no background configuration requests.
+  Future<void> _checkDeadlineStatus() async {
+    final session = _session;
+    if (!mounted ||
+        _checkingDeadline ||
+        _loadingForm ||
+        _saveBlocked ||
+        session == null ||
+        !widget.controller.connected ||
+        args.isSavingDraft.value) {
+      return;
+    }
+    final deadline = args.findArgument('scheduler', 'real_deadline')?.value;
+    if (deadline == null || deadline.toString().trim().isEmpty) return;
+    final enabled = args.findArgument('scheduler', 'enable')?.value == true;
+    if (!enabled) return;
+    _checkingDeadline = true;
+    try {
+      final latest = await widget.controller.api.get(
+        '/api/v2/config/${Uri.encodeComponent(session.sourceId)}/${Uri.encodeComponent(session.task)}/args',
+      );
+      if (!mounted || !identical(_session, session)) return;
+      final fields = objects(object(latest['args'])['scheduler']);
+      final cutoff = fields
+          .where((field) => field['name'] == 'real_deadline')
+          .firstOrNull?['value'];
+      final date = DateTime.tryParse(cutoff?.toString() ?? '');
+      if (date != null &&
+          !date.isAfter(DateTime.now()) &&
+          fields.any(
+            (field) => field['name'] == 'enable' && field['value'] == false,
+          )) {
+        await _showDeadlineDisabled();
+      }
+    } catch (_) {
+      // Connection errors retain the current form and its draft.
+    } finally {
+      _checkingDeadline = false;
+    }
+  }
+
+  Future<void> _showDeadlineDisabled() async {
+    if (!mounted || _task == null || _loadingForm) return;
+    _deadlineGeneration++;
+    if (args.hasDraftChanges || args.isSavingDraft.value) {
+      setState(() {
+        _saveBlocked = true;
+        _error = '该任务已到截止时间，后端已自动取消启用。当前未保存的修改已保留，请重新加载核对后再保存。';
+      });
+      return;
+    }
+    final task = _task!;
+    final profile = _loadedProfile;
+    await _loadForm(task);
+    if (mounted && profile == _loadedProfile && task == _task) {
+      setState(() => _error = '该任务已到截止时间，已自动取消启用。');
+    }
   }
 
   @override
@@ -180,6 +273,7 @@ class SolanaTasksState extends State<SolanaTasks> {
         saveArgumentOverride: _saveArgument,
       );
       if (!mounted || generation != _generation) return;
+      _armDeadlinePoll();
       setState(() {
         _loadingForm = false;
         _editorKey++;
@@ -205,6 +299,7 @@ class SolanaTasksState extends State<SolanaTasks> {
     dynamic value,
   ) async {
     final session = _session;
+    final deadlineGeneration = _deadlineGeneration;
     if (_saveBlocked ||
         !widget.controller.connected ||
         session == null ||
@@ -213,7 +308,17 @@ class SolanaTasksState extends State<SolanaTasks> {
     }
     try {
       final result = await session.saveField(group, argument, type, value);
+      if (deadlineGeneration != _deadlineGeneration) {
+        // An expiry may be delivered while an earlier save response is still
+        // in flight. Keep the conflict and stop saving the remaining fields.
+        return false;
+      }
       _saveBlocked = !result.allSuccess;
+      if (result.allSuccess &&
+          group == 'scheduler' &&
+          argument == 'real_deadline') {
+        _armDeadlinePoll();
+      }
       if (mounted) {
         setState(
           () => _error = result.allSuccess

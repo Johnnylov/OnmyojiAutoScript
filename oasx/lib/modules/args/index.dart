@@ -16,6 +16,7 @@ import 'package:oasx/api/api_client.dart';
 import 'package:oasx/modules/common/models/config_drag_payload.dart';
 import 'package:oasx/modules/common/widgets/drag_copy_feedback.dart';
 import 'package:oasx/service/websocket_service.dart';
+import 'package:oasx/translation/config_labels.dart';
 import 'package:oasx/utils/platform_utils.dart';
 import 'package:styled_widget/styled_widget.dart';
 
@@ -27,6 +28,8 @@ part 'widgets/time_delta_picker.dart';
 part 'widgets/time_picker.dart';
 part 'widgets/argument_view.dart';
 part 'widgets/argument_view_actions.dart';
+part 'widgets/deadline_picker.dart';
+part 'widgets/readable_args_list.dart';
 part 'controllers/args_controller.dart';
 
 typedef SetArgumentCallback =
@@ -89,59 +92,69 @@ class Args extends StatelessWidget {
             .trim();
         final selectedTask = (taskName ?? Get.parameters['task'] ?? '').trim();
         final groupNames = controller.groupsName.value;
-        final content = LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                child: ExpansionTileGroup(
-                  spaceBetweenItem: 10,
-                  children: groupNames
-                      .map(
-                        (name) => ExpansionTileItem(
-                          key: ValueKey<String>(
-                            'args-group-$selectedScript-$selectedTask-$name',
-                          ),
-                          initiallyExpanded: true,
-                          isHasTopBorder: false,
-                          isHasBottomBorder: false,
-                          backgroundColor: _groupBackgroundColor(
-                            context,
-                            selectedScript,
-                            selectedTask,
-                            name,
-                          ),
-                          borderRadius: const BorderRadius.all(
-                            Radius.circular(10),
-                          ),
-                          title:
-                              <Widget>[
-                                if (groupDraggable)
-                                  _buildGroupDragHandle(
-                                    context,
-                                    selectedScript,
-                                    selectedTask,
-                                    name,
-                                  ),
-                                Text(name.tr),
-                              ].toRow(
-                                mainAxisAlignment: MainAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
+        final content = readableLayout
+            ? _ReadableArgsList(
+                editor: this,
+                groupNames: groupNames,
+                selectedScript: selectedScript,
+                selectedTask: selectedTask,
+              )
+            : LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minWidth: constraints.maxWidth,
+                      ),
+                      child: ExpansionTileGroup(
+                        spaceBetweenItem: 10,
+                        children: groupNames
+                            .map(
+                              (name) => ExpansionTileItem(
+                                key: ValueKey<String>(
+                                  'args-group-$selectedScript-$selectedTask-$name',
+                                ),
+                                initiallyExpanded: true,
+                                isHasTopBorder: false,
+                                isHasBottomBorder: false,
+                                backgroundColor: _groupBackgroundColor(
+                                  context,
+                                  selectedScript,
+                                  selectedTask,
+                                  name,
+                                ),
+                                borderRadius: const BorderRadius.all(
+                                  Radius.circular(10),
+                                ),
+                                title:
+                                    <Widget>[
+                                      if (groupDraggable)
+                                        _buildGroupDragHandle(
+                                          context,
+                                          selectedScript,
+                                          selectedTask,
+                                          name,
+                                        ),
+                                      Text(configGroupLabel(name)),
+                                    ].toRow(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                    ),
+                                children: _children(
+                                  groupName: name,
+                                  selectedScript: selectedScript,
+                                  selectedTask: selectedTask,
+                                ),
                               ),
-                          children: _children(
-                            groupName: name,
-                            selectedScript: selectedScript,
-                            selectedTask: selectedTask,
-                          ),
-                        ),
-                      )
-                      .toList(),
-                ),
-              ),
-            );
-          },
-        );
+                            )
+                            .toList(),
+                      ),
+                    ),
+                  );
+                },
+              );
         if (!stagingMode) {
           return content;
         }

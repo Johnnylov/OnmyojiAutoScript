@@ -122,9 +122,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.byType(TextFormField), findsNWidgets(5));
-      expect(find.byType(DropdownButtonFormField<String>), findsNWidgets(4));
-      expect(find.byType(Checkbox), findsNWidgets(3));
+      // The long editor builds fields as they enter the viewport.
+      expect(find.byType(TextFormField), findsWidgets);
       final empty = find.byKey(const ValueKey('argument-input-模拟器设置-稳定设备标识'));
       final field = tester.widget<TextField>(
         find.descendant(of: empty, matching: find.byType(TextField)),
@@ -156,6 +155,27 @@ void main() {
       await tester.tap(find.text('展开完整说明'));
       await tester.pumpAndSettle();
       expect(find.text('收起说明'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      final scrollable = find.byWidgetPredicate(
+        (widget) =>
+            widget is Scrollable && widget.axisDirection == AxisDirection.down,
+      );
+      for (final entry in fields) {
+        final argument = find.byKey(
+          ValueKey('args-fixture-Script-模拟器设置-${entry['name']}'),
+        );
+        await tester.scrollUntilVisible(argument, 250, scrollable: scrollable);
+        await tester.pumpAndSettle();
+        final control = switch (entry['type']) {
+          'boolean' => find.byType(Checkbox),
+          'enum' => find.byType(DropdownButtonFormField<String>),
+          _ => find.byType(TextFormField),
+        };
+        expect(
+          find.descendant(of: argument, matching: control),
+          findsOneWidget,
+        );
+      }
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },

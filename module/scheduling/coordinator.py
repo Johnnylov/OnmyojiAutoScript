@@ -143,10 +143,16 @@ class Coordinator:
                         legacy.append(identity + ':' + task)
             selected = fair.get('key') if fair and policy.mode == 'eevdf' else (legacy[0] if legacy else None)
             decision = dict(fair or {})
+            expired = {c.key: 'deadline_expired' for c in all_candidates
+                       if c.enabled and c.deadline is not None and wall_now >= c.deadline}
+            if expired:
+                decision['blocked'] = {**decision.get('blocked', {}), **expired}
             decision.update(mode=policy.mode, fair_key=fair.get('key') if fair else None,
                             legacy_key=legacy[0] if legacy else None, key=selected)
             if policy.mode != 'eevdf':
                 decision['reason'] = 'legacy_order'
+            if selected is None and expired:
+                decision['reason'] = 'deadline_expired'
             d['decision'] = decision
             if selected is None:
                 return {'status': 'waiting', 'decision': decision, 'control': d['pause'].get(profile)}
@@ -210,7 +216,7 @@ class Coordinator:
                 for candidate in d['profiles'][lease['profile_id']]['candidates']:
                     if candidate.key == lease['key']:
                         candidate.ready_since = self.monotonic()
-            if payload.get('outcome') in ('succeeded', 'failed', 'cancelled', 'interrupted', 'crashed'):
+            if payload.get('outcome') in ('succeeded', 'failed', 'cancelled', 'interrupted', 'crashed', 'deadline_expired'):
                 record = d['profiles'][lease['profile_id']]
                 record['candidates'] = [c for c in record['candidates'] if c.task != lease['task']]
             return {'released': True}
