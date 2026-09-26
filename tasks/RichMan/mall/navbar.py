@@ -8,11 +8,13 @@ from module.atom.click import RuleClick
 from module.atom.image import RuleImage
 from module.base.timer import Timer
 from module.logger import logger
+from module.exception import TaskDeferred
 
 from tasks.GameUi.page import page_main, page_guild, page_mall
 from tasks.GameUi.game_ui import GameUi
 from tasks.Component.Buy.buy import Buy
 from tasks.RichMan.assets import RichManAssets
+from tasks.RichMan.mall.plain_souls import PlainSoulExchange
 
 
 
@@ -30,7 +32,18 @@ class MallNavbar(GameUi, RichManAssets):
         进入密卷屋 蛇皮
         :return:
         """
-        self.ui_click(self.I_MALL_SCCALES, self.I_MALL_SCCALES_CHECK)
+        deadline = time.monotonic() + 30
+        for _ in range(150):
+            if time.monotonic() >= deadline:
+                break
+            self.screenshot()
+            # New gift-box artwork no longer matches the old roof/card marker.
+            card = PlainSoulExchange.O_PLAIN_CARD.ocr(self.device.image)
+            if PlainSoulExchange._plain_name(card) or self.appear(self.I_MALL_SCCALES_CHECK):
+                return
+            self.appear_then_click(self.I_MALL_SCCALES, interval=1)
+            time.sleep(.2)
+        raise TaskDeferred('未确认进入秘卷书童的御魂礼盒页面，稍后重试')
 
     def _enter_bondlings(self):
         """

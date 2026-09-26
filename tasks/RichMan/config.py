@@ -2,7 +2,7 @@
 # @author runhey
 # github https://github.com/runhey
 from datetime import timedelta, datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from tasks.Component.config_scheduler import Scheduler
 from tasks.Component.config_base import ConfigBase, DateTime, dynamic_hide
@@ -27,13 +27,21 @@ class Consignment(BaseModel):
 class Scales(BaseModel):
     # 密卷屋 蛇皮
     enable: bool = Field(title='Enable', default=False)
-    orochi_scales: int = Field(title='Orochi Scales', default=40, description='orochi_scales_help')
+    orochi_scales: bool = Field(title='Orochi Scales', default=True, description='orochi_scales_help')
     demon_souls: int = Field(title='Demon Souls', default=50, description='demon_souls_help')
     demon_class: DemonClass = Field(title='DemonClass', default=DemonClass.TSUCHIGUMO, description='demon_class_help')
     demon_position: int = Field(title='Demon Position', default=1, description='demon_position_help')
     picture_book_scrap: int = Field(title='Picture Book Scrap', default=30, description='picture_book_scrap_help')
     enable_book_auto: bool = Field(title='Enable Book Auto', default=False, description='enable_book_auto_help')
     picture_book_rule: str = Field(title='Picture Book Rule', default='auto', description='picture_book_rule_help')
+
+    @field_validator('orochi_scales', mode='before')
+    @classmethod
+    def migrate_plain_soul_switch(cls, value):
+        # The legacy loop already treated every positive quantity as enabled.
+        if type(value) is int:
+            return value > 0
+        return value
 
 
 class SpecialRoom(BaseModel):

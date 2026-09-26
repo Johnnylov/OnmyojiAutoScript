@@ -22,7 +22,7 @@ BATTLE_TASKS = frozenset({
 })
 NON_BATTLE_TASKS = frozenset({
     'Restart', 'DailyTrifles', 'TalismanPass', 'SoulsTidy', 'Delegation',
-    'AutoCheckinBigGod', 'Hyakkiyakou', 'MemoryScrolls', 'KekkaiUtilize',
+    'AutoCheckinBigGod', 'MemoryScrolls', 'KekkaiUtilize',
     'KekkaiActivation', 'CollectiveMissions', 'GuildBanquet',
     'GuildActivityMonitor', 'RichMan', 'WeeklyTrifles', 'MysteryShop',
     'FrogBoss', 'FloatParade', 'Quiz', 'KittyShop',

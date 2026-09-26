@@ -26,7 +26,6 @@
     "EvoZone",
     "GoryouRealm",
     "Exploration",
-    "Hyakkiyakou",
     "HeroTest",
     "FindJade",
     "MemoryScrolls",
@@ -251,13 +250,6 @@
     },
     {
       "kind": "enum",
-      "key": "FP32",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_models/model_precision"
-      ]
-    },
-    {
-      "kind": "enum",
       "key": "Filter",
       "contexts": [
         "Script/optimization/schedule_rule"
@@ -347,13 +339,6 @@
       "key": "HARD",
       "contexts": [
         "AbyssShadows/process_manage/difficulty"
-      ]
-    },
-    {
-      "kind": "enum",
-      "key": "INT8",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_models/model_precision"
       ]
     },
     {
@@ -498,13 +483,6 @@
     },
     {
       "kind": "enum",
-      "key": "Onnxruntime",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_models/inference_engine"
-      ]
-    },
-    {
-      "kind": "enum",
       "key": "PVE",
       "contexts": [
         "HeroTest/herotest/skill_mode"
@@ -590,13 +568,6 @@
       "key": "TCP",
       "contexts": [
         "GlobalGame/team_flow/transport"
-      ]
-    },
-    {
-      "kind": "enum",
-      "key": "TensorRT",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_models/inference_engine"
       ]
     },
     {
@@ -1494,7 +1465,6 @@
       "kind": "enum",
       "key": "minitouch",
       "contexts": [
-        "Hyakkiyakou/debug_config/hya_control_method",
         "Script/device/control_method"
       ]
     },
@@ -1549,7 +1519,6 @@
       "kind": "enum",
       "key": "nemu_ipc",
       "contexts": [
-        "Hyakkiyakou/debug_config/hya_screenshot_method",
         "Script/device/screenshot_method"
       ]
     },
@@ -1689,7 +1658,6 @@
       "kind": "enum",
       "key": "window_background",
       "contexts": [
-        "Hyakkiyakou/debug_config/hya_screenshot_method",
         "Script/device/screenshot_method"
       ]
     },
@@ -1697,7 +1665,6 @@
       "kind": "enum",
       "key": "window_message",
       "contexts": [
-        "Hyakkiyakou/debug_config/hya_control_method",
         "Script/device/control_method"
       ]
     },
@@ -1853,13 +1820,6 @@
       "key": "costume_config",
       "contexts": [
         "GlobalGame"
-      ]
-    },
-    {
-      "kind": "group",
-      "key": "debug_config",
-      "contexts": [
-        "Hyakkiyakou"
       ]
     },
     {
@@ -2151,20 +2111,6 @@
     },
     {
       "kind": "group",
-      "key": "hyakkiyakou_config",
-      "contexts": [
-        "Hyakkiyakou"
-      ]
-    },
-    {
-      "kind": "group",
-      "key": "hyakkiyakou_models",
-      "contexts": [
-        "Hyakkiyakou"
-      ]
-    },
-    {
-      "kind": "group",
       "key": "invite_config",
       "contexts": [
         "BondlingFairyland",
@@ -2386,7 +2332,6 @@
         "GuildBanquet",
         "HeroTest",
         "Hunt",
-        "Hyakkiyakou",
         "KekkaiActivation",
         "KekkaiUtilize",
         "KittyShop",
@@ -2925,13 +2870,6 @@
     },
     {
       "kind": "help",
-      "key": "conf_threshold_help",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_models/conf_threshold"
-      ]
-    },
-    {
-      "kind": "help",
       "key": "control_method_help",
       "contexts": [
         "Script/device/control_method"
@@ -3060,7 +2998,6 @@
         "GuildBanquet/scheduler/delay_date",
         "HeroTest/scheduler/delay_date",
         "Hunt/scheduler/delay_date",
-        "Hyakkiyakou/scheduler/delay_date",
         "KekkaiActivation/scheduler/delay_date",
         "KekkaiUtilize/scheduler/delay_date",
         "KittyShop/scheduler/delay_date",
@@ -3233,7 +3170,6 @@
         "GuildBanquet/scheduler/enable",
         "HeroTest/scheduler/enable",
         "Hunt/scheduler/enable",
-        "Hyakkiyakou/scheduler/enable",
         "KekkaiActivation/scheduler/enable",
         "KekkaiUtilize/scheduler/enable",
         "KittyShop/scheduler/enable",
@@ -3365,7 +3301,6 @@
         "GuildBanquet/scheduler/failure_interval",
         "HeroTest/scheduler/failure_interval",
         "Hunt/scheduler/failure_interval",
-        "Hyakkiyakou/scheduler/failure_interval",
         "KekkaiActivation/scheduler/failure_interval",
         "KekkaiUtilize/scheduler/failure_interval",
         "KittyShop/scheduler/failure_interval",
@@ -3462,7 +3397,6 @@
         "GuildBanquet/scheduler/float_time",
         "HeroTest/scheduler/float_time",
         "Hunt/scheduler/float_time",
-        "Hyakkiyakou/scheduler/float_time",
         "KekkaiActivation/scheduler/float_time",
         "KekkaiUtilize/scheduler/float_time",
         "KittyShop/scheduler/float_time",
@@ -3687,139 +3621,6 @@
     },
     {
       "kind": "help",
-      "key": "hya_auto_bean_help",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_auto_bean"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "hya_bean_threshold_low_help",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_bean_threshold_low"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "hya_control_method",
-      "contexts": [
-        "Hyakkiyakou/debug_config/hya_control_method"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "hya_g_help",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_g"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "hya_info_help",
-      "contexts": [
-        "Hyakkiyakou/debug_config/hya_info"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "hya_interval_help",
-      "contexts": [
-        "Hyakkiyakou/debug_config/hya_interval"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "hya_invite_friend_help",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_invite_friend"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "hya_limit_count_help",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_limit_count"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "hya_limit_time_help",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_limit_time"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "hya_n_help",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_n"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "hya_priorities_help",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_priorities"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "hya_r_help",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_r"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "hya_save_result_help",
-      "contexts": [
-        "Hyakkiyakou/debug_config/hya_save_result"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "hya_screenshot",
-      "contexts": [
-        "Hyakkiyakou/debug_config/hya_screenshot_method"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "hya_show_help",
-      "contexts": [
-        "Hyakkiyakou/debug_config/hya_show"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "hya_sp_help",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_sp"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "hya_sr_help",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_sr"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "hya_ssr_help",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_ssr"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "inference_engine_help",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_models/inference_engine"
-      ]
-    },
-    {
-      "kind": "help",
       "key": "invite_friend_list_help",
       "contexts": [
         "BondlingFairyland/invite_config/friend_list",
@@ -3874,13 +3675,6 @@
       "key": "invite_info_count_help",
       "contexts": [
         "FindJade/find_jade_config/invite_info_count"
-      ]
-    },
-    {
-      "kind": "help",
-      "key": "iou_threshold_help",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_models/iou_threshold"
       ]
     },
     {
@@ -4105,13 +3899,6 @@
     },
     {
       "kind": "help",
-      "key": "model_precision_help",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_models/model_precision"
-      ]
-    },
-    {
-      "kind": "help",
       "key": "monday_to_thursday_help",
       "contexts": [
         "Dokan/dokan_config/monday_to_thursday"
@@ -4226,7 +4013,6 @@
         "GuildBanquet/scheduler/next_run",
         "HeroTest/scheduler/next_run",
         "Hunt/scheduler/next_run",
-        "Hyakkiyakou/scheduler/next_run",
         "KekkaiActivation/scheduler/next_run",
         "KekkaiUtilize/scheduler/next_run",
         "KittyShop/scheduler/next_run",
@@ -4467,7 +4253,6 @@
         "GuildBanquet/scheduler/priority",
         "HeroTest/scheduler/priority",
         "Hunt/scheduler/priority",
-        "Hyakkiyakou/scheduler/priority",
         "KekkaiActivation/scheduler/priority",
         "KekkaiUtilize/scheduler/priority",
         "KittyShop/scheduler/priority",
@@ -4740,7 +4525,6 @@
         "GuildBanquet/scheduler/server_update",
         "HeroTest/scheduler/server_update",
         "Hunt/scheduler/server_update",
-        "Hyakkiyakou/scheduler/server_update",
         "KekkaiActivation/scheduler/server_update",
         "KekkaiUtilize/scheduler/server_update",
         "KittyShop/scheduler/server_update",
@@ -4913,7 +4697,6 @@
         "GuildBanquet/scheduler/success_interval",
         "HeroTest/scheduler/success_interval",
         "Hunt/scheduler/success_interval",
-        "Hyakkiyakou/scheduler/success_interval",
         "KekkaiActivation/scheduler/success_interval",
         "KekkaiUtilize/scheduler/success_interval",
         "KittyShop/scheduler/success_interval",
@@ -5967,13 +5750,6 @@
     },
     {
       "kind": "label",
-      "key": "conf_threshold",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_models/conf_threshold"
-      ]
-    },
-    {
-      "kind": "label",
       "key": "control_method",
       "contexts": [
         "Script/device/control_method"
@@ -6151,7 +5927,6 @@
         "GuildBanquet/scheduler/delay_date",
         "HeroTest/scheduler/delay_date",
         "Hunt/scheduler/delay_date",
-        "Hyakkiyakou/scheduler/delay_date",
         "KekkaiActivation/scheduler/delay_date",
         "KekkaiUtilize/scheduler/delay_date",
         "KittyShop/scheduler/delay_date",
@@ -6457,7 +6232,6 @@
         "HeroTest/scheduler/enable",
         "HeroTest/switch_soul_config/enable",
         "Hunt/scheduler/enable",
-        "Hyakkiyakou/scheduler/enable",
         "KekkaiActivation/scheduler/enable",
         "KekkaiUtilize/scheduler/enable",
         "KittyShop/scheduler/enable",
@@ -6786,7 +6560,6 @@
         "GuildBanquet/scheduler/estimated_batch_seconds",
         "HeroTest/scheduler/estimated_batch_seconds",
         "Hunt/scheduler/estimated_batch_seconds",
-        "Hyakkiyakou/scheduler/estimated_batch_seconds",
         "KekkaiActivation/scheduler/estimated_batch_seconds",
         "KekkaiUtilize/scheduler/estimated_batch_seconds",
         "KittyShop/scheduler/estimated_batch_seconds",
@@ -6889,7 +6662,6 @@
         "GuildBanquet/scheduler/failure_interval",
         "HeroTest/scheduler/failure_interval",
         "Hunt/scheduler/failure_interval",
-        "Hyakkiyakou/scheduler/failure_interval",
         "KekkaiActivation/scheduler/failure_interval",
         "KekkaiUtilize/scheduler/failure_interval",
         "KittyShop/scheduler/failure_interval",
@@ -6950,7 +6722,6 @@
         "GuildBanquet/scheduler/fair_weight",
         "HeroTest/scheduler/fair_weight",
         "Hunt/scheduler/fair_weight",
-        "Hyakkiyakou/scheduler/fair_weight",
         "KekkaiActivation/scheduler/fair_weight",
         "KekkaiUtilize/scheduler/fair_weight",
         "KittyShop/scheduler/fair_weight",
@@ -7068,7 +6839,6 @@
         "GuildBanquet/scheduler/float_time",
         "HeroTest/scheduler/float_time",
         "Hunt/scheduler/float_time",
-        "Hyakkiyakou/scheduler/float_time",
         "KekkaiActivation/scheduler/float_time",
         "KekkaiUtilize/scheduler/float_time",
         "KittyShop/scheduler/float_time",
@@ -7406,181 +7176,6 @@
     },
     {
       "kind": "label",
-      "key": "hya_auto_bean",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_auto_bean"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_bean_threshold_low",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_bean_threshold_low"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_buff_add_beans",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_buff_add_beans"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_buff_freeze",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_buff_freeze"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_buff_prob_up",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_buff_prob_up"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_buff_slow_down",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_buff_slow_down"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_buff_speed_up",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_buff_speed_up"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_control_method",
-      "contexts": [
-        "Hyakkiyakou/debug_config/hya_control_method"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_g",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_g"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_info",
-      "contexts": [
-        "Hyakkiyakou/debug_config/hya_info"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_interval",
-      "contexts": [
-        "Hyakkiyakou/debug_config/hya_interval"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_invite_friend",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_invite_friend"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_limit_count",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_limit_count"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_limit_time",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_limit_time"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_n",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_n"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_onmyoji",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_onmyoji"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_priorities",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_priorities"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_r",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_r"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_save_result",
-      "contexts": [
-        "Hyakkiyakou/debug_config/hya_save_result"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_screenshot_method",
-      "contexts": [
-        "Hyakkiyakou/debug_config/hya_screenshot_method"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_show",
-      "contexts": [
-        "Hyakkiyakou/debug_config/hya_show"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_sp",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_sp"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_sr",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_sr"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "hya_ssr",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_config/hya_ssr"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "inference_engine",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_models/inference_engine"
-      ]
-    },
-    {
-      "kind": "label",
       "key": "initial_score",
       "contexts": [
         "Duel/duel_celeb_config/initial_score"
@@ -7626,13 +7221,6 @@
       "key": "invite_info_count",
       "contexts": [
         "FindJade/find_jade_config/invite_info_count"
-      ]
-    },
-    {
-      "kind": "label",
-      "key": "iou_threshold",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_models/iou_threshold"
       ]
     },
     {
@@ -7938,13 +7526,6 @@
     },
     {
       "kind": "label",
-      "key": "model_precision",
-      "contexts": [
-        "Hyakkiyakou/hyakkiyakou_models/model_precision"
-      ]
-    },
-    {
-      "kind": "label",
       "key": "monday_to_thursday",
       "contexts": [
         "Dokan/dokan_config/monday_to_thursday"
@@ -8050,7 +7631,6 @@
         "GuildBanquet/scheduler/next_run",
         "HeroTest/scheduler/next_run",
         "Hunt/scheduler/next_run",
-        "Hyakkiyakou/scheduler/next_run",
         "KekkaiActivation/scheduler/next_run",
         "KekkaiUtilize/scheduler/next_run",
         "KittyShop/scheduler/next_run",
@@ -8405,7 +7985,6 @@
         "GuildBanquet/scheduler/priority",
         "HeroTest/scheduler/priority",
         "Hunt/scheduler/priority",
-        "Hyakkiyakou/scheduler/priority",
         "KekkaiActivation/scheduler/priority",
         "KekkaiUtilize/scheduler/priority",
         "KittyShop/scheduler/priority",
@@ -8746,7 +8325,6 @@
         "GuildBanquet/scheduler/server_update",
         "HeroTest/scheduler/server_update",
         "Hunt/scheduler/server_update",
-        "Hyakkiyakou/scheduler/server_update",
         "KekkaiActivation/scheduler/server_update",
         "KekkaiUtilize/scheduler/server_update",
         "KittyShop/scheduler/server_update",
@@ -8983,7 +8561,6 @@
         "GuildBanquet/scheduler/success_interval",
         "HeroTest/scheduler/success_interval",
         "Hunt/scheduler/success_interval",
-        "Hyakkiyakou/scheduler/success_interval",
         "KekkaiActivation/scheduler/success_interval",
         "KekkaiUtilize/scheduler/success_interval",
         "KittyShop/scheduler/success_interval",

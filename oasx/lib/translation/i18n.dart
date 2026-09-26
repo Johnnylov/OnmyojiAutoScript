@@ -47,7 +47,6 @@ part 'cn_parts/cn_shop_config.dart';
 part 'cn_parts/cn_duel_config.dart';
 part 'cn_parts/cn_general_climb_config.dart';
 part 'cn_parts/cn_meta_demon_config.dart';
-part 'cn_parts/cn_hyakkiyakou_config.dart';
 part 'cn_parts/cn_kokan_config.dart';
 part 'cn_parts/cn_six_realms_config.dart';
 part 'cn_parts/cn_frog_boss_config.dart';
@@ -131,7 +130,6 @@ class Messages extends Translations {
     ..._cn_duel_config,
     ..._cn_general_climb_config,
     ..._cn_meta_demon_config,
-    ..._cn_hyakkiyakou_config,
     ..._cn_kokan_config,
     ..._cn_six_realms_config,
     ..._cn_frog_boss_config,

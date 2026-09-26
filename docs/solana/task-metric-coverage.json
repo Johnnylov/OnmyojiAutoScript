@@ -1,8 +1,8 @@
 {
-  "executable_menu_tasks": 55,
+  "executable_menu_tasks": 54,
   "battle_tasks": 35,
-  "non_battle_tasks": 20,
-  "fine_grained_tasks": 19,
+  "non_battle_tasks": 19,
+  "fine_grained_tasks": 18,
   "lifecycle_only_tasks": 36,
   "tasks": [
     {
@@ -255,15 +255,6 @@
         "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
       },
       "battle": "observed_settlements",
-      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
-    },
-    {
-      "task": "Hyakkiyakou",
-      "current_value": {
-        "unit": "局百鬼夜行",
-        "source": "one 正常返回后的 hya_count / hya_limit_count"
-      },
-      "battle": "not_applicable",
       "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
     },
     {

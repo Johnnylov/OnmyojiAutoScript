@@ -150,7 +150,12 @@ class ApiClient {
     return res.isSuccess && res.data == 'success';
   }
 
-  Future<bool> notifyTest(String setting, String title, String content) async {
+  Future<bool> notifyTest(
+    String setting,
+    String title,
+    String content, {
+    bool showFeedback = true,
+  }) async {
     final res = await request(
       () => post(
         '/home/notify_test',
@@ -162,10 +167,14 @@ class ApiClient {
       ),
     );
     if (res.isSuccess && res.data == true) {
-      Get.snackbar(I18n.notifyTestSuccess.tr, '');
+      if (showFeedback) {
+        Get.snackbar(I18n.notifyTestSuccess.tr, '');
+      }
       return true;
     }
-    Get.snackbar(I18n.notifyTestFailed.tr, res.data.toString());
+    if (showFeedback) {
+      Get.snackbar(I18n.notifyTestFailed.tr, res.data.toString());
+    }
     return false;
   }
 

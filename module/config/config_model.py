@@ -71,7 +71,6 @@ from tasks.DyeTrials.config import DyeTrials
 from tasks.BondlingFairyland.config import BondlingFairyland
 from tasks.EvoZone.config import EvoZone
 from tasks.GoryouRealm.config import GoryouRealm
-from tasks.Hyakkiyakou.config import Hyakkiyakou
 from tasks.HeroTest.config import HeroTest
 from tasks.FindJade.config import FindJade
 from tasks.MemoryScrolls.config import MemoryScrolls
@@ -138,7 +137,6 @@ class ConfigModel(ConfigBase):
     bondling_fairyland: BondlingFairyland = Field(default_factory=BondlingFairyland)
     evo_zone: EvoZone = Field(default_factory=EvoZone)
     goryou_realm: GoryouRealm = Field(default_factory=GoryouRealm)
-    hyakkiyakou: Hyakkiyakou = Field(default_factory=Hyakkiyakou)
     hero_test: HeroTest = Field(default_factory=HeroTest)
     find_jade: FindJade = Field(default_factory=FindJade)
     memory_scrolls: MemoryScrolls = Field(default_factory=MemoryScrolls)
@@ -164,7 +162,7 @@ class ConfigModel(ConfigBase):
     @classmethod
     def clear_removed_task(cls, value):
         # Old user configs may still contain the removed task's resume marker.
-        return '' if value == 'Chess' else value
+        return '' if value in ('Chess', 'Hyakkiyakou', 'hyakkiyakou') else value
 
     def __init__(self, config_name: str=None, **data) -> None:
         """

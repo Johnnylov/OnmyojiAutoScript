@@ -16,7 +16,7 @@ class ConfigManual:
         > Moonlight > ActivityShikigami > MartialTournament > WantedQuests
         > BondlingFairyland > EvoZone > GoryouRealm > HeroTest > FindJade
         > CollectiveMissions
-        > Pets > TalismanPass > Delegation > Hyakkiyakou
+        > Pets > TalismanPass > Delegation
         > Secret > WeeklyTrifles > MysteryShop > Duel
         > TrueOrochi > RichMan
         > MetaDemon > FrogBoss > FloatParade > Quiz > KittyShop > DyeTrials > MemoryScrolls > GuguArtStudio

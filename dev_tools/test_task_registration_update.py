@@ -18,6 +18,18 @@ from tasks.Script.config_optimization import ScheduleRule
 
 
 class TaskRegistrationUpdateTests(unittest.TestCase):
+    def test_removed_hyakkiyakou_cannot_resume_or_reenter_schedule(self):
+        for marker in ('Hyakkiyakou', 'hyakkiyakou'):
+            model = ConfigModel(config_name='offline', running_task=marker,
+                                hyakkiyakou={'scheduler': {'enable': True}})
+            self.assertEqual(model.running_task, '')
+            self.assertNotIn('hyakkiyakou', model.model_dump())
+            self.assertEqual(model.gui_task('Hyakkiyakou'), '')
+            self.assertEqual(model.gui_args('Hyakkiyakou'), '')
+        self.assertFalse(any('Hyakkiyakou' in tasks for tasks in ConfigMenu().menu.values()))
+        self.assertNotIn('Hyakkiyakou', ConfigManual.SCHEDULER_PRIORITY)
+        self.assertFalse((ROOT / 'tasks/Hyakkiyakou/script_task.py').exists())
+
     def test_legacy_removed_task_cannot_resume_or_reenter_schedule(self):
         model = ConfigModel(
             config_name='offline', running_task='Chess',

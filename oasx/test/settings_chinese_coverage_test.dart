@@ -32,7 +32,8 @@ void main() {
                 ).readAsStringSync(),
               )
               as Map<String, dynamic>;
-      expect((catalog['tasks'] as List).length, 57);
+      expect((catalog['tasks'] as List).length, 56);
+      expect(catalog['tasks'], isNot(contains('Hyakkiyakou')));
       final untranslated = <String>[];
       for (final entry in catalog['keys'] as List) {
         final key = entry['key'] as String;

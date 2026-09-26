@@ -136,7 +136,7 @@ timeout-minutes: 15
 **tasks/ 子目录参考**：
 | 目录 | 中文 | 目录 | 中文 |
 |------|------|------|------|
-| AbyssShadows | 狭间暗域 | Hyakkiyakou | 百鬼夜行 |
+| AbyssShadows | 狭间暗域 | | |
 | ActivityShikigami | 当期式神爬塔 | KekkaiActivation | 结界挂卡 |
 | AreaBoss | 地狱鬼王 | KekkaiUtilize | 结界蹭卡 |
 | AutoCheckinBigGod | 大神签到 | KittyShop | 猫咪铺子 |

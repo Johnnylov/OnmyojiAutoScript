@@ -3,10 +3,9 @@ import 'package:get/get.dart';
 
 import 'package:oasx/modules/home/tool_view.dart';
 import 'package:oasx/modules/settings/controllers/settings_controller.dart';
-import 'package:oasx/translation/i18n_content.dart';
 
 void notifyTest() {
-  Get.defaultDialog(title: I18n.notifyTest.tr, content: const NotifyTest());
+  Get.dialog<void>(const NotifyTest());
 }
 
 class DeploySwitcher extends StatelessWidget {

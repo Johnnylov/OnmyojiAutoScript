@@ -102,23 +102,6 @@ class AllTaskMetricsTests(unittest.TestCase):
         self.assertTrue(all(p[2]['unit'] == '轮六道' for p in metrics.progress))
         self.assertEqual(metrics.battles, [])
 
-    def test_hyakki_counts_returned_minigames_without_creating_battles(self):
-        subject = methods('tasks/Hyakkiyakou/script_task.py', ['run'], datetime=datetime,
-                          timedelta=timedelta, report_task_progress=report_task_progress,
-                          page_onmyodo='onmyodo', page_hyakkiyakou='hyakki', TaskEnd=RuntimeError)
-        task = subject()
-        metrics = Metrics()
-        task.config = NS(solana_execution=metrics)
-        task._config = NS(hyakkiyakou_config=NS(hya_limit_count=5,
-                          hya_limit_time=NS(hour=1, minute=0, second=0), hya_onmyoji='test'))
-        task.start_time = datetime.now()
-        task.goto_page = task.switch_onmyoji = Mock()
-        task.one = Mock(side_effect=[None, ValueError('no end marker')])
-        with self.assertRaisesRegex(ValueError, 'no end marker'):
-            task.run()
-        self.assertEqual([p[:2] for p in metrics.progress], [(0, 5), (1, 5)])
-        self.assertEqual(metrics.battles, [])
-
     def test_area_boss_keeps_target_order_and_does_not_complete_failed_targets(self):
         subject = methods('tasks/AreaBoss/script_task.py', ['run'],
                           report_task_progress=report_task_progress,
