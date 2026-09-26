@@ -15,6 +15,7 @@ from rich.highlighter import NullHighlighter
 from rich.logging import RichHandler
 from rich.rule import Rule
 from typing import Callable, List
+from module.console_stream import console_stream
 
 
 def cleanup_logs(log_dir: str = "./log", keep_days: int = 7):
@@ -61,7 +62,7 @@ os.chdir(os.path.join(os.path.dirname(__file__), '../'))
 # cnocr will set root logger in cnocr.utils
 # Delete logging.basicConfig to avoid logging the same message twice.
 logging.basicConfig = empty_function
-logging.raiseExceptions = True  # Set True if wanna see encode errors on console
+logging.raiseExceptions = True
 
 # Remove HTTP keywords (GET, POST etc.)
 # RichHandler.KEYWORDS = []
@@ -105,7 +106,9 @@ flutter_formatter = logging.Formatter(
 # ======================================================================================================================
 console_hdlr = RichHandler(
     console=Console(
-        width=120
+        width=120,
+        file=console_stream(),
+        legacy_windows=False,
     ),
     show_path=False,
     show_time=False,

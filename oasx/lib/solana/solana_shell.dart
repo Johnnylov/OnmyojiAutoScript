@@ -23,6 +23,7 @@ import 'solana_reference_icons.dart';
 import 'solana_connection_settings.dart';
 import 'solana_deployment.dart';
 import 'solana_profile_manager.dart';
+import 'solana_profile_status.dart';
 import 'solana_device_preview.dart';
 import 'solana_widgets.dart';
 
@@ -405,6 +406,18 @@ class _SolanaShellState extends State<SolanaShell> {
         true,
   );
   bool get _processActive => _execution.active;
+  SolanaProfileStatus _profileStatus(JsonObject profile) => SolanaProfileStatus(
+    profile,
+    connected: c.connected,
+    hasUncertainRun: objects(c.overview.data?['current_runs']).any(
+      (run) =>
+          run['profile_id'] == profile['id'] &&
+          const {
+            'needs_reconciliation',
+            'recovery_requested',
+          }.contains(run['state']),
+    ),
+  );
   String get _taskName => taskLabel(
     textValue(_run['task_name'] ?? _run['task_id'] ?? _run['task'], '暂无运行任务'),
   );
@@ -626,12 +639,13 @@ class _SolanaShellState extends State<SolanaShell> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 9),
                   child: _railButton(
-                    profile['state'] == 'running'
-                        ? Icons.pause_circle_filled
-                        : Icons.play_circle_fill,
+                    _profileStatus(profile).icon,
                     textValue(profile['name']).toUpperCase(),
                     c.selectedProfile == profile['id'],
                     () => _selectProfile(textValue(profile['id'])),
+                    statusColor: _profileStatus(profile).color,
+                    statusLabel: _profileStatus(profile).label,
+                    iconKey: ValueKey('profile-status-${profile['id']}'),
                   ),
                 ),
               if (c.profiles.isEmpty)
@@ -665,9 +679,12 @@ class _SolanaShellState extends State<SolanaShell> {
     IconData icon,
     String name,
     bool selected,
-    VoidCallback onTap,
-  ) => Tooltip(
-    message: name,
+    VoidCallback onTap, {
+    Color? statusColor,
+    String? statusLabel,
+    Key? iconKey,
+  }) => Tooltip(
+    message: statusLabel == null ? name : '$name · $statusLabel',
     child: InkWell(
       onTap: onTap,
       child: Column(
@@ -691,8 +708,11 @@ class _SolanaShellState extends State<SolanaShell> {
             ),
             child: Icon(
               icon,
+              key: iconKey,
               size: 27,
-              color: selected ? Colors.white : const Color(0xFF4B425C),
+              color:
+                  statusColor ??
+                  (selected ? Colors.white : const Color(0xFF4B425C)),
             ),
           ),
           const SizedBox(height: 2),
@@ -1017,16 +1037,13 @@ class _SolanaShellState extends State<SolanaShell> {
               _executionControl(context),
               const SizedBox(width: 5),
               Tooltip(
-                message: c.connected ? stateLabel(_state) : '状态未知',
+                message: _profileStatus(c.profile).label,
                 child: Container(
+                  key: const ValueKey('scheduler-status-dot'),
                   width: 13,
                   height: 13,
                   decoration: BoxDecoration(
-                    color: c.connected
-                        ? _processActive
-                              ? const Color(0xFFFA9D08)
-                              : _purple
-                        : Colors.grey,
+                    color: _profileStatus(c.profile).color,
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -1052,10 +1069,12 @@ class _SolanaShellState extends State<SolanaShell> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                _processActive
-                    ? '运行中'
-                    : _execution.retry
+                _profileStatus(c.profile).failed
                     ? '运行异常'
+                    : _profileStatus(c.profile).paused
+                    ? '已暂停'
+                    : _processActive
+                    ? '运行中'
                     : '当前任务',
                 style: const TextStyle(
                   fontSize: 14,
@@ -1129,7 +1148,7 @@ class _SolanaShellState extends State<SolanaShell> {
 
   Widget _queueList(BuildContext context) {
     final ready = objects(c.scheduler.data?['ready']);
-    final waiting = objects(c.scheduler.data?['waiting']);
+    final waiting = waitingByNextRun(c.scheduler.data?['waiting']);
     return ListView(
       padding: EdgeInsets.zero,
       children: [
@@ -1800,7 +1819,7 @@ class _SolanaShellState extends State<SolanaShell> {
     for (final item in [
       if (_run.isNotEmpty) _run,
       ...objects(c.scheduler.data?['ready']),
-      ...objects(c.scheduler.data?['waiting']),
+      ...waitingByNextRun(c.scheduler.data?['waiting']),
     ]) {
       final key = textValue(item['task_id'] ?? item['task']);
       if (seen.add(key)) candidates.add(item);

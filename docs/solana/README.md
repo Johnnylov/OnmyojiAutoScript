@@ -1,6 +1,8 @@
-# Solana 工作台 0.4.6
+# Solana 工作台 0.4.7
 
 本仓库同时包含 OAS 后端与 `oasx/` Flutter 客户端源码。新版工作台替代旧界面，保留原任务参数、配置联动、模拟器连接和日志功能，新增公平调度、运行统计及文件审计。
+
+0.4.7 新增[等待排序、状态图标与 Windows 日志修复](status-and-console.md)。
 
 0.4.6 新增[活动截止自动停用、设置中文与性能改进](deadline-and-performance.md)。
 

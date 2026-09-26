@@ -236,15 +236,18 @@ extension _SolanaPanels on _SolanaShellState {
                           icon: entry.$3,
                         )
                       else
-                        ...objects(data[entry.$1]).map(
-                          (item) => _taskRow(
-                            item,
-                            detailed: true,
-                            fallbackState: entry.$1 == 'ready'
-                                ? 'queued'
-                                : entry.$1,
-                          ),
-                        ),
+                        ...(entry.$1 == 'waiting'
+                                ? waitingByNextRun(data[entry.$1])
+                                : objects(data[entry.$1]))
+                            .map(
+                              (item) => _taskRow(
+                                item,
+                                detailed: true,
+                                fallbackState: entry.$1 == 'ready'
+                                    ? 'queued'
+                                    : entry.$1,
+                              ),
+                            ),
                     ],
                   ),
                 ),

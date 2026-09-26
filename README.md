@@ -1,4 +1,4 @@
-> **Solana 工作台（0.4.6）**：新版 OASX 源码位于 [`oasx/`](oasx/)，使用本仓库的 v2 后端接口。安装、调度、指标口径与异常重启说明见 [Solana 使用说明](docs/solana/README.md)。
+> **Solana 工作台（0.4.7）**：新版 OASX 源码位于 [`oasx/`](oasx/)，使用本仓库的 v2 后端接口。安装、调度、指标口径与异常重启说明见 [Solana 使用说明](docs/solana/README.md)。
 
 <div align="center">
 

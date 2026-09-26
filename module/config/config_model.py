@@ -362,8 +362,13 @@ class ConfigModel(ConfigBase):
         :param task: 同gui_args函数
         :return:
         """
-        task = convert_to_underscore(task)
-        task = getattr(self, task, None)
+        from module.config.config_menu import ConfigMenu
+        task_key = convert_to_underscore(task)
+        is_limited_activity = task_key in {
+            convert_to_underscore(name)
+            for name in ConfigMenu().menu['Activity Task']
+        }
+        task = getattr(self, task_key, None)
         if task is None:
             logger.warning(f'{task} is no inexistence')
             return {}
@@ -421,6 +426,12 @@ class ConfigModel(ConfigBase):
                     if group_name in key:
                         groups_value[key] = groups[group_name]
             result[key] = merge_value(groups_value[key], value, schema["$defs"])
+
+        # Scheduler remains backward-compatible on disk; expose the activity
+        # cutoff only for tasks in the actual limited-activity menu category.
+        if not is_limited_activity and 'scheduler' in result:
+            result['scheduler'] = [item for item in result['scheduler']
+                                   if item['name'] != 'real_deadline']
 
         return result
 
