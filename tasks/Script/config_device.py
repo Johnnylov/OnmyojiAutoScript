@@ -59,6 +59,7 @@ class EmulatorInfoType(str, Enum):
 
 
 class Device(BaseModel):
+    device_id: str = Field(default='', description='稳定设备标识：同一模拟器的不同配置填相同值，留空按连接地址识别')
     serial: str = Field(default="auto", description='serial_help')
     handle: str = Field(default='', description='handle_help')
     package_name: PackageName = Field(title='Package Name', default=PackageName.AUTO, description='package_name_help')

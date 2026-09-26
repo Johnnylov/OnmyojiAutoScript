@@ -646,6 +646,7 @@ class MysteryShopScheduleTests(unittest.TestCase):
                         next_run=None,
                     )
                     config = SimpleNamespace(
+                        config_name='isolated-shop',
                         model=SimpleNamespace(
                             mystery_shop=SimpleNamespace(scheduler=scheduler)
                         ),
@@ -654,6 +655,14 @@ class MysteryShopScheduleTests(unittest.TestCase):
                         lock_config=Mock(),
                     )
                     namespace = dict(world.namespace)
+                    # task_delay loads a separate scheduling snapshot so a
+                    # completed task does not refresh its pinned business config.
+                    import copy
+                    schedule_model = SimpleNamespace(
+                        mystery_shop=SimpleNamespace(scheduler=copy.deepcopy(scheduler)),
+                        save=Mock(),
+                    )
+                    namespace['ConfigModel'] = Mock(return_value=schedule_model)
                     namespace["random"] = SimpleNamespace(
                         randint=lambda lower, upper: upper
                     )
@@ -675,8 +684,10 @@ class MysteryShopScheduleTests(unittest.TestCase):
                     with self.assertRaises(world.namespace["TaskEnd"]):
                         world.task.next_time(success)
                     self.assertEqual(scheduler.next_run, datetime(2026, 9, 9, 6))
-                    config.reload.assert_called_once_with()
-                    config.save.assert_called_once_with()
+                    config.reload.assert_not_called()
+                    config.save.assert_not_called()
+                    namespace['ConfigModel'].assert_called_once_with(config_name='isolated-shop')
+                    schedule_model.save.assert_called_once_with()
                     config.lock_config.acquire.assert_called_once_with()
                     config.lock_config.release.assert_called_once_with()
 

@@ -53,6 +53,14 @@ class Function:
         if isinstance(priority, str):
             priority = int(priority)
         self.priority: int = priority
+        deadline = data['scheduler'].get('real_deadline')
+        if isinstance(deadline, str) and deadline:
+            deadline = datetime.fromisoformat(deadline)
+        self.scheduling = {'fair_weight': data['scheduler'].get('fair_weight', 1),
+            'estimated_batch_seconds': data['scheduler'].get('estimated_batch_seconds', 120),
+            'deadline': deadline.timestamp() if isinstance(deadline, datetime) else None}
+        from module.scheduling.runtime import config_revision
+        self.scheduling['config_revision'] = config_revision(data)
         if not isinstance(self.priority, int):
             logger.error(f"Invalid priority: {self.priority}")
 
@@ -263,11 +271,15 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
         # 根据调度器更新时间来判断是否有可运行的任务,保证逻辑一致性
         scheduler_update_dt = getattr(self, 'scheduler_update_dt', datetime.now())
         running = {}
-        if self.task is not None and self.task.next_run < scheduler_update_dt:
+        execution = getattr(self, 'solana_execution', None)
+        real_running = bool(self.model.running_task)
+        if execution is not None:
+            real_running = bool(execution.active and execution.active.get('state') == 'running')
+        if real_running and self.task is not None:
             running = {"name": self.task.command, "next_run": str(self.task.next_run)}
 
         pending = []
-        pending_tasks = self.pending_task[1:] if running else self.pending_task
+        pending_tasks = [p for p in self.pending_task if not running or p.command != running['name']]
         for p in pending_tasks:
             item = {"name": p.command, "next_run": str(p.next_run)}
             pending.append(item)
@@ -315,13 +327,15 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
         :param finish: 是完成任务后的时间为基准还是开始任务的时间为基准
         :return:
         """
-        # 加载配置文件
-        self.reload()
+        # Read scheduling settings independently. Replacing self.model here
+        # injects UI edits (targets/team/device) into a running task's pinned
+        # configuration. The temporary model still performs field-level CAS.
+        schedule_model = ConfigModel(config_name=self.config_name)
         # 任务预处理
         if not task:
             task = self.task.command
         task = convert_to_underscore(task)
-        task_object = getattr(self.model, task, None)
+        task_object = getattr(schedule_model, task, None)
         if not task_object:
             logger.warning(f'No task named {task}')
             return
@@ -391,7 +405,12 @@ class Config(ConfigState, ConfigManual, ConfigWatcher, ConfigMenu):
         self.lock_config.acquire()
         try:
             scheduler.next_run = next_run
-            self.save()
+            schedule_model.save()
+            # Only the successfully persisted scheduling result belongs in the
+            # current run's view; its business parameters remain unchanged.
+            active_task = getattr(self.model, task, None)
+            if active_task is not None and hasattr(active_task, 'scheduler'):
+                active_task.scheduler.next_run = next_run
         finally:
             self.lock_config.release()
         # 设置

@@ -15,6 +15,7 @@ from module.base.protect import random_sleep
 from module.base.timer import Timer
 from module.exception import TaskEnd
 from module.logger import logger
+from module.scheduling.task_metrics import report_count_progress
 
 from tasks.base_task import BaseTask
 from tasks.ActivityShikigami.assets import ActivityShikigamiAssets
@@ -107,6 +108,7 @@ class StateMachine(BaseTask):
             return False
         # 切换爬塔类型了, 恢复所有状态
         self.current_count = 0
+        report_count_progress(self)
         logger.hr(f"Climb switch to {self.climb_type}", 2)
         return True
 
@@ -157,6 +159,7 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, ActivityShikigami
 
     def run(self):
         self.before_run()
+        report_count_progress(self)
         for climb_type in self.conf.general_climb.run_sequence_v:
             logger.hr(f"Start run {self.climb_type}", 1)
             dest_page: Optional[pages.Page] = getattr(
@@ -218,6 +221,7 @@ class BaseAct(StateMachine, GameUi, GeneralBattle, SwitchSoul, ActivityShikigami
             random_sleep(probability=0.2)
         if self.enter_battle():
             self.count_map[self.climb_type] += 1
+            report_count_progress(self)
             self.run_general_battle(
                 getattr(self.conf, f"{self.climb_type}_battle_conf"),
                 battle_key=f"act_{self.climb_type}",

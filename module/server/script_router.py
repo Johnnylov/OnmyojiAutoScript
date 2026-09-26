@@ -13,6 +13,7 @@ from module.config.utils import convert_to_underscore
 
 from module.logger import logger
 from module.server.api_logger import ApiLoggingRoute, log_ws_event
+from module.server.solana_legacy_audit import run_config_mutation, run_legacy_control, legacy_request_context
 from module.server.config_manager import (
     ConfigAlreadyExistsError,
     ConfigJsonError,
@@ -45,8 +46,11 @@ async def config_list():
 
 @script_app.post('/config_copy')
 async def config_copy(file: str, template: str = 'template'):
-    mm.copy(file, template)
-    return mm.all_script_files()
+    def copy():
+        mm.copy(file, template)
+        return mm.all_script_files()
+    return run_config_mutation('config.copy', [file, template], copy,
+                               arguments={'file': file, 'template': template})
 
 @script_app.get('/config_new_name')
 async def config_new_name():
@@ -73,9 +77,11 @@ async def config_import(name: str = Form(...), file: UploadFile = File(...)):
         except json.JSONDecodeError as e:
             raise ConfigJsonError(f'Config JSON parse failed: {e}') from e
 
-        config_name = mm.import_config(name, data)
-        mm.add_script_file(config_name)
-        return {"name": config_name, "file": f"{config_name}.json"}
+        def import_profile():
+            config_name = mm.import_config(name, data)
+            mm.add_script_file(config_name)
+            return {"name": config_name, "file": f"{config_name}.json"}
+        return run_config_mutation('config.import', [name], import_profile, arguments=data)
     except ConfigAlreadyExistsError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except ConfigValidationError as e:
@@ -129,13 +135,12 @@ async def config_task_import(
     try:
         file_content = await file.read() if file is not None else None
         data = mm.parse_task_json_source(json_text=json_text, file_content=file_content)
-        config_name, task_key = mm.import_task_config(config_name, task_name, data)
-        return {
-            "config_name": config_name,
-            "task_name": task_key,
-            "file": f"{config_name}.json",
-            "updated": True,
-        }
+        def import_task():
+            updated_name, task_key = mm.import_task_config(config_name, task_name, data)
+            return {"config_name": updated_name, "task_name": task_key,
+                    "file": f"{updated_name}.json", "updated": True}
+        return run_config_mutation('config.task.import', [config_name], import_task,
+                                   arguments={'task_name': task_name, 'data': data})
     except ConfigValidationError as e:
         raise HTTPException(
             status_code=400,
@@ -199,11 +204,18 @@ async def config_rename(old_name: str = '', new_name: str = ''):
         return False
     if old_name in mm.script_process:
         if mm.script_process[old_name].state != ScriptState.INACTIVE:
-            mm.script_process[old_name].stop()
-        del mm.script_process[old_name]
-    if not mm.rename(old_name, new_name):
-        raise HTTPException(status_code=400, detail='Rename failed')
-    return True
+            await run_legacy_control(old_name, 'immediate_stop', mm.script_process[old_name].stop,
+                                     child_operation='rename.stop')
+    def rename():
+        if not mm.rename(old_name, new_name):
+            raise HTTPException(status_code=400, detail='Rename failed')
+        return True
+    result = run_config_mutation('config.rename', [old_name, new_name], rename,
+        arguments={'old_name': old_name, 'new_name': new_name},
+        rename={'old_name': old_name, 'new_name': new_name})
+    if result:
+        mm.script_process.pop(old_name, None)
+    return result
 
 
 @script_app.delete('/config')
@@ -217,31 +229,42 @@ async def config_delete(name: str = ''):
         raise HTTPException(status_code=400, detail='Delete failed')
     if name in mm.script_process:
         if mm.script_process[name].state != ScriptState.INACTIVE:
-            mm.script_process[name].stop()
-        del mm.script_process[name]
-    if not mm.delete(name):
-        raise HTTPException(status_code=400, detail='Delete failed')
-    return True
+            await run_legacy_control(name, 'immediate_stop', mm.script_process[name].stop,
+                                     child_operation='delete.stop')
+    def delete():
+        if not mm.delete(name):
+            raise HTTPException(status_code=400, detail='Delete failed')
+        return True
+    result = run_config_mutation('config.delete', [name], delete)
+    if result:
+        mm.script_process.pop(name, None)
+    return result
 
 
 @script_app.put('/config/task/copy')
 async def task_copy(task_name: str, dest_config_name: str, source_config_name: str):
-    if dest_config_name not in mm.script_process or source_config_name not in mm.script_process:
-        return False
-    source_task = getattr(mm.config_cache(source_config_name).model, convert_to_underscore(task_name), None)
-    if source_task is None:
-        return False
-    return mm.config_cache(dest_config_name).model.copy_script_task(task_name, source_task)
+    def copy():
+        if dest_config_name not in mm.script_process or source_config_name not in mm.script_process:
+            return False
+        source_task = getattr(mm.config_cache(source_config_name).model, convert_to_underscore(task_name), None)
+        if source_task is None:
+            return False
+        return mm.config_cache(dest_config_name).model.copy_script_task(task_name, source_task)
+    return run_config_mutation('config.task.copy', [dest_config_name, source_config_name], copy,
+                               arguments={'task_name': task_name})
 
 
 @script_app.put('/config/task/group/copy')
 async def task_group_copy(task_name: str, group_name: str, dest_config_name: str, source_config_name: str):
-    if dest_config_name not in mm.script_process or source_config_name not in mm.script_process:
-        return False
-    source_task = getattr(mm.config_cache(source_config_name).model, convert_to_underscore(task_name), None)
-    if source_task is None:
-        return False
-    return mm.config_cache(dest_config_name).model.copy_task_group(task_name, group_name, source_task)
+    def copy():
+        if dest_config_name not in mm.script_process or source_config_name not in mm.script_process:
+            return False
+        source_task = getattr(mm.config_cache(source_config_name).model, convert_to_underscore(task_name), None)
+        if source_task is None:
+            return False
+        return mm.config_cache(dest_config_name).model.copy_task_group(task_name, group_name, source_task)
+    return run_config_mutation('config.group.copy', [dest_config_name, source_config_name], copy,
+                               arguments={'task_name': task_name, 'group_name': group_name})
 
 
 # ---------------------------------   脚本实例管理   ----------------------------------
@@ -249,15 +272,18 @@ async def task_group_copy(task_name: str, group_name: str, dest_config_name: str
 async def script_start(script_name: str):
     if script_name not in mm.script_process:
         mm.script_process[script_name] = ScriptProcess(script_name)
-    mm.script_process[script_name].start()
+    await run_legacy_control(script_name, 'start', mm.script_process[script_name].start)
     return
 
 @script_app.get('/{script_name}/stop')
 async def script_stop(script_name: str):
     if script_name not in mm.script_process:
         logger.warning(f'[{script_name}] script process does not exist')
+        async def already_stopped():
+            return
+        await run_legacy_control(script_name, 'immediate_stop', already_stopped)
         return
-    mm.script_process[script_name].stop()
+    await run_legacy_control(script_name, 'immediate_stop', mm.script_process[script_name].stop)
     return
 
 @script_app.get('/{script_name}/{task}/args')
@@ -295,18 +321,21 @@ async def script_task(script_name: str, task: str, group: str, argument: str, ty
     except Exception as e:
         # 类型不正确
         raise HTTPException(status_code=400, detail=f'Argument type error: {e}')
-    config = mm.config_cache(script_name)
-    saved = config.model.script_set_arg(task, group, argument, value)
-    if (saved and types == 'next_run'
-            and convert_to_underscore(task) == 'mystery_shop'
-            and group == 'scheduler' and argument == 'next_run'
-            and value <= datetime.now()):
-        # OASX 的立即执行按钮使用 next_run 类型；日期编辑使用 date_time。
-        # 保留账号独立自动调度，只为该次明确操作登记一次手动请求。
-        from tasks.MysteryShop.schedule import MysteryShopSchedule
-        MysteryShopSchedule(script_name).request_manual_run(datetime.now())
-        logger.info(f'[{script_name}] MysteryShop manual run requested')
-    return saved
+    def save():
+        config = mm.config_cache(script_name)
+        saved = config.model.script_set_arg(task, group, argument, value)
+        if (saved and types == 'next_run'
+                and convert_to_underscore(task) == 'mystery_shop'
+                and group == 'scheduler' and argument == 'next_run'
+                and value <= datetime.now()):
+            # An ordinary date edit does not grant a manual shop run.
+            from tasks.MysteryShop.schedule import MysteryShopSchedule
+            MysteryShopSchedule(script_name).request_manual_run(datetime.now())
+            logger.info(f'[{script_name}] MysteryShop manual run requested')
+        return saved
+    return run_config_mutation('config.value', [script_name], save,
+        arguments={'task': task, 'group': group, 'argument': argument, 'types': types, 'value': value},
+        external_side_effect=types == 'next_run' and convert_to_underscore(task) == 'mystery_shop')
 
 
 @script_app.put('/{script_name}/{task}/sync_next_run')
@@ -315,11 +344,15 @@ async def sync_next_run(script_name: str, task: str, target_dt: str):
         return False
     config = mm.config_cache(script_name)
     target = datetime.strptime(target_dt, '%Y-%m-%d %H:%M:%S') if target_dt else None
-    config.task_delay(task=task, success=True, target=target)
+    def synchronize():
+        config.task_delay(task=task, success=True, target=target)
+        return True
+    result = run_config_mutation('config.sync_next_run', [script_name], synchronize,
+                                arguments={'task': task, 'target_dt': target_dt})
     script_process = mm.script_process[script_name]
     config.get_next()
     await script_process.broadcast_state({"schedule": config.get_schedule_data()})
-    return True
+    return result
 
 
 # --------------------------------------  SSE  --------------------------------------
@@ -374,25 +407,33 @@ async def websocket_endpoint(websocket: WebSocket, script_name: str):
         while True:
             # 初次进入，广播state schedule
             data = await websocket.receive_text()
-            log_ws_event(f"ws[{script_name}] msg: {data}")
-            if data == 'get_state':
+            command = data
+            request_id = None
+            if data.startswith('{'):
+                try:
+                    message = json.loads(data)
+                    command, request_id = message.get('type'), message.get('request_id')
+                except (ValueError, AttributeError):
+                    command = None
+            log_ws_event(f"ws command: {command if command in ('get_state', 'get_schedule', 'start', 'stop') else 'unrecognized'}")
+            if command == 'get_state':
                 await script_process.broadcast_state({"state": script_process.state})
                 log_ws_event(f"ws[{script_name}] response: {script_process.state}")
-            elif data == 'get_schedule':
+            elif command == 'get_schedule':
                 config = mm.config_cache(script_name)
                 config.get_next()
                 schedule_data = config.get_schedule_data()
                 await script_process.broadcast_state({"schedule": schedule_data})
                 log_ws_event(f"ws[{script_name}] response: {schedule_data}")
-            elif data == 'start':
-                await script_process.start()
-            elif data == 'stop':
-                await script_process.stop()
+            elif command in ('start', 'stop'):
+                with legacy_request_context(request_id, websocket.headers.get('x-client-id'), 'ws'):
+                    await run_legacy_control(script_name, 'start' if command == 'start' else 'immediate_stop',
+                                             script_process.start if command == 'start' else script_process.stop)
 
     except WebSocketDisconnect:
         log_ws_event(f"ws[{script_name}] disconnect", level="warning")
         await script_process.disconnect(websocket)
     except Exception as e:
-        log_ws_event(f"ws[{script_name}] error: {type(e).__name__}: {e}", level="error")
+        log_ws_event(f"ws error: {type(e).__name__}", level="error")
         logger.exception(f'[{script_name}] websocket error: {e}')
         await script_process.disconnect(websocket)

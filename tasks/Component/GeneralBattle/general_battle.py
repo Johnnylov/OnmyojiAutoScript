@@ -125,6 +125,8 @@ class BattleContext:
     quick_exit_timer: Timer | None = None
     # 最近一次结算页解析出的胜负结果；用于退出时返回最终布尔值。
     is_win: bool = False
+    # Telemetry token is independent of current_count and never controls combat.
+    metric_battle_token: str | None = None
 
 
 class BattleBehaviorScope(str, Enum):
@@ -305,6 +307,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         Returns:
             BattleContext: 初始化后的战斗上下文对象。
         """
+        from module.scheduling.task_metrics import begin_battle
         timeout = self._resolve_battle_timeout(config)
         return BattleContext(
             battle_timer=Timer(timeout).start(),
@@ -318,6 +321,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             prepare_click_timer=Timer(PREPARE_CLICK_DELAY),
             buff=buff,
             quick_exit=bool(config.quick_exit),
+            metric_battle_token=begin_battle(self),
         )
 
     def _get_battle_behavior_scopes(self, config: GeneralBattleConfig, battle_key: str) -> dict[str, BattleBehaviorScope]:
@@ -475,6 +479,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         Returns:
             None: 直接原地修改 `context`。
         """
+        from module.scheduling.task_metrics import begin_battle, report_count_progress
         context.battle_timer = Timer(self._resolve_battle_timeout(config)).start()
         context.long_refresh_timer = Timer(180).start()
         context.last_page = None
@@ -482,6 +487,8 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         context.quick_exit = bool(config.quick_exit)
         context.quick_exit_timer = None
         context.continuous_count = continuous_count
+        context.metric_battle_token = begin_battle(self)
+        report_count_progress(self)
         context.round_behavior_state = BattleBehaviorState()
         context.prepare_click_timer.clear()
 
@@ -754,11 +761,13 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         Returns:
             BattleAction: 连战继续、按结果退出等动作决策。
         """
+        from module.scheduling.task_metrics import report_count_progress
         if 0 < config.max_continuous <= context.continuous_count:
             return BattleAction.EXIT_WIN if context.is_win else BattleAction.EXIT_LOSE
         logger.hr("General battle start", 2)
         next_count = context.continuous_count + 1
         self.current_count += 1
+        report_count_progress(self)
         logger.info(f"Current count: {self.current_count}")
         logger.info(f"Continue battle round: {next_count}")
         self.device.click_record_clear()
@@ -845,6 +854,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         Returns:
             bool: `True` 表示本轮战斗获胜，`False` 表示失败或主动退出。
         """
+        from module.scheduling.task_metrics import finish_battle, report_count_progress
         logger.hr("General battle start", 2)
         if config is None:
             config = GeneralBattleConfig()
@@ -852,6 +862,7 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
             self._register_custom_pages()
             self._custom_pages_registered = True
         self.current_count += 1
+        report_count_progress(self)
         logger.info(f"Current count: {self.current_count}")
         self.device.stuck_record_add("BATTLE_STATUS_S")
         self.device.click_record_clear()
@@ -866,6 +877,11 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
                 self._tick_timeout(context)
                 page = GameUi.detect_page_in(self, page_battle_prepare, page_battle, page_battle_result,
                                              page_reward, include_global=False)
+                # The existing page recognizer confirms settlement, including
+                # subclasses with custom handlers. Repeated result/reward frames
+                # share one token; battle entry and unknown exits count nothing.
+                if page in (page_battle_result, page_reward):
+                    finish_battle(self, context.metric_battle_token)
                 context.reward_no_battle_ts = None if page else context.reward_no_battle_ts
                 self._sync_prepare_click_timer(context, page)
                 self._ensure_battle_stuck_guard(context, page)

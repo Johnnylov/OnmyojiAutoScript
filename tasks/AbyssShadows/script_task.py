@@ -11,6 +11,7 @@ from future.backports.datetime import timedelta
 from module.exception import TaskEnd, RequestHumanTakeover
 from module.base.timer import Timer
 from module.logger import logger
+from module.scheduling.task_metrics import abyss_progress, begin_battle, execution_for, finish_battle
 from module.config.config import Config
 from module.device.device import Device
 from tasks.AbyssShadows.assets import AbyssShadowsAssets
@@ -56,6 +57,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         self.unavailable_list: CodeList = CodeList('')
         # 是否已经切换过御魂
         self.switch_soul_done = False
+        self._metric_planned_targets = set()
 
     def run(self):
         """ 狭间暗域主函数
@@ -150,7 +152,21 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         self.done_list = CodeList(self.config.model.abyss_shadows.saved_params.done)
         #
         self.unavailable_list = CodeList(self.config.model.abyss_shadows.saved_params.unavailable)
+        self._metric_planned_targets.update(map(str, self.ps_list))
+        if self.config.model.abyss_shadows.process_manage.try_complete_enemy_count:
+            self._metric_planned_targets.update(map(str, self.done_list))
+        self._report_abyss_progress()
         logger.info(f"update list done!{self.done_list=} {self.unavailable_list=}")
+
+    def _report_abyss_progress(self, extra_target=None):
+        if extra_target is not None:
+            self._metric_planned_targets.add(str(extra_target))
+        current, target, unavailable = abyss_progress(
+            self._metric_planned_targets, self.done_list, self.unavailable_list)
+        execution = execution_for(self)
+        if execution is not None:
+            execution.report_progress(current, target, unit="个目标",
+                                      phase=f"目标处理（不可用 {unavailable} 个）")
 
     def flash_list(self):
         """
@@ -163,6 +179,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         self.config.model.abyss_shadows.saved_params.unavailable = self.unavailable_list.parse2str()
 
         self.config.save()
+        self._report_abyss_progress()
         logger.info(f"Flash list done!{self.done_list=} {self.unavailable_list=}")
 
     def clear_saved_params(self):
@@ -470,10 +487,13 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
             enemy_type = code.get_enemy_type()
 
             if enemy_type == EnemyType.BOSS and need_boss:
+                self._report_abyss_progress(extra_target=code)
                 return code
             elif enemy_type == EnemyType.GENERAL and need_general:
+                self._report_abyss_progress(extra_target=code)
                 return code
             elif enemy_type == EnemyType.ELITE and need_elite:
+                self._report_abyss_progress(extra_target=code)
                 return code
 
         return None
@@ -538,9 +558,11 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
             battle_count -= 1
         logger.info(f"{item_code} push into done_list")
         self.done_list.append(item_code)
+        self._report_abyss_progress()
         return True
 
     def run_battle(self, item_code: Code):
+        metric_token = begin_battle(self)
         success = False
         enemy_type = item_code.get_enemy_type()
 
@@ -622,7 +644,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
             if condition.is_valid(_cur_damage):
                 logger.info(f"Condition Validated,try to quit battle")
                 self.device.screenshot_interval_set()
-                self.quit_battle()
+                self.quit_battle(metric_token=metric_token)
                 break
             if self.appear_then_click(self.I_PREPARE_HIGHLIGHT, interval=3):
                 # 正常来讲，此处不应该出现准备按钮，以防万一
@@ -631,11 +653,13 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
                 continue
             # 战斗胜利标志
             if self.appear_then_click(self.I_WIN, interval=1):
+                finish_battle(self, metric_token, "won")
                 self.device.screenshot_interval_set()
                 need_check_damage = False
                 continue
             # 战斗奖励标志
             if self.appear_then_click(self.I_REWARD, interval=1):
+                finish_battle(self, metric_token)
                 self.device.screenshot_interval_set()
                 need_check_damage = False
                 continue
@@ -651,7 +675,7 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
         logger.info(f"{enemy_type.name} DONE")
         return success
 
-    def quit_battle(self):
+    def quit_battle(self, metric_token=None):
         logger.info("Quitting battle")
         while True:
             self.screenshot()
@@ -662,9 +686,11 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AbyssShadowsAssets):
             if self.appear(self.I_ABYSS_NAVIGATION):
                 break
             if self.appear(self.I_WIN):
+                finish_battle(self, metric_token, "won")
                 self.click(self.I_WIN, interval=1)
                 continue
             if self.appear(self.I_REWARD):
+                finish_battle(self, metric_token)
                 self.click(self.I_REWARD, interval=1)
                 continue
             if self.appear(self.I_EXIT):

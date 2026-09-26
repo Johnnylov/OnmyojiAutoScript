@@ -76,6 +76,8 @@ def _is_large_text_key(key: str) -> bool:
 
 
 def summarize_data(value: Any, *, key: str = "", depth: int = 0) -> Any:
+    if any(part in str(key).lower() for part in ('password', 'token', 'secret', 'cookie', 'authorization', 'notify_config')):
+        return '<modified>'
     if depth > 4:
         return "<max_depth>"
     if value is None or isinstance(value, (bool, int, float)):
@@ -87,6 +89,9 @@ def summarize_data(value: Any, *, key: str = "", depth: int = 0) -> Any:
             return {"type": "text", "length": len(value), "preview": value[:64] + ("..." if len(value) > 64 else "")}
         return _summarize_text(value)
     if isinstance(value, dict):
+        marker = str(value.get('argument', value.get('name', value.get('key', value.get('path', ''))))).lower()
+        if any(part in marker for part in ('password', 'token', 'secret', 'cookie', 'notify_config')):
+            value = {k: '<modified>' if k in ('value', 'old', 'new', 'default') else v for k, v in value.items()}
         result: dict[str, Any] = {}
         items = list(value.items())
         for index, (sub_key, sub_value) in enumerate(items):
@@ -112,41 +117,16 @@ def summarize_data(value: Any, *, key: str = "", depth: int = 0) -> Any:
 
 
 async def build_request_summary(request: Request) -> dict[str, Any]:
-    summary: dict[str, Any] = {
+    # Transport metadata only. Structured config audit owns safe field diffs.
+    route = request.scope.get('route')
+    return {
         "method": request.method,
-        "url": str(request.url),
-        "path_params": summarize_data(dict(request.path_params)),
-        "query_params": summarize_data(dict(request.query_params)),
+        "route": getattr(route, 'path', '<unmatched>'),
+        "path_parameter_names": sorted(request.path_params),
+        "query_parameter_names": sorted(request.query_params),
+        "content_type": request.headers.get('content-type', '').split(';', 1)[0],
+        "content_length": request.headers.get('content-length'),
     }
-
-    body = await request.body()
-    if not body:
-        return summary
-
-    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-    body_summary: Any
-    try:
-        if content_type == "application/json":
-            body_summary = summarize_data(json.loads(body.decode("utf-8")))
-        elif content_type == "application/x-www-form-urlencoded":
-            parsed = parse_qs(body.decode("utf-8"), keep_blank_values=True)
-            normalized = {
-                key: values[0] if len(values) == 1 else values
-                for key, values in parsed.items()
-            }
-            body_summary = summarize_data(normalized)
-        elif content_type.startswith("text/"):
-            body_summary = _summarize_text(body.decode("utf-8", errors="replace"))
-        else:
-            body_summary = {
-                "content_type": content_type or "application/octet-stream",
-                "length": len(body),
-            }
-    except Exception as exc:
-        body_summary = {"error": f"body_summary_failed: {exc}", "length": len(body)}
-
-    summary["body"] = body_summary
-    return summary
 
 
 def summarize_response(response: Response) -> dict[str, Any]:
@@ -159,39 +139,9 @@ def summarize_response(response: Response) -> dict[str, Any]:
     if media_type:
         summary["media_type"] = media_type
 
-    if isinstance(response, FileResponse):
-        summary["file"] = {
-            "filename": getattr(response, "filename", None),
-            "path": str(getattr(response, "path", "")),
-        }
-        return summary
-
-    if isinstance(response, StreamingResponse):
-        return summary
-
     body = getattr(response, "body", None)
-    if body is None:
-        return summary
-
-    if isinstance(body, memoryview):
-        body = body.tobytes()
-
-    if isinstance(body, bytes):
-        if not body:
-            summary["body"] = ""
-            return summary
-        decoded = body.decode("utf-8", errors="replace")
-        content_type = response.headers.get("content-type", "")
-        if "application/json" in content_type:
-            try:
-                summary["body"] = summarize_data(json.loads(decoded))
-            except Exception:
-                summary["body"] = _summarize_text(decoded)
-        else:
-            summary["body"] = _summarize_text(decoded)
-        return summary
-
-    summary["body"] = summarize_data(body)
+    if isinstance(body, (bytes, memoryview)):
+        summary['body_bytes'] = len(body)
     return summary
 
 
@@ -242,7 +192,10 @@ class ApiLoggingRoute(APIRoute):
             exc: Exception | None = None
 
             try:
-                response = await original_route_handler(request)
+                from module.server.solana_legacy_audit import legacy_request_context
+                with legacy_request_context(request.headers.get('x-request-id'),
+                                            request.headers.get('x-client-id'), 'http', request):
+                    response = await original_route_handler(request)
             except Exception as error:
                 exc = error
                 response = await build_exception_response(request, error)
@@ -258,8 +211,11 @@ class ApiLoggingRoute(APIRoute):
             if exc is not None:
                 payload["exception"] = {
                     "type": type(exc).__name__,
-                    "message": str(exc),
                 }
+            if getattr(request.state, 'legacy_audit_state', None):
+                response.headers['X-OAS-Audit-State'] = request.state.legacy_audit_state
+            if getattr(request.state, 'legacy_request_id', None):
+                response.headers['X-Request-ID'] = request.state.legacy_request_id
             log_http_access(payload)
             return response
 

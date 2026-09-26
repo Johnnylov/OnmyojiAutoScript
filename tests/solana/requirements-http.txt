@@ -1,0 +1,4 @@
+# Test-only compatibility for the bundled FastAPI 0.104 / Starlette 0.27 runtime.
+# Install with --target ../test-deps; do not alter the user's running toolkit.
+httpx==0.27.2
+anyio>=3.7,<4

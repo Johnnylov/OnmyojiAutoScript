@@ -1,0 +1,504 @@
+{
+  "executable_menu_tasks": 55,
+  "battle_tasks": 35,
+  "non_battle_tasks": 20,
+  "fine_grained_tasks": 19,
+  "lifecycle_only_tasks": 36,
+  "tasks": [
+    {
+      "task": "AbyssShadows",
+      "current_value": {
+        "unit": "个目标",
+        "source": "有效计划目标与 done_list；不可用目标不计完成"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "ActivityShikigami",
+      "current_value": {
+        "unit": "次挑战",
+        "source": "count_map[climb_type] / 各模式 limit，分阶段"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "AreaBoss",
+      "current_value": {
+        "unit": "个挑战目标",
+        "source": "boss_fight 成功或已挑战返回；未完成目标不计数"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "AutoCheckinBigGod",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "BondlingFairyland",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "CollectiveMissions",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "DailyTrifles",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "Delegation",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "DemonEncounter",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "DemonRetreat",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "Dokan",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "Duel",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "DyeTrials",
+      "current_value": {
+        "unit": "次挑战",
+        "source": "battle_num / 50；战斗仅 I_BATTLE_SUCCESS 明确识别后计数"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "EternitySea",
+      "current_value": {
+        "unit": "次挑战",
+        "source": "eternity_sea.eternity_sea_config.limit_count"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "EvoZone",
+      "current_value": {
+        "unit": "次挑战",
+        "source": "evo_zone.evo_zone_config.limit_count"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "ExperienceYoukai",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "Exploration",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "FallenSun",
+      "current_value": {
+        "unit": "次挑战",
+        "source": "fallen_sun.fallen_sun_config.limit_count"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "FindJade",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "FloatParade",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "FrogBoss",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "GoldYoukai",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "GoryouRealm",
+      "current_value": {
+        "unit": "次挑战",
+        "source": "goryou_realm.goryou_config.limit_count"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "GuguArtStudio",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "GuildActivityMonitor",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "GuildBanquet",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "HeroTest",
+      "current_value": {
+        "unit": "次挑战",
+        "source": "hero_test.herotest.limit_count"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "Hunt",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "Hyakkiyakou",
+      "current_value": {
+        "unit": "局百鬼夜行",
+        "source": "one 正常返回后的 hya_count / hya_limit_count"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "KekkaiActivation",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "KekkaiUtilize",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "KittyShop",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "MartialTournament",
+      "current_value": {
+        "unit": "次挑战",
+        "source": "当前模式 current_count / pass_limit 或 ap_limit，分阶段"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "MemoryScrolls",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "MetaDemon",
+      "current_value": {
+        "unit": "次挑战",
+        "source": "total_count / limit_count"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "Moonlight",
+      "current_value": {
+        "unit": "次挑战",
+        "source": "moonlight_count / challenge_limit"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "MysteryShop",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "Nian",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "Orochi",
+      "current_value": {
+        "unit": "次挑战",
+        "source": "orochi.orochi_config.limit_count"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "OtherWorldTwilight",
+      "current_value": {
+        "unit": "次挑战",
+        "source": "other_world_twilight.other_world_twilight_config.limit_count"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "Pets",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "Quiz",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "RealmRaid",
+      "current_value": {
+        "unit": "张突破券",
+        "source": "经校验的 init_tickets - cu / number_attack"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "Restart",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "RichMan",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "RyouToppa",
+      "current_value": {
+        "unit": "次挑战",
+        "source": "ryou_toppa.raid_config.limit_count"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "Secret",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "SixRealms",
+      "current_value": {
+        "unit": "轮六道",
+        "source": "当前六道运行返回后的 cnt / limit_count"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "Sougenbi",
+      "current_value": {
+        "unit": "次挑战",
+        "source": "sougenbi.sougenbi_config.limit_count"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "SoulsTidy",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "Tako",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "TalismanPass",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "TrueOrochi",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "WantedQuests",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "observed_settlements",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    },
+    {
+      "task": "WeeklyTrifles",
+      "current_value": {
+        "unit": "项",
+        "source": "任务生命周期 0/1；仅 succeeded 变为 1/1"
+      },
+      "battle": "not_applicable",
+      "session_progress": "真实 run.finished outcome=succeeded 累计本轮任务；失败/跳过不算成功"
+    }
+  ]
+}

@@ -8,6 +8,7 @@ from typing import Dict, Any
 
 import re
 import inflection
+import copy
 
 from pathlib import Path
 from pydantic import BaseModel, ValidationError, Field, field_validator
@@ -174,13 +175,31 @@ class ConfigModel(ConfigBase):
             if config_name:
                 data["config_name"] = config_name
             super().__init__(**data)
+            self._initialize_merge_state(None, None)
             return
         if not config_name:
             super().__init__()
+            self._initialize_merge_state(None, None)
             return
-        data = self.read_json(config_name)
-        data["config_name"] = config_name
-        super().__init__(**data)
+        from module.config.edit_lock import config_path, config_edit_lock
+        path = config_path(config_name)
+        with config_edit_lock(path):
+            existed = path.exists()
+            data = self.read_json(config_name)
+            raw = copy.deepcopy(data)
+            data["config_name"] = config_name
+            super().__init__(**data)
+            self._initialize_merge_state(raw, path, existed)
+
+    @staticmethod
+    def _json_snapshot(data):
+        return json.loads(json.dumps(data, ensure_ascii=False, default=str))
+
+    def _initialize_merge_state(self, disk, path, existed=None):
+        object.__setattr__(self, '_local_baseline', self._json_snapshot(self.model_dump()))
+        object.__setattr__(self, '_disk_baseline', copy.deepcopy(disk or {}))
+        object.__setattr__(self, '_baseline_path', str(path) if path else None)
+        object.__setattr__(self, '_baseline_existed', bool(existed if existed is not None else path and Path(path).exists()))
 
     def __setattr__(self, key, value):
         """
@@ -189,9 +208,18 @@ class ConfigModel(ConfigBase):
         :param value:
         :return:
         """
+        if key.startswith('_'):
+            super().__setattr__(key, value)
+            return
+        previous = getattr(self, key, None)
         super().__setattr__(key, value)
         logger.info("auto save config")
-        self.save()
+        try:
+            self.save()
+        except Exception:
+            # Failed top-level assignment must not poison the local model.
+            super().__setattr__(key, previous)
+            raise
 
     @staticmethod
     def read_json(config_name: str) -> dict:
@@ -203,16 +231,37 @@ class ConfigModel(ConfigBase):
         filepath = Path.cwd() / "config" / f"{config_name}.json"
         return read_file(filepath)
 
-    @staticmethod
-    def write_json(config_name: str, data) -> None:
+    def write_json(self, config_name: str, data) -> None:
         """
 
         :param config_name: 不带后缀
         :param data:  字典而不是字符串
         :return:
         """
-        filepath = Path.cwd() / "config" / f"{config_name}.json"
-        write_file(filepath, data)
+        from module.config.edit_lock import config_edit_lock, config_path, merge_config_fields, ConfigConflict
+        filepath = config_path(config_name)
+        desired = self._json_snapshot(data)
+        desired['config_name'] = config_name
+        with config_edit_lock(filepath):
+            current = read_file(filepath)
+            if self._baseline_path != str(filepath):
+                # Detached models may create a new profile. The development
+                # template generator deliberately replaces the template only.
+                if current and config_name != 'template':
+                    raise ConfigConflict(['<unloaded configuration>'])
+                merged, expected = desired, desired
+            else:
+                if not filepath.exists() and self._baseline_existed:
+                    raise ConfigConflict(['<deleted configuration>'])
+                merged, expected = merge_config_fields(self._local_baseline, self._disk_baseline, desired, current)
+            merged['config_name'] = config_name
+            expected['config_name'] = config_name
+            if merged != current or not filepath.exists():
+                write_file(filepath, merged)
+            object.__setattr__(self, '_local_baseline', copy.deepcopy(desired))
+            object.__setattr__(self, '_disk_baseline', copy.deepcopy(expected))
+            object.__setattr__(self, '_baseline_path', str(filepath))
+            object.__setattr__(self, '_baseline_existed', True)
 
     def gui_args(self, task: str) -> str:
         """
@@ -375,7 +424,7 @@ class ConfigModel(ConfigBase):
 
         return result
 
-    def script_set_arg(self, task: str, group: str, argument: str, value) -> bool:
+    def script_set_arg(self, task: str, group: str, argument: str, value, *, raise_conflicts=False) -> bool:
         task = convert_to_underscore(task)
         group = convert_to_underscore(group)
         argument = convert_to_underscore(argument)
@@ -397,7 +446,7 @@ class ConfigModel(ConfigBase):
 
         group_object = find_group()
         if not isinstance(group_object, BaseModel) or argument not in type(group_object).model_fields:
-            logger.error(f'Set arg {task}.{group}.{argument}.{value} failed')
+            logger.error(f'Set arg {task}.{group}.{argument} failed')
             return False
 
         try:
@@ -425,24 +474,30 @@ class ConfigModel(ConfigBase):
                 reset_datetime = candidate.reset_task_datetime
                 if isinstance(reset_datetime, str):
                     reset_datetime = datetime.fromisoformat(reset_datetime)
-        except (ValidationError, ValueError, TypeError, OverflowError) as e:
-            logger.error(e)
+        except (ValidationError, ValueError, TypeError, OverflowError):
+            logger.error(f'Invalid config field {task}.{group}.{argument}')
             return False
 
-        if reset_datetime is not None:
-            logger.info(f'reset_task_datetime={reset_datetime}')
-            self.reset_datetime_for_all_enabled_tasks(reset_datetime)
-            # Reset reloads the config; the old group now belongs to a stale model.
-            group_object = find_group()
-
+        from module.config.edit_lock import ConfigConflict
+        previous = getattr(group_object, argument)
         try:
             setattr(group_object, argument, value)
-            logger.info(f'Set arg {self.config_name}.{task}.{group}.{argument}.{value}')
-            self.save()
+            logger.info(f'Set arg {self.config_name}.{task}.{group}.{argument}')
+            if reset_datetime is not None:
+                # Apply the switch and its schedule side effect in ONE commit.
+                self.reset_datetime_for_all_enabled_tasks(reset_datetime)
+            else:
+                self.save()
             return True
-        except ValidationError as e:
-            logger.error(e)
+        except ConfigConflict:
+            setattr(group_object, argument, previous)
+            if raise_conflicts:
+                raise
+            logger.warning(f'Concurrent config change rejected: {task}.{group}.{argument}')
             return False
+        except Exception:
+            setattr(group_object, argument, previous)
+            raise
 
     def copy_script_task(self, task_name: str, source_task: BaseModel) -> bool:
         model_task_name = convert_to_underscore(task_name)
@@ -489,18 +544,21 @@ class ConfigModel(ConfigBase):
                     d[k] = dt.strftime("%Y-%m-%d %H:%M:%S")
 
     def reset_datetime_for_all_enabled_tasks(self, task_datetime: datetime):
-        logger.warn(f"trying to reset datetime of all tasks to: {task_datetime}")
+        logger.warning(f"trying to reset datetime of all tasks to: {task_datetime}")
         # logger.info(f"current config: {self.dict()}")
-        data = self.dict()
+        data = self.model_dump()
         self.replace_next_run(data, task_datetime)
         # logger.info(f"new config: {data}")
 
         # write to json config  file
-        self.write_json(self.config_name, data)
-
-        # reload from the newly modified json config file
-        data = self.read_json(self.config_name)
-        super().__init__(**data)
+        from module.config.edit_lock import config_path, config_edit_lock
+        path = config_path(self.config_name)
+        with config_edit_lock(path):
+            self.write_json(self.config_name, data)
+            # Reload this explicit reset operation under the same transaction.
+            data = self.read_json(self.config_name)
+            super().__init__(**data)
+            self._initialize_merge_state(data, path, True)
 
 
 if __name__ == "__main__":

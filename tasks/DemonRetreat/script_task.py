@@ -191,15 +191,18 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DemonRetreatAssets, AbyssSha
         :param random_click_swipt_enable:
         :return:
         """
+        from module.scheduling.task_metrics import begin_battle, finish_battle
         self.device.stuck_record_add('BATTLE_STATUS_S')
         self.device.click_record_clear()
         # 战斗过程 随机点击和滑动 防封 并点击 准备
+        metric_token = begin_battle(self)
         logger.info("Start battle process")
         stuck_timer = Timer(180)
         stuck_timer.start()
         while 1:
             self.screenshot()
             if self.appear(self.I_WIN):
+                finish_battle(self, metric_token, 'won')
                 logger.info('Battle win')
                 self.ui_click_until_disappear(self.I_WIN)
                 return True
@@ -209,6 +212,7 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DemonRetreatAssets, AbyssSha
                 self.device.stuck_record_add('BATTLE_STATUS_S')
             # 如果出现失败 就点击，返回False
             if self.appear(self.I_FALSE, threshold=0.8):
+                finish_battle(self, metric_token, "lost")
                 logger.info("Battle result is false")
                 self.ui_click_until_disappear(self.I_FALSE)
                 return False

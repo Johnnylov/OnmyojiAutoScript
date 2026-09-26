@@ -186,6 +186,8 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
 
     def wait_battle(self) -> bool:
         """等待战斗结束, 返回战斗结果, 最后会退出到斗技主界面"""
+        from module.scheduling.task_metrics import begin_battle, finish_battle
+        metric_token = begin_battle(self)
         logger.hr('duel battle waiting')
         battle_operated = False
         battle_timeout_timer = Timer(270).start()
@@ -207,11 +209,13 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, DuelAssets, SwitchOnmyoji):
                 self.goto_page(page_duel)
                 break
             if self.is_battle_win():
+                finish_battle(self, metric_token, "won")
                 ret = True
                 ret_timer.start()
                 self.click(random_click(ltrb=(True, True, False, True)), interval=1.2)
                 continue
             if self.is_battle_lose():
+                finish_battle(self, metric_token, "lost")
                 ret = False
                 ret_timer.start()
                 self.click(random_click(ltrb=(True, True, False, True)), interval=1.2)

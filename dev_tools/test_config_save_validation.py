@@ -171,25 +171,41 @@ class ConfigSaveValidationTests(unittest.TestCase):
         self.assertFalse(self.config.sample.group.enabled)
         self.config.save.assert_not_called()
 
-    def test_reset_validation_precedes_side_effect_and_saves_reloaded_group(self):
-        original = self.config.restart.tasks_config_reset
+    def test_reset_validation_precedes_one_atomic_persistent_transaction(self):
+        # Test the resulting real file, rather than require the former two-write
+        # ordering (reset schedules first, then save the enable switch).
+        import json
+        import os
+        import tempfile
+        from unittest.mock import patch
+        from module.config.config_model import ConfigModel
+        from module.config import config_model
+
+        previous_cwd = Path.cwd()
         target = datetime(2026, 9, 24, 16, 0)
-        original.reset_task_datetime = target
-        self.assertFalse(self.set_arg('Restart', 'tasks_config_reset', 'reset_task_datetime_enable', 'invalid'))
-        self.config.reset_datetime_for_all_enabled_tasks.assert_not_called()
-        self.config.save.assert_not_called()
-
-        def reload_config(value):
-            self.assertEqual(value, target)
-            self.assertFalse(original.reset_task_datetime_enable)
-            self.config.restart = self.config.restart.model_copy(deep=True)
-
-        self.config.reset_datetime_for_all_enabled_tasks.side_effect = reload_config
-        self.assertTrue(self.set_arg('Restart', 'tasks_config_reset', 'reset_task_datetime_enable', 'true'))
-        self.config.reset_datetime_for_all_enabled_tasks.assert_called_once_with(target)
-        self.assertFalse(original.reset_task_datetime_enable)
-        self.assertTrue(self.config.restart.tasks_config_reset.reset_task_datetime_enable)
-        self.config.save.assert_called_once_with()
+        with tempfile.TemporaryDirectory() as directory:
+            try:
+                os.chdir(directory)
+                real = ConfigModel('isolated-validation')
+                real.restart.tasks_config_reset.reset_task_datetime = target
+                real.save()
+                path = Path(directory) / 'config' / 'isolated-validation.json'
+                before = path.read_bytes()
+                with patch.object(ConfigModel, 'reset_datetime_for_all_enabled_tasks') as reset:
+                    self.assertFalse(real.script_set_arg('Restart', 'tasks_config_reset',
+                                                        'reset_task_datetime_enable', 'invalid'))
+                    reset.assert_not_called()
+                self.assertEqual(path.read_bytes(), before)
+                with patch.object(config_model, 'write_file', wraps=config_model.write_file) as write:
+                    self.assertTrue(real.script_set_arg('Restart', 'tasks_config_reset',
+                                                       'reset_task_datetime_enable', 'true'))
+                    self.assertEqual(write.call_count, 1)
+                stored = json.loads(path.read_text(encoding='utf-8'))
+                self.assertTrue(stored['restart']['tasks_config_reset']['reset_task_datetime_enable'])
+                self.assertEqual(stored['orochi']['scheduler']['next_run'], '2026-09-24 16:00:00')
+                self.assertEqual(stored['mystery_shop']['scheduler']['next_run'], '2026-09-24 16:00:00')
+            finally:
+                os.chdir(previous_cwd)
 
     def test_reset_default_datetime_is_normalized_before_reset(self):
         self.assertTrue(self.set_arg('Restart', 'tasks_config_reset', 'reset_task_datetime_enable', True))

@@ -208,7 +208,7 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
             self.click(self.C_DT_GW_CLICK_INPUT)  # 点击名称输入框
             # uiautomator2 通过 FastInputIME 传输 UTF-8 文本，并在必要时回退到 set_text
             logger.info(f'Inputting name using uiautomator2: {name}, waiting start and send')
-            self.device.u2.send_keys(name, clear=True)
+            self.device.send_keys(name, clear=True)
             self.ui_click_until_disappear(self.I_DT_GW_CONFIRM, interval=1.5)  # 点击确定
             donate_btn = self.I_DT_GW_DONATE
             if name_check:  # 若有多个相同前缀名称, 则需要取出一样的或最相近的名称

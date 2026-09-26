@@ -3,6 +3,8 @@
 # 脚本进程
 # github https://github.com/runhey
 import multiprocessing
+import threading
+import uuid
 from asyncio import QueueEmpty, CancelledError, sleep
 from enum import Enum
 
@@ -33,6 +35,10 @@ class ScriptProcess(ScriptWSManager):
         self.state_queue = _SCRIPT_PROCESS_CONTEXT.Queue()
         self.state: ScriptState = ScriptState.INACTIVE
         self._process = None
+        self._owner_id = None
+        self._bridge_thread = None
+        self._preview_thread = None
+        self._preview_queue = None
 
     @staticmethod
     def _extract_log_dedup_key(log: str) -> str | None:
@@ -48,20 +54,48 @@ class ScriptProcess(ScriptWSManager):
         return message
 
     async def start(self):
+        if self._process and self._process.is_alive():
+            return
+        from module.server.solana_runtime import get_runtime
+        from module.server.solana_bridge import ProcessBridge, serve_bridge
+        runtime = get_runtime()
+        owner_id = str(uuid.uuid4())
+        identity = runtime.register_process(self.config_name, owner_id)
+        parent_pipe, child_pipe = _SCRIPT_PROCESS_CONTEXT.Pipe(duplex=True)
+        bridge = ProcessBridge(child_pipe, **identity)
+        preview_queue = _SCRIPT_PROCESS_CONTEXT.Queue(maxsize=1)
         self.state = ScriptState.RUNNING
-        await self.broadcast_state({"state": self.state})
         if self._process:
             logger.warning(f'Script {self.config_name} is initialized')
-        if self._process and self._process.is_alive():
-            logger.warning(f'Script {self.config_name} is already running and first stop it')
-            self.stop()
+        # Do not yield after registering an owner until its process exists.
+        # Otherwise a concurrent stop can observe _process=None, return stopped,
+        # and then allow this suspended start to create an unexpected executor.
         self._process = _SCRIPT_PROCESS_CONTEXT.Process(
             target=func,
-            args=(self.config_name, self.state_queue, self.log_pipe_in,),
+            args=(self.config_name, self.state_queue, self.log_pipe_in, bridge, preview_queue),
             name=self.config_name,
             daemon=True,
         )
-        self._process.start()
+        try:
+            self._process.start()
+        except Exception:
+            parent_pipe.close()
+            child_pipe.close()
+            runtime.process_exited(owner_id, -1)
+            raise
+        child_pipe.close()
+        self._owner_id = owner_id
+        self._bridge_thread = threading.Thread(target=serve_bridge,
+            args=(parent_pipe, runtime, owner_id, self._process), daemon=True,
+            name=f'solana-{self.config_name}')
+        self._bridge_thread.start()
+        from module.scheduling.preview import consume_previews
+        self._preview_queue = preview_queue
+        self._preview_thread = threading.Thread(target=consume_previews,
+            args=(preview_queue, runtime, owner_id, self._process), daemon=True,
+            name=f'preview-{self.config_name}')
+        self._preview_thread.start()
+        await self.broadcast_state({"state": self.state})
 
 
     async def stop(self):
@@ -72,8 +106,23 @@ class ScriptProcess(ScriptWSManager):
             return
         if not self._process.is_alive():
             logger.warning(f'Script {self.config_name} is not running')
+            # The bridge cleanup may lag process death; reconcile only after
+            # joining the process, so an explicit restart cannot stay fenced.
+            self._process.join()
+            if self._owner_id:
+                from module.server.solana_runtime import get_runtime
+                get_runtime().process_exited(self._owner_id, self._process.exitcode)
+            self._process = None
             return
         self._process.terminate()
+        from asyncio import to_thread
+        process = self._process
+        await to_thread(process.join, 10)
+        if process.is_alive():
+            # Do not release the lease while an executor can still issue actions.
+            raise RuntimeError('Executor did not exit; device ownership remains fenced')
+        from module.server.solana_runtime import get_runtime
+        get_runtime().process_exited(self._owner_id, process.exitcode)
         self._process = None
 
     async def coroutine_broadcast_state(self):
@@ -91,8 +140,8 @@ class ScriptProcess(ScriptWSManager):
                     if not data:
                         await sleep(0.5)
                         continue
-                    if 'state' in data and data['state'] == ScriptState.WARNING:
-                        self.state = ScriptState.WARNING
+                    if 'state' in data and data['state'] in [item.value for item in ScriptState]:
+                        self.state = ScriptState(data['state'])
                     await self.broadcast_state(data)
                 except QueueEmpty as e:
                     logger.warning(f'QueueEmpty: {e}')
@@ -140,7 +189,7 @@ class ScriptProcess(ScriptWSManager):
             return
 
 
-def func(config: str, state_queue: multiprocessing.Queue, log_pipe_in) -> None:
+def func(config: str, state_queue: multiprocessing.Queue, log_pipe_in, solana_bridge=None, preview_queue=None) -> None:
 
     def start_log() -> None:
         try:
@@ -159,15 +208,20 @@ def func(config: str, state_queue: multiprocessing.Queue, log_pipe_in) -> None:
         #     logger.info(f'Script {config} is running')
         #     state_queue.put({"state": ScriptState.RUNNING})
         from script import Script
-        script = Script(config_name=config)
+        script = Script(config_name=config, solana_bridge=solana_bridge)
+        if script.solana_execution is not None and preview_queue is not None:
+            from module.scheduling.preview import PreviewPublisher
+            script.solana_execution.preview_publisher = PreviewPublisher(preview_queue,
+                metadata=lambda: script.solana_execution.progress_snapshot())
         script.state_queue = state_queue
         script.loop()
     except SystemExit as e:
         logger.info(f'Script {config} process exit')
-        logger.error(f'Error: {e}')
-        state_queue.put({"state": ScriptState.WARNING})
+        if e.code not in (None, 0):
+            logger.error(f'Error: {e}')
+        state_queue.put({"state": ScriptState.INACTIVE if e.code in (None, 0) else ScriptState.WARNING})
         time.sleep(0.1)
-        exit(-1)
+        raise SystemExit(0 if e.code in (None, 0) else -1)
     except Exception as e:
         logger.exception(f'Run script {config} error')
         logger.error(f'Error: {e}')

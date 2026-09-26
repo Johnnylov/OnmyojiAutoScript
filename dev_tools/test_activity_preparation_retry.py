@@ -4,6 +4,7 @@ Run: toolkit/python.exe -m unittest discover -s dev_tools -p test_activity_prepa
 """
 
 import ast
+import copy
 from contextlib import nullcontext
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -76,11 +77,16 @@ class ActivityPreparationRetryTests(unittest.TestCase):
             server_update=time(13, 0), delay_date=1, float_time=time(0, 0),
         )
         self.script.config = SimpleNamespace(
+            config_name='offline',
             model=SimpleNamespace(activity_shikigami=SimpleNamespace(scheduler=self.schedule)),
             reload=Mock(), save=Mock(), lock_config=Mock(), task_call=Mock(), notifier=Mock(),
             script=SimpleNamespace(device=SimpleNamespace(run_background_only=True),
                                    error=SimpleNamespace(handle_error=True, error_repeated=False)),
         )
+        # The extracted task_delay now reads a separate scheduling snapshot.
+        # Keep this offline fixture independent from real configuration files.
+        namespace['ConfigModel'] = lambda config_name: SimpleNamespace(
+            activity_shikigami=SimpleNamespace(scheduler=copy.deepcopy(self.schedule)), save=Mock())
         self.real_delay = MethodType(config_class.task_delay, self.script.config)
         self.script.config.task_delay = Mock(wraps=self.real_delay)
         self.script.anti_ban_guard = Mock()
@@ -106,6 +112,7 @@ class ActivityPreparationRetryTests(unittest.TestCase):
         self.assertEqual(self.script.last_task_runtime_outcome,
                          dict(task='ActivityShikigami', status='retry_scheduled', wait_until=self.retry_at))
         self.assertEqual(self.script.config.task_runtime_outcome, self.script.last_task_runtime_outcome)
+        self.script.config.reload.assert_not_called()
 
     def test_default_server_time_does_not_add_random_delay_to_retry(self):
         self.schedule.server_update = time(9, 0)

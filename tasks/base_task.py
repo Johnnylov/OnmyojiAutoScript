@@ -20,6 +20,7 @@ from module.device.device import Device
 from module.exception import ScriptError
 from module.image.rpc import get_image_client
 from module.logger import logger
+from module.scheduling.task_metrics import report_count_progress
 from module.ocr.base_ocr import OcrMode
 from tasks.Component.Costume.costume_base import CostumeBase
 from tasks.Component.config_base import Time
@@ -60,6 +61,10 @@ class BaseTask(GlobalGameAssets, CostumeBase):
 
         # 战斗次数相关
         self.current_count = 0  # 战斗次数
+        execution = getattr(config, 'solana_execution', None)
+        if execution is not None and execution.active and execution.active.get('cooperative'):
+            self.current_count = execution.count
+        report_count_progress(self)
 
     def _burst(self) -> bool:
         """
@@ -681,6 +686,17 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         else:
             start_time = self.start_time
         self.config.task_delay(task, start_time=start_time, success=success, server=server, target=target)
+        execution = getattr(self.config, 'solana_execution', None)
+        if execution is not None and execution.active and execution.active['task'] == task and success is not None:
+            execution.business_success = bool(success)
+
+    def mark_business_skipped(self, task, decision):
+        """Mark only an explicit prerequisite; never infer this from failure."""
+        from module.scheduling.preflight import BusinessSkip
+        if not isinstance(decision, BusinessSkip):
+            raise TypeError('Business skip requires an explicit decision')
+        self.config.task_runtime_outcome = {'task': task, 'status': 'business_skipped',
+            'reason': decision.reason, 'wait_until': decision.next_run}
 
     def custom_next_run(self, task: str, custom_time: Time = None, time_delta: float = 1) -> None:
         """

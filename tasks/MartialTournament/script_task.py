@@ -12,6 +12,7 @@ from module.base.protect import random_sleep
 from module.base.timer import Timer
 from module.exception import TaskEnd
 from module.logger import logger
+from module.scheduling.task_metrics import report_count_progress
 
 from tasks.base_task import BaseTask
 from tasks.MartialTournament.assets import MartialTournamentAssets
@@ -147,6 +148,7 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, QuickLoadout, BaseActivity, 
             for mode in self.conf.general_climb.sequence_list:
                 self.current_mode = mode
                 self.current_count = 0
+                report_count_progress(self)
                 self.last_soul_type = ''
                 self.team_locked = False
                 self.ticket_type = 'pass_1'

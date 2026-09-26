@@ -38,12 +38,15 @@ from module.script import ScriptRuntimeController, ScriptRuntimeDecision
 from module.script.team_sync import LocalTeamCoordinator
 from tasks.Restart.server_update import delay_pending_tasks_for_server_update, is_server_update_window
 from module.server.log_service import build_error_log_dir_name
+from module.scheduling.runtime import (ExecutionRuntime, SafeBoundaryExit, ReconciliationRequired,
+                                      DispatchStopped, classify_outcome, cooperative_task)
+from module.scheduling.coordinator import LeaseLost
 
 _log_switch_lock = threading.Lock()#线程锁
 
 
 class Script:
-    def __init__(self, config_name: str ='oas') -> None:
+    def __init__(self, config_name: str ='oas', solana_bridge=None) -> None:
         logger.hr('Start', level=0)
         self.server = None
         self.state_queue: Queue = None
@@ -51,6 +54,8 @@ class Script:
         self.runtime = ScriptRuntimeController(self)
         self.gui_update_task: Callable = None  # 回调函数, gui进程注册当每次config更新任务的时候更新gui的信息
         self.config_name = config_name
+        self.solana_bridge = solana_bridge
+        self.solana_execution = ExecutionRuntime(solana_bridge, config_name) if solana_bridge else None
         self.team_sync = LocalTeamCoordinator(config_name)
         # Skip first restart
         self.is_first_task = True
@@ -70,6 +75,8 @@ class Script:
             from module.config.config import Config
             config = Config(config_name=self.config_name)
             config.team_sync = self.team_sync
+            if getattr(self, 'solana_execution', None) is not None:
+                config.solana_execution = getattr(self, 'solana_execution', None)
             return config
         except RequestHumanTakeover:
             logger.critical('Request human takeover')
@@ -298,9 +305,19 @@ class Script:
         Returns:
             bool: True if wait finished, False if config changed.
         """
+        execution = getattr(self, 'solana_execution', None)
+        if execution is not None and execution.lease and execution.active is None:
+            execution.release()
         future = future + timedelta(seconds=1)
         self.config.start_watching()
         while 1:
+            if execution is not None:
+                control = execution.control_status().get('control')
+                if control in ('stop', 'safe_stop'):
+                    execution.stop_at_boundary()
+                if control in ('pause', 'paused'):
+                    time.sleep(0.5)
+                    continue
             if datetime.now() > future:
                 return True
             # if self.stop_event is not None:
@@ -358,6 +375,7 @@ class Script:
         获取下一个任务的名字, 大驼峰。
         :return:
         """
+        from module.scheduling.coordinator import LeaseLost
         while True:
             task = self.config.get_next()
             team_sync = getattr(self, 'team_sync', None)
@@ -382,6 +400,30 @@ class Script:
                 self.state_queue.put({"schedule": self.config.get_schedule_data()})
             # 任务时间到了返回任务名称
             if task.next_run <= now:
+                if getattr(self, 'solana_execution', None) is not None:
+                    result = self.solana_execution.acquire(self.config, preferred_task=requested)
+                    if result['status'] != 'acquired':
+                        if result.get('control') in ('stop', 'safe_stop'):
+                            self.solana_execution.stop_at_boundary()
+                        self._wait_for_dispatch(result)
+                        del_cached_property(self, 'config')
+                        continue
+                    self._dispatch_wait_key = None
+                    self._dispatch_wait_attempts = 0
+                    command = result['lease']['task']
+                    selected = next(item for item in self.config.pending_task + self.config.waiting_task
+                                    if item.command == command)
+                    self.config.task = selected
+                    try:
+                        if team_sync and team_sync.request(command) != command:
+                            self.solana_execution.release()
+                            continue
+                    except Exception:
+                        # No gameplay started, but the admission lease already
+                        # exists. A peer rejection must never leave it held.
+                        self.solana_execution.release()
+                        raise
+                    return command
                 if team_sync and team_sync.request(task.command) != task.command:
                     continue
                 return task.command
@@ -389,13 +431,57 @@ class Script:
             wait_until = task.next_run
             if self.task_hoarding_until and self.config.waiting_task:
                 wait_until = min(wait_until, self.config.waiting_task[0].next_run)
-            decision = self.runtime.handle_wait_during_idle(wait_until)
+            if getattr(self, 'solana_execution', None) is not None:
+                # Publish future candidates, then obtain short maintenance leases
+                # for existing close-game/preheat behaviour. Sleeping releases them.
+                idle_result = self.solana_execution.acquire(self.config, release_floor=wait_until.timestamp())
+                if idle_result.get('control') in ('stop', 'safe_stop'):
+                    self.solana_execution.stop_at_boundary()
+                self.solana_execution.maintenance_mode = True
+            try:
+                decision = self.runtime.handle_wait_during_idle(wait_until)
+            except LeaseLost:
+                time.sleep(0.5)
+                decision = ScriptRuntimeDecision.RESCHEDULE
+            finally:
+                if getattr(self, 'solana_execution', None) is not None:
+                    self.solana_execution.maintenance_mode = False
+                    if self.solana_execution.lease and self.solana_execution.active is None:
+                        self.solana_execution.release()
             if decision == ScriptRuntimeDecision.RESCHEDULE:
                 logger.info('Idle wait requested scheduler refresh, reload config and reschedule')
                 del_cached_property(self, "config")
             elif decision == ScriptRuntimeDecision.FAILED:
                 logger.warning('Idle wait preparation failed, reload config and retry scheduling')
                 del_cached_property(self, "config")
+
+    def _wait_for_dispatch(self, result):
+        """Back off unchanged admission waits, while still honoring stop promptly."""
+        decision = result.get('decision') or {}
+        blocked = decision.get('blocked') or {}
+        local_prefix = self.solana_execution.profile_id + ':'
+        local_reasons = [reason for key, reason in blocked.items() if key.startswith(local_prefix)]
+        if local_reasons and all(reason == 'recovery_budget_disabled' for reason in local_reasons):
+            raise ReconciliationRequired('恢复预算为零，已停止调度，请调整恢复预算后重新运行')
+        if local_reasons and all(reason == 'recovery_budget_exhausted' for reason in local_reasons):
+            raise ReconciliationRequired('任务连续恢复失败，已停止调度，请检查游戏状态后重新运行')
+        reason = result.get('reason') or decision.get('reason') or result['status']
+        key = (result['status'], result.get('control'), reason, tuple(sorted(blocked.items())))
+        changed = key != getattr(self, '_dispatch_wait_key', None)
+        attempts = 1 if changed else getattr(self, '_dispatch_wait_attempts', 0) + 1
+        self._dispatch_wait_key, self._dispatch_wait_attempts = key, attempts
+        now = time.monotonic()
+        if changed or now - getattr(self, '_dispatch_wait_logged_at', 0) >= 60:
+            logger.info(f'Scheduler waiting: {reason}; blocked={blocked}')
+            self._dispatch_wait_logged_at = now
+        remaining = min(5.0, 0.5 * 2 ** min(attempts - 1, 4))
+        while remaining > 0:
+            control = self.solana_execution.control_status().get('control')
+            if control in ('stop', 'safe_stop'):
+                self.solana_execution.stop_at_boundary()
+            interval = min(0.5, remaining)
+            time.sleep(interval)
+            remaining -= interval
 
     def exception_handler(self, e: Exception, command: str) -> None:
         # 处理御魂溢出
@@ -411,6 +497,7 @@ class Script:
 
     def _reset_task_runtime_outcome(self) -> None:
         self.last_task_runtime_outcome = None
+        self._solana_error_category = None
         if 'config' in self.__dict__:
             self.config.task_runtime_outcome = None
 
@@ -472,7 +559,10 @@ class Script:
             module_path = str(Path.cwd() / 'tasks' / command / (module_name + '.py'))
             logger.info(f'module_path: {module_path}, module_name: {module_name}')
             task_module = load_module(module_name, module_path)
-            task_module.ScriptTask(config=self.config, device=self.device).run()
+            returned = task_module.ScriptTask(config=self.config, device=self.device).run()
+            if returned is True:
+                completed = True
+                return True
         except Exception as e:
             result = self._handle_task_exception(e, command)
             completed = isinstance(e, TaskEnd) or (
@@ -484,11 +574,45 @@ class Script:
                 team_sync.finish(command, completed)
         return False
 
+    def _defer_business_precondition(self, command):
+        """Known clock-only prerequisites need no run or game preparation."""
+        from module.scheduling.preflight import business_preflight
+        from module.scheduling.runtime import ReconciliationRequired
+        execution = getattr(self, 'solana_execution', None)
+        if execution is None:
+            return False
+        decision = business_preflight(command, datetime.now())
+        if decision is None:
+            return False
+        try:
+            self.config.task_delay(task=command, target=decision.next_run, server=False)
+            execution.skip_before_begin(command, decision)
+        except Exception as exc:
+            # An unconfirmed schedule/decision must not become new gameplay.
+            raise ReconciliationRequired('Business prerequisite defer could not be saved') from exc
+        return True
+
+    def _finish_preparation_reschedule(self):
+        execution = getattr(self, 'solana_execution', None)
+        if execution is None or not execution.active:
+            return
+        if getattr(self.runtime, 'preparation_recovered', False):
+            # Restart has verified that the game is running. The business task
+            # has not run yet; return to ordinary selection, without marking
+            # the whole device as failed or consuming the recovery budget.
+            execution.recovery_tasks.clear()
+            execution.finish('yielded', 'runtime_prepared')
+        else:
+            execution.finish('recovery_requested', 'runtime_preparation')
+
     def loop(self):
         """
         Main loop of scheduler.
         :return:
         """
+        from time import monotonic
+        from module.scheduling.runtime import DispatchStopped, ReconciliationRequired
+        from module.scheduling.coordinator import LeaseLost
         team_sync = getattr(self, 'team_sync', None)
         try:
             if team_sync:
@@ -523,20 +647,38 @@ class Script:
                     if self.is_first_task and task == 'Restart':
                         logger.info('Skip task `Restart` at scheduler start')
                         self.config.task_delay(task='Restart', success=True, server=True)
+                        if getattr(self, 'solana_execution', None) is not None:
+                            self.solana_execution.release('succeeded')
                         del_cached_property(self, 'config')
                         continue
+                    if getattr(self, 'solana_execution', None) is not None and self._defer_business_precondition(task):
+                        del_cached_property(self, 'config')
+                        continue
+                    if getattr(self, 'solana_execution', None) is not None:
+                        task_config = getattr(self.config.model, convert_to_underscore(task))
+                        self.solana_execution.begin(task, task_config, cooperative_task(task, self.config),
+                            device_config=self.config.script.device.model_dump(mode='json'))
                     decision = self.runtime.prepare_task_execution(task)
                 except Exception as e:
+                    if isinstance(e, (LeaseLost, ReconciliationRequired)):
+                        raise DispatchStopped(str(e)) from e
                     self._handle_task_exception(e, task)
+                    if getattr(self, 'solana_execution', None) is not None and self.solana_execution.active:
+                        self.solana_execution.finish('recovery_requested', type(e).__name__)
                     # 本轮 prepare 失败,重新调度
                     del_cached_property(self, 'config')
                     continue
 
                 if decision == ScriptRuntimeDecision.RESCHEDULE:
+                    self._finish_preparation_reschedule()
                     logger.info(f'Runtime preparation for `{task}` requested reschedule, reload config and retry scheduling')
                     del_cached_property(self, 'config')
                     continue
                 if decision == ScriptRuntimeDecision.FAILED:
+                    # A failed environment preparation still needs bounded
+                    # recovery. Marking it terminal here would clear the
+                    # recovery fence and retry the same due task forever.
+                    self._finish_preparation_reschedule()
                     logger.warning(f'Runtime preparation for `{task}` failed, reload config and retry scheduling')
                     del_cached_property(self, 'config')
                     continue
@@ -547,12 +689,38 @@ class Script:
                 self.device.click_record_clear()
                 logger.hr(task, level=0)
                 self.config.model.running_task = task
-                _task_start = datetime.now()
+                _task_start = monotonic()
                 success = self.run(inflection.camelize(task))
                 self.config.model.running_task = ''
                 logger.info(f'Scheduler: End task `{task}`')
                 self.is_first_task = False
-                self.anti_ban_guard.record_active((datetime.now() - _task_start).total_seconds())
+                self.anti_ban_guard.record_active(monotonic() - _task_start)
+
+                if getattr(self, 'solana_execution', None) is not None:
+                    execution = getattr(self, 'solana_execution', None)
+                    final_outcome = classify_outcome(success, self.last_task_runtime_outcome, execution.business_success)
+                    control = execution.validate().get('control')
+                    if control in ('stop', 'safe_stop'):
+                        final_outcome = 'cancelled'
+                    if not success and self.failure_record.get(task, 0) >= 2 and self.config.script.error.error_repeated:
+                        # Preserve configured error shutdown while still owning
+                        # this device; never stop another profile's later lease.
+                        self.device.emulator_stop()
+                    reason = ((self.last_task_runtime_outcome or {}).get('status') or
+                              getattr(self, '_solana_error_category', None))
+                    if reason == 'business_skipped':
+                        execution.event('scheduler.skipped', {
+                            'reason': (self.last_task_runtime_outcome or {}).get('reason'),
+                            'phase': 'business_precondition_after_prepare',
+                            'next_run': str((self.last_task_runtime_outcome or {}).get('wait_until'))})
+                        reason = 'business_precondition:' + str((self.last_task_runtime_outcome or {}).get('reason'))
+                    execution.finish(final_outcome, reason)
+                    if final_outcome == 'cancelled' and (control in ('stop', 'safe_stop') or
+                            not str(reason or '').startswith('business_precondition:')):
+                        raise DispatchStopped(0)
+                    if final_outcome in ('paused', 'yielded', 'recovery_requested'):
+                        del_cached_property(self, 'config')
+                        continue
 
                 outcome = getattr(self, 'last_task_runtime_outcome', None)
                 if isinstance(outcome, dict) and outcome.get('status') == 'team_preempted':
@@ -578,7 +746,7 @@ class Script:
                         content=f"<{self.config_name}> 任务连续失败三次，请上线查看"
                     )
                     # 关闭模拟器
-                    if self.config.script.error.error_repeated:
+                    if self.config.script.error.error_repeated and getattr(self, 'solana_execution', None) is None:
                         self.device.emulator_stop()
                     exit(1)
 
@@ -593,6 +761,15 @@ class Script:
                 else:
                     break
         finally:
+            execution = getattr(self, 'solana_execution', None)
+            if execution is not None:
+                try:
+                    if execution.active and execution.active.get('state') == 'running':
+                        execution.finish('interrupted', 'worker_exit')
+                    elif execution.lease:
+                        execution.release('interrupted')
+                except Exception:
+                    logger.error('Solana runtime exit could not persist; parent must reconcile this run')
             if team_sync:
                 team_sync.close()
 
@@ -606,6 +783,15 @@ class Script:
         对致命异常 (ScriptError / RequestHumanTakeover / 未识别 Exception)
         在内部直接 exit(1)。
         """
+        from module.scheduling.runtime import SafeBoundaryExit, ReconciliationRequired, DispatchStopped
+        from module.scheduling.coordinator import LeaseLost
+        if not isinstance(e, TaskEnd):
+            self._solana_error_category = type(e).__name__
+        if isinstance(e, SafeBoundaryExit):
+            self._set_task_runtime_outcome(command, e.outcome)
+            return True
+        if isinstance(e, (LeaseLost, ReconciliationRequired)):
+            raise DispatchStopped(str(e)) from e
         from module.script.team_sync import TeamTaskSwitch, TeamSyncUnavailable, TeamPartnerFinished
         if isinstance(e, TeamTaskSwitch):
             logger.info(f'{command}: {e}')
@@ -667,6 +853,7 @@ class Script:
             logger.warning(e)
             self.exception_handler(e=e, command=command)
             self.config.task_call('Restart')
+            self._set_task_runtime_outcome(command, 'recovery_requested')
             return True
 
         if isinstance(e, (GameStuckError, GameTooManyClickError)):

@@ -25,6 +25,37 @@ from module.logger import logger
 
 
 class Device(Platform, Screenshot, Control, AppControl):
+    # Catch high-level and explicitly used backend actions, including cached bound
+    # control methods. Reads/screenshots are permitted for diagnostic observers.
+    _solana_mutations = frozenset({
+        'click', 'long_click', 'swipe', 'swipe_vector', 'drag', 'multi_click',
+        'click_adb', 'long_click_adb', 'swipe_adb', 'drag_adb', 'draw_adb',
+        'click_minitouch', 'long_click_minitouch', 'swipe_minitouch', 'drag_minitouch',
+        'click_uiautomator2', 'long_click_uiautomator2', 'swipe_uiautomator2', 'drag_uiautomator2',
+        'click_scrcpy', 'long_click_scrcpy', 'swipe_scrcpy', 'drag_scrcpy',
+        'click_window_message', 'long_click_window_message', 'swipe_window_message', 'drag_window_message',
+        'app_start', 'app_stop', 'emulator_start', 'emulator_stop', 'send_keys',
+        'app_start_adb', 'app_stop_adb', 'app_start_uiautomator2', 'app_stop_uiautomator2',
+    })
+
+    def __getattribute__(self, name):
+        value = super().__getattribute__(name)
+        if name in Device._solana_mutations and callable(value):
+            def fenced(*args, **kwargs):
+                self.solana_validate_action()
+                return value(*args, **kwargs)
+            return fenced
+        return value
+
+    def solana_validate_action(self):
+        config = self.__dict__.get('config')
+        execution = getattr(config, 'solana_execution', None) if config is not None else None
+        if execution is not None:
+            execution.validate()
+
+    def send_keys(self, text, **kwargs):
+        return self.u2.send_keys(text, **kwargs)
+
     _screen_size_checked = False
     detect_record = set()
     click_record = deque(maxlen=15)
@@ -33,6 +64,10 @@ class Device(Platform, Screenshot, Control, AppControl):
     stuck_long_wait_list = ['BATTLE_STATUS_S', 'PAUSE', 'LOGIN_CHECK', 'PREPARE_BEFORE_BATTLE']
 
     def __init__(self, *args, **kwargs):
+        construction_config = kwargs.get('config') or (args[0] if args else None)
+        execution = getattr(construction_config, 'solana_execution', None) if construction_config is not None else None
+        if execution is not None:
+            execution.validate()  # includes emulator startup performed by parent constructors
         for trial in range(4):
             try:
                 super().__init__(*args, **kwargs)
@@ -141,6 +176,10 @@ class Device(Platform, Screenshot, Control, AppControl):
             super().screenshot()
 
         self.reset_image_batch_cache(self.image_frame_id)
+        execution = getattr(self.config, 'solana_execution', None)
+        publisher = getattr(execution, 'preview_publisher', None)
+        if publisher is not None:
+            publisher(self.image)
         return self.image
 
     def release_during_wait(self):

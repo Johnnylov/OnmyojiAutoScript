@@ -53,6 +53,7 @@ class ScriptRuntimeController:
         self.script = script
         self.server_update_wait_until: datetime | None = None
         self.server_update_wait_log_until: datetime | None = None
+        self.preparation_recovered = False
 
     @property
     def config(self):
@@ -235,6 +236,7 @@ class ScriptRuntimeController:
             return ScriptRuntimeDecision.FAILED
 
         logger.info('Restart recovery completed, reschedule before continuing')
+        self.preparation_recovered = True
         return ScriptRuntimeDecision.RESCHEDULE
 
     def _ensure_game_running(
@@ -319,6 +321,7 @@ class ScriptRuntimeController:
         Returns:
             ScriptRuntimeDecision: 当前轮次应继续执行、重新调度或中断。
         """
+        self.preparation_recovered = False
         if task == 'Restart':
             return ScriptRuntimeDecision.READY
 

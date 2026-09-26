@@ -12,6 +12,7 @@ from tasks.SixRealms.config import SixRealmsType, SixRealms
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.page import page_main, page_shikigami_records
 from module.logger import logger
+from module.scheduling.task_metrics import report_task_progress
 from tasks.SixRealms.moon_sea.moon_sea import MoonSea
 from tasks.SixRealms.peacock_kingdom.peacock_kingdom import PeacockKingdom
 
@@ -30,6 +31,7 @@ class ScriptTask(GameUi, SwitchSoul):
     def run(self):
         _config = self.config.model.six_realms
         cnt = 0
+        report_task_progress(self, cnt, _config.six_realms_gate.limit_count, unit='轮六道')
         while True:
             if cnt >= _config.six_realms_gate.limit_count:
                 logger.info('Run out of count, exit')
@@ -47,6 +49,7 @@ class ScriptTask(GameUi, SwitchSoul):
                 case _:
                     raise ValueError(f'Invalid six_realms_type {_config.six_realms_gate.six_realms_type}')
             cnt += 1
+            report_task_progress(self, cnt, _config.six_realms_gate.limit_count, unit='轮六道')
         self.goto_page(page_main)
         self.set_next_run('SixRealms', success=True, finish=True)
         raise TaskEnd
@@ -75,4 +78,3 @@ if __name__ == '__main__':
 
             print(f'{file.name} -> {new_name}')
             file.rename(new_path)
-

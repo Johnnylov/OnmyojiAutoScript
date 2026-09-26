@@ -16,6 +16,7 @@ import tasks.MetaDemon.page as ipages
 
 from module.logger import logger
 from module.exception import TaskEnd
+from module.scheduling.task_metrics import report_count_progress
 
 
 class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
@@ -47,6 +48,7 @@ class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
         self.conf = self.config.meta_demon
         self.limit_time = self.conf.meta_demon_config.limit_time_v
         self.limit_count = self.conf.meta_demon_config.limit_count
+        report_count_progress(self)
         page_shikigami_records = self.navigator.resolve_page(ipages.page_shikigami_records)
         page_meta_demon_boss = self.navigator.resolve_page(ipages.page_meta_demon_boss)
         page_main = self.navigator.resolve_page(ipages.page_main)
@@ -97,6 +99,7 @@ class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
             self.screenshot()
             if self.is_in_battle(False):
                 self.total_count += 1
+                report_count_progress(self)
                 self.run_general_battle(
                     self.conf.switch_soul.get_general_battle_conf(self.cur_boss_type),
                     battle_key=self._meta_demon_battle_key(),
@@ -114,8 +117,10 @@ class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
                 continue
 
     def battle_wait(self, random_click_swipt_enable: bool) -> bool:
+        from module.scheduling.task_metrics import begin_battle, finish_battle
         self.device.stuck_record_add('BATTLE_STATUS_S')
         self.device.click_record_clear()
+        metric_token = begin_battle(self)
         logger.info(f"Start battle process on {self.cur_boss_type.name if self.cur_boss_type else 'None'}")
         win = False
         while True:
@@ -125,10 +130,12 @@ class ScriptTask(GeneralBattle, SwitchSoul, GameUi, MetaDemonAssets):
                     self.appear(self.I_MD_FIRE, interval=0.8):
                 break
             if self.appear(self.I_WIN, interval=0.8):
+                finish_battle(self, metric_token, "won")
                 win = True
                 self.click(ipages.random_click())
                 continue
             if self.appear(self.I_FALSE, interval=0.8):
+                finish_battle(self, metric_token, "lost")
                 win = False
                 self.click(ipages.random_click())
                 continue

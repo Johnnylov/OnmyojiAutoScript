@@ -35,10 +35,12 @@ class BattleTakeover(BaseModel):
 
 
 class LocalTeam(BaseModel):
-    enable: bool = Field(default=False, description='启用后，两份运行中的配置会相互调动组队任务')
+    enable: bool = Field(default=False, title='启用本机组队联动', description='启用后，两份运行中的配置会相互调动组队任务；不会自动启动已停止的配置')
     partner_config: str = Field(default='', title='队友配置名', description='填写同一本机后端中的配置名，例如 oas2；两边需要相互绑定')
     sync_orochi: bool = Field(default=True, title='八岐大蛇联动', description='需配成队长与队员，并启用双方任务')
     sync_bondling: bool = Field(default=True, title='契灵联动', description='支持队长/队员以及 handoff1/handoff2')
+    sync_true_orochi: bool = Field(default=False, title='真八岐大蛇联动',
+                                  description='双方启用真蛇任务和真蛇双开组队，真蛇队友须与上方配置名一致，并配成初始队长和队员；沿用真蛇开车模式和好友邀请名单')
     ready_timeout: int = Field(default=600, ge=30, le=1800, title='就绪等待上限（秒）',
                               description='队友结束当前战斗并完成准备的最长等待时间；超时后两分钟重试')
 

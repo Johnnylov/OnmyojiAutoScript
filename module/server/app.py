@@ -16,6 +16,7 @@ from module.server.log_router import log_app
 from module.server.script_router import script_app
 from module.server.stats_router import stats_app
 from module.server.tool_router import tool_app
+from module.server.solana_router import solana_app
 from starlette import status
 from starlette.responses import JSONResponse
 from module.server.setting import State
@@ -45,6 +46,7 @@ app.add_middleware(
 )
 
 app.include_router(home_app)
+app.include_router(solana_app)
 app.include_router(script_app)
 app.include_router(stats_app)
 app.include_router(log_app)
@@ -61,12 +63,18 @@ async def on_startup():
     :return:
     """
     ensure_api_logger()
+    from module.server.solana_runtime import get_runtime
+    get_runtime()
     logger.info('OAS web service startup done')
-    if app.state.script_instances:
+    if getattr(app.state, 'script_instances', None):
         await mm.restart_processes(app.state.script_instances)
 
 
 async def on_shutdown():
+    for process in list(mm.script_process.values()):
+        await process.stop()
+    from module.server.solana_runtime import close_runtime
+    close_runtime()
     logger.info('OAS web service shutdown done')
 
 

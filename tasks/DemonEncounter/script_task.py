@@ -493,21 +493,14 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
         如果不在17:00到22:00之间,就推迟到下一个 17:30
         :return:
         """
-        now = datetime.now()
-        if now.hour < 17:
-            # 17点之前，推迟到当天的17点半
-            logger.info('Before 17:00, wait to 17:30')
-            target_time = datetime(now.year, now.month, now.day, 17, 30, 0)
-            self.set_next_run(task='DemonEncounter', success=False, finish=False, target=target_time)
+        from module.scheduling.preflight import business_preflight
+        decision = business_preflight('DemonEncounter', datetime.now())
+        if decision is not None:
+            logger.info(f'Outside activity window, wait to {decision.next_run}')
+            self.set_next_run(task='DemonEncounter', success=False, finish=False, target=decision.next_run)
+            self.mark_business_skipped('DemonEncounter', decision)
             return False
-        elif now.hour >= 23:
-            # 23点之后，推迟到第二天的17:30
-            logger.info('After 23:00, wait to 17:30')
-            target_time = datetime(now.year, now.month, now.day, 17, 30, 0) + timedelta(days=1)
-            self.set_next_run(task='DemonEncounter', success=False, finish=False, target=target_time)
-            return False
-        else:
-            return True
+        return True
 
     @property
     def boss_type(self) -> str:

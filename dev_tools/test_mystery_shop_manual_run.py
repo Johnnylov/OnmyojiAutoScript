@@ -36,7 +36,10 @@ class ManualRunTests(unittest.TestCase):
             config.model.script_set_arg = Mock(return_value=True)
             configs[world.task.config.config_name] = config
         namespace = {'datetime': worlds[0].clock_datetime(), 'logger': Mock(), 're': re,
-                     'mm': SimpleNamespace(config_cache=lambda name: configs[name])}
+                     'mm': SimpleNamespace(config_cache=lambda name: configs[name]),
+                     # This AST fixture tests shop admission. Full durable audit
+                     # and HTTP behavior use real routes in test_legacy_audit.
+                     'run_config_mutation': lambda action, names, callback, **kwargs: callback()}
 
         class HTTPException(Exception):
             def __init__(self, status_code, detail):

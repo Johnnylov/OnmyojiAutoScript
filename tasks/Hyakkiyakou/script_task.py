@@ -14,6 +14,7 @@ from oashya.utils import draw_tracks
 
 from module.exception import TaskEnd
 from module.logger import logger
+from module.scheduling.task_metrics import report_task_progress
 from module.exception import RequestHumanTakeover
 from tasks.Component.SwitchOnmyoji.switch_onmyoji import SwitchOnmyoji
 from tasks.GameUi.game_ui import GameUi
@@ -106,6 +107,7 @@ class ScriptTask(GameUi, HyaSlave, SwitchOnmyoji):
     def run(self):
         hya_count: int = 0
         self.limit_count: int = self._config.hyakkiyakou_config.hya_limit_count
+        report_task_progress(self, hya_count, self.limit_count, unit='局百鬼夜行')
         limit_time = self._config.hyakkiyakou_config.hya_limit_time
         self.limit_time: timedelta = timedelta(hours=limit_time.hour, minutes=limit_time.minute,
                                                seconds=limit_time.second)
@@ -123,6 +125,7 @@ class ScriptTask(GameUi, HyaSlave, SwitchOnmyoji):
 
             self.one()
             hya_count += 1
+            report_task_progress(self, hya_count, self.limit_count, unit='局百鬼夜行')
             logger.info(f'count: {hya_count}/{self.limit_count}')
             logger.info(f'time: {(datetime.now() - self.start_time).total_seconds():.1f}s/{self.limit_time.total_seconds()}s')
 

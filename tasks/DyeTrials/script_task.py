@@ -6,6 +6,7 @@ import time
 from module.base.timer import Timer
 from module.exception import TaskEnd
 from module.logger import logger
+from module.scheduling.task_metrics import begin_battle, finish_battle, report_task_progress
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.DyeTrials.assets import DyeTrialsAssets
@@ -54,6 +55,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, DyeTrialsAssets):
         boss_timer = Timer(60)
         boss_timer.start()
         battle_num = 0
+        metric_token = None
+        report_task_progress(self, battle_num, 50, unit='次挑战')
         while 1:
             self.screenshot()
             time.sleep(0.1)
@@ -79,12 +82,15 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, DyeTrialsAssets):
                     break
                 self.ui_click_until_disappear(self.I_FP_CHALLENGE)
                 battle_num += 1
+                metric_token = begin_battle(self)
+                report_task_progress(self, battle_num, 50, unit='次挑战')
                 logger.info(f'Battle num [{battle_num}]')
                 self.device.stuck_record_clear()
                 self.device.stuck_record_add('BATTLE_STATUS_S')
                 boss_timer.reset()
                 continue
             if self.appear_then_click(self.I_BATTLE_SUCCESS, interval=1):
+                finish_battle(self, metric_token, 'won')
                 boss_timer.reset()
                 continue
 
@@ -99,4 +105,3 @@ if __name__ == '__main__':
     t.screenshot()
 
     t.run()
-

@@ -104,6 +104,25 @@ class ScriptTask(OrochiScriptTask, TrueOrochiAssets):
         mode = team.hosting_mode if leader == own else other.team_config.hosting_mode
         return LocalTeam(own, peer, leader, mode)
 
+    def _wait_scheduled_team(self):
+        coordinator = self.config.__dict__.get('team_sync')
+        if not coordinator or not coordinator.session_id:
+            return
+
+        def check_stop():
+            execution = self.config.__dict__.get('solana_execution')
+            if execution and execution.control_status().get('control') in ('safe_stop', 'stop'):
+                # This barrier precedes any room or battle input.
+                execution.stop_at_boundary()
+
+        # Join the scheduler barrier before creating the per-round session: a
+        # long preparation wait must not expire TrueOrochi's short heartbeat.
+        coordinator.ready(on_wait=check_stop)
+        self.device.stuck_record_clear()
+        self.device.click_record_clear()
+        self.device.screenshot()
+        self.start_time = datetime.now()
+
     def run(self):
         self._reset_week()
         successful = False
@@ -113,6 +132,7 @@ class ScriptTask(OrochiScriptTask, TrueOrochiAssets):
         try:
             try:
                 if self.config.true_orochi.team_config.enable:
+                    self._wait_scheduled_team()
                     self._team_sync = self._connect_team()
                 started = True
                 self.switch_true_orochi_souls()
@@ -445,6 +465,8 @@ class ScriptTask(OrochiScriptTask, TrueOrochiAssets):
 
     def run_true_orochi_battle(self):
         """Keep auto enabled across all ten floors, then dismiss rewards/frame."""
+        from module.scheduling.task_metrics import begin_battle, finish_battle
+        metric_token = begin_battle(self)
         logger.hr('True Orochi Battle')
         self._true_battling = True
         self.device.stuck_record_clear()
@@ -463,12 +485,14 @@ class ScriptTask(OrochiScriptTask, TrueOrochiAssets):
                 if self.appear_then_click(self.I_ST_FRAME, interval=1):
                     continue
                 if self.appear(self.I_FALSE):
+                    finish_battle(self, metric_token, "lost")
                     failed = True
                     if settlement is None:
                         settlement = Timer(45).start()
                     self.click(self.C_RANDOM_BOTTOM, interval=1)
                     continue
                 if self.appear(self.I_GREED_GHOST):
+                    finish_battle(self, metric_token)
                     rewarded = True
                     if settlement is None:
                         settlement = Timer(45).start()

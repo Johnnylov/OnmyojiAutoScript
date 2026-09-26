@@ -139,9 +139,11 @@ class Foot(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikigamiAsse
         return func(random_click_swipt_enable)
 
     def battle_wait_daily_training(self, random_click_swipt_enable: bool):
+        from module.scheduling.task_metrics import begin_battle, finish_battle
         self.C_REWARD_1.name, self.C_REWARD_2.name, self.C_REWARD_3.name = 'C_REWARD', 'C_REWARD', 'C_REWARD'
         self.device.stuck_record_add('BATTLE_STATUS_S')
         self.device.click_record_clear()
+        metric_token = begin_battle(self)
         logger.info(f"Start {self.climb_type} battle process")
         if self.climb_type ==  'daily_training':
             self.count_map[self.climb_type] = self.current_count
@@ -155,9 +157,11 @@ class Foot(StateMachine, GameUi, BaseActivity, SwitchSoul, ActivityShikigamiAsse
 
             # 出现赢的鼓，点击直到消失
             if self.appear_then_click(self.I_WIN, interval=1.8):
+                finish_battle(self, metric_token, "won")
                 self.ui_click_until_disappear(self.I_DE_WIN, interval=1.5)
                 return True
             if self.appear(self.I_FALSE, threshold=0.8):
+                finish_battle(self, metric_token, "lost")
                 logger.warning('False battle')
                 self.ui_click_until_disappear(self.I_FALSE)
                 return False

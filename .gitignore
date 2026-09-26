@@ -1,4 +1,8 @@
 ### AzurLaneAutoScript
+runtime_data/
+/tests/solana/storage_benchmark_result.json
+/docs/solana/acceptance-scheduler-storage.md
+/docs/solana/scheduler-validation.md
 log
 config/backup/*
 config/.runtime/

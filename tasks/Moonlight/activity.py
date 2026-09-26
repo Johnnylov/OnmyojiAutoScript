@@ -5,6 +5,7 @@ from datetime import datetime
 from module.base.protect import random_sleep
 from module.exception import GamePageUnknownError, GameStuckError
 from module.logger import logger
+from module.scheduling.task_metrics import report_count_progress
 from tasks.GameUi.page import page_battle_prepare, page_battle, page_battle_result
 import tasks.Moonlight.page as pages
 
@@ -112,6 +113,7 @@ class MoonlightAct:
     def run_moonlight(self):
         logger.hr('开始活动：月华流光', 1)
         self.moonlight_count = 0
+        report_count_progress(self)
         self._battle_shared_state.pop('moonlight', None)
         general = self.conf.general_config
         while (self.moonlight_count < general.challenge_limit
@@ -123,6 +125,7 @@ class MoonlightAct:
                 return
             # Count only a confirmed battle entry; a loss still consumes a challenge.
             self.moonlight_count += 1
+            report_count_progress(self)
             source = self.conf.moonlight_battle_conf
             battle = source.model_copy(update={
                 'preset_enable': source.preset_enable and self.moonlight_count == 1,

@@ -5,6 +5,7 @@ import copy
 import json
 import re
 from pathlib import Path
+from module.config.edit_lock import locked_config_files
 from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel, ValidationError
@@ -120,7 +121,14 @@ class ConfigManager:
 
     @staticmethod
     def _is_model_type(annotation: Any) -> bool:
-        return isinstance(annotation, type) and issubclass(annotation, BaseModel)
+        # Python 3.10 GenericAlias can satisfy isinstance(x, type) while the
+        # Pydantic/ABC subclass hook rejects it. Containers are handled below.
+        if get_origin(annotation) is not None:
+            return False
+        try:
+            return isinstance(annotation, type) and issubclass(annotation, BaseModel)
+        except TypeError:
+            return False
 
     @staticmethod
     def _list_item_model(annotation: Any) -> type[BaseModel] | None:
@@ -326,6 +334,7 @@ class ConfigManager:
         return task_model.model_dump()
 
     @staticmethod
+    @locked_config_files('name', error_type=ConfigNameError)
     def import_task_config(name: str, task_name: str, data: dict[str, Any]) -> tuple[str, str]:
         """
         导入单个任务配置，返回配置名称和归一化任务 key。
@@ -387,6 +396,7 @@ class ConfigManager:
         return name, task_key, {task_key: copy.deepcopy(task_value)}
 
     @staticmethod
+    @locked_config_files('name', error_type=ConfigNameError)
     def import_config(name: str, data: dict[str, Any]) -> str:
         """
         导入配置内容，返回最终配置名称。
@@ -503,6 +513,7 @@ class ConfigManager:
         return result
 
     @staticmethod
+    @locked_config_files('file', 'template', error_type=ConfigNameError)
     def copy(file: str, template: str = 'template') -> None:
         """
         复制一个配置文件
@@ -517,10 +528,8 @@ class ConfigManager:
             logger.error(f'{file_path} is exists')
             return
 
-        with open(template_path, 'r', encoding='utf-8') as f:
-            template_content = f.read()
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(template_content)
+        template_content = read_file(template_path)
+        write_file(file_path, template_content)
         logger.info(f'copy {template_path} to {file_path}')
 
 
@@ -548,6 +557,7 @@ class ConfigManager:
         return f'oas{new_script_number}'
 
     @staticmethod
+    @locked_config_files('old_name', 'new_name', error_type=ConfigNameError)
     def rename(old_name: str, new_name: str) -> bool:
         """
         重命名一个配置文件
@@ -573,6 +583,7 @@ class ConfigManager:
             return False
 
     @staticmethod
+    @locked_config_files('file', error_type=ConfigNameError)
     def delete(file: str) -> bool:
         """
         删除一个配置文件

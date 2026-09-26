@@ -59,10 +59,12 @@ class BondlingBattle(GeneralBattle, BondlingFairylandAssets):
         重写一个 战斗等待
         :return: 如果捕获成功返回True，否则返回False
         """
+        from module.scheduling.task_metrics import begin_battle, finish_battle
         self.device.stuck_record_add('BATTLE_STATUS_S')
         self.device.click_record_clear()
         # 有时候 只会点击 获得奖励和开始战斗
         # 战斗过程 随机点击和滑动 防封
+        metric_token = begin_battle(self)
         logger.info("Start battle process")
         win: bool = False
         bondling_mode = self.config.bondling_fairyland.bondling_config.bondling_mode
@@ -89,6 +91,7 @@ class BondlingBattle(GeneralBattle, BondlingFairylandAssets):
                 continue
             # 如果领奖励
             if self.appear(self.I_REWARD, threshold=0.6):
+                finish_battle(self, metric_token)
                 break
             if self.appear_then_click(self.I_WIN, threshold=0.6):
                 continue

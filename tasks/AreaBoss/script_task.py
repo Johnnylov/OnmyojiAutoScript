@@ -14,6 +14,7 @@ from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.AreaBoss.assets import AreaBossAssets
 from tasks.AreaBoss.config_boss import AreaBossFloor
 from module.logger import logger
+from module.scheduling.task_metrics import report_task_progress
 from module.exception import TaskEnd
 from module.atom.image import RuleImage
 
@@ -46,9 +47,11 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
 
         # 已挑战鬼王数量
         boss_fought = 0
+        report_task_progress(self, boss_fought, con.boss_number, unit='个挑战目标')
         if con.boss_reward:
             if self.fight_reward_boss():  # 挑战成功则加一
                 boss_fought += 1
+                report_task_progress(self, boss_fought, con.boss_number, unit='个挑战目标')
 
         self.open_filter()
         # 切换到对应集合(热门/收藏)
@@ -57,15 +60,13 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
         else:
             self.switch_to_famous()
 
-        if con.boss_number - boss_fought == 3:
-            self.boss_fight(self.I_BATTLE_1)
-            self.boss_fight(self.I_BATTLE_2)
-            self.boss_fight(self.I_BATTLE_3)
-        elif con.boss_number - boss_fought == 2:
-            self.boss_fight(self.I_BATTLE_1)
-            self.boss_fight(self.I_BATTLE_2)
-        elif con.boss_number - boss_fought == 1:
-            self.boss_fight(self.I_BATTLE_1)
+        # Keep the same ordered targets and calls. A failed/unavailable target
+        # never becomes completed progress just because the task proceeds.
+        targets = [self.I_BATTLE_1, self.I_BATTLE_2, self.I_BATTLE_3]
+        for target in targets[:con.boss_number - boss_fought]:
+            if self.boss_fight(target):  # Includes an already ranked target.
+                boss_fought += 1
+                report_task_progress(self, boss_fought, con.boss_number, unit='个挑战目标')
         # 退出
         self.goto_page(page_main)
         self.set_next_run(task='AreaBoss', success=True, finish=False)

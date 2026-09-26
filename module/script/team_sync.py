@@ -16,8 +16,10 @@ from module.config.atomicwrites import atomic_write
 from module.logger import logger
 
 
-TASK_KEYS = {'Orochi': 'orochi', 'BondlingFairyland': 'bondling_fairyland'}
-TASK_SWITCHES = {'Orochi': 'sync_orochi', 'BondlingFairyland': 'sync_bondling'}
+TASK_KEYS = {'Orochi': 'orochi', 'BondlingFairyland': 'bondling_fairyland', 'TrueOrochi': 'true_orochi'}
+TASK_SWITCHES = {'Orochi': 'sync_orochi', 'BondlingFairyland': 'sync_bondling',
+                 'TrueOrochi': 'sync_true_orochi'}
+TASK_LABELS = {'Orochi': '八岐大蛇', 'BondlingFairyland': '契灵', 'TrueOrochi': '真八岐大蛇'}
 
 
 class TeamTaskSwitch(Exception):
@@ -56,7 +58,7 @@ class LocalTeamCoordinator:
     HEARTBEAT_INTERVAL = 2
     STALE_AFTER = 30
     RETRY_AFTER = 120
-    # Recovery and the independently maintained TrueOrochi flow finish normally.
+    # Recovery and TrueOrochi's two-round protocol finish normally once started.
     NO_INTERRUPT = {'Restart', 'GotoMain', 'TrueOrochi'}
 
     def __init__(self, config_name: str, root: Path | None = None, *, clock=time.time):
@@ -94,7 +96,8 @@ class LocalTeamCoordinator:
 
     def _pair(self, task):
         settings = self._settings()
-        if task not in TASK_KEYS or not settings.get('enable') or not settings.get(TASK_SWITCHES[task], True):
+        if task not in TASK_KEYS or not settings.get('enable') or not settings.get(
+                TASK_SWITCHES[task], task != 'TrueOrochi'):
             return None
         partner = settings.get('partner_config', '').strip()
         if partner == self.name:
@@ -104,19 +107,33 @@ class LocalTeamCoordinator:
         peer_settings = other.get('global_game', {}).get('local_team', {})
         if not peer_settings.get('enable') or peer_settings.get('partner_config', '').strip() != self.name:
             raise TeamSyncUnavailable(f'{partner} 未启用相互绑定的本机组队联动')
-        if not peer_settings.get(TASK_SWITCHES[task], True):
-            raise TeamSyncUnavailable(f'{partner} 未启用 {task} 联动')
+        label = TASK_LABELS[task]
+        if not peer_settings.get(TASK_SWITCHES[task], task != 'TrueOrochi'):
+            raise TeamSyncUnavailable(f'{partner} 未启用{label}联动')
         key = TASK_KEYS[task]
         for name, data in ((self.name, own), (partner, other)):
             if not data.get(key, {}).get('scheduler', {}).get('enable'):
-                raise TeamSyncUnavailable(f'{name} 的 {task} 任务已关闭')
-        group = 'orochi_config' if task == 'Orochi' else 'bondling_config'
-        a, b = own[key][group], other[key][group]
+                raise TeamSyncUnavailable(f'{name} 的{label}任务已关闭')
+        group = {'Orochi': 'orochi_config', 'BondlingFairyland': 'bondling_config',
+                 'TrueOrochi': 'team_config'}[task]
+        a, b = own[key].get(group, {}), other[key].get(group, {})
         roles = {a.get('user_status'), b.get('user_status')}
         valid_roles = roles == {'leader', 'member'} or (
             task == 'BondlingFairyland' and roles == {'handoff1', 'handoff2'})
         if not valid_roles:
-            raise TeamSyncUnavailable(f'{task} 需要队长/队员或契灵 handoff1/handoff2 配对')
+            raise TeamSyncUnavailable(f'{label}需要队长和队员配对；契灵也支持交接一和交接二')
+        if task == 'TrueOrochi':
+            for name, peer_name, data, team in ((self.name, partner, own, a),
+                                               (partner, self.name, other, b)):
+                if not team.get('enable') or team.get('teammate_config', '').strip() != peer_name:
+                    raise TeamSyncUnavailable(f'{name} 须启用真蛇双开组队，且真蛇队友与本机联动队友一致')
+                friends = data[key].get('invite_config', {}).get('friend_list', '')
+                if len([line for line in friends.splitlines() if line.strip()]) != 1:
+                    raise TeamSyncUnavailable(f'{name} 的真蛇邀请名单须填写对方的一个游戏好友名')
+            own_serial = own.get('script', {}).get('device', {}).get('serial')
+            peer_serial = other.get('script', {}).get('device', {}).get('serial')
+            if own_serial and own_serial == peer_serial:
+                raise TeamSyncUnavailable('两个真蛇配置不能操作同一个模拟器，请分别指定设备连接地址')
         if task == 'Orochi' and a.get('layer') != b.get('layer'):
             raise TeamSyncUnavailable('两份八岐大蛇配置的层数不同')
         if task == 'BondlingFairyland':
@@ -266,12 +283,17 @@ class LocalTeamCoordinator:
             if session and session['id'] == session_id:
                 session.update(status='cancelled', reason=reason, retry_at=self.clock() + self.RETRY_AFTER)
 
-    def ready(self):
+    def ready(self, on_wait=None):
         if not self.session_id:
             return
         logger.info(f'本机组队联动: {self.name} 已准备好 {self.current_task}，等待队友')
         last_log = self.clock()
         while True:
+            if self._stop.is_set():
+                self._cancel(self.pair_key, self.session_id, '本配置已停止')
+                raise TeamSyncUnavailable('本配置已停止')
+            if on_wait is not None:
+                on_wait()
             pair = self._pair(self.current_task)
             if pair is None or pair[0] != self.pair_key:
                 raise TeamSyncUnavailable('等待期间组队联动已关闭或绑定已改变')

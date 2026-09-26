@@ -20,6 +20,7 @@ from tasks.RealmRaid.page import page_shikigami_records
 
 
 from module.logger import logger
+from module.scheduling.task_metrics import report_task_progress
 from module.exception import TaskEnd, BattleTransitionTimeout
 from module.atom.image_grid import ImageGrid
 from module.atom.image import RuleImage
@@ -351,6 +352,14 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
             self.reward_detect_click(True)
             # 增加出现聊天框遮挡，处理奖励之后，重新识别票数
             cu, res, total = self.O_NUMBER.ocr(self.device.image)
+        # Use the same ticket-spending metric as this task's stop condition.
+        # OCR failure/extra tickets must not create fictional completed raids.
+        if (isinstance(cu, int) and isinstance(total, int) and total > 0
+                and cu >= 0 and res >= 0 and cu + res == total):
+            initial = cu if self.init_tickets == -1 else self.init_tickets
+            if initial >= cu:
+                report_task_progress(self, initial - cu,
+                    self.config.realm_raid.raid_config.number_attack, unit='张突破券')
         if cu == 0 and cu + res == total:
             logger.warning(f'Execute raid failed, no ticket')
             return False

@@ -44,11 +44,18 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         return super()._handle_reward(context, config)
 
     def run(self) -> bool:
+        execution = getattr(self.config, 'solana_execution', None)
+        if execution is not None and execution.active and execution.active.get('count', 0):
+            # Navigation is reconstructed from the current screen, never replay a
+            # previously submitted challenge or reward operation.
+            from module.scheduling.runtime import ReconciliationRequired
+            if self.get_current_page(skip_first_screenshot=False, fallback=True) is None:
+                raise ReconciliationRequired('Cannot identify game page before Orochi continuation')
         self.switch_orochi_souls()
 
         limit_count = self.config.orochi.orochi_config.limit_count
         limit_time = self.config.orochi.orochi_config.limit_time
-        self.current_count = 0
+        self.current_count = execution.count if execution is not None and execution.active else 0
         self.limit_count: int = limit_count
         self.limit_time: timedelta = timedelta(hours=limit_time.hour, minutes=limit_time.minute, seconds=limit_time.second)
 
@@ -253,6 +260,10 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 self.screenshot()
             return self.appear(self.I_OROCHI_FIRE)
 
+        execution = getattr(self.config, 'solana_execution', None)
+        if execution is not None and (not execution.active or not execution.active.get('cooperative')):
+            execution = None
+
         while 1:
             self.screenshot()
             # 检查猫咪奖励
@@ -260,12 +271,33 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 continue
             if not is_in_orochi():
                 continue
+            if execution is not None:
+                execution.record_progress(self.current_count)
             if self.current_count >= self.limit_count:
                 logger.info('Orochi count limit out')
                 break
-            if datetime.now() - self.start_time >= self.limit_time:
+            elapsed = timedelta(seconds=execution.active_seconds) if execution is not None else datetime.now() - self.start_time
+            if elapsed >= self.limit_time:
                 logger.info('Orochi time limit out')
                 break
+            if execution is not None:
+                outcome = execution.boundary_request()
+                if not outcome:
+                    try:
+                        execution.before_battle(self.current_count)
+                    except Exception:
+                        # At the lobby between battles: do not submit a new
+                        # challenge after its recovery intent cannot be saved.
+                        outcome = 'interrupted'
+                if outcome:
+                    self.goto_page(page_main)
+                    if self.config.orochi.orochi_config.soul_buff_enable:
+                        self.open_buff()
+                        self.soul(is_open=False)
+                        self.close_buff()
+                    self.screenshot()
+                    execution.safe_boundary(self.current_count,
+                        verified=self.match_page_once(self.navigator.resolve_page(page_main)), outcome=outcome)
             # 点击挑战
             while True:
                 self.screenshot()
