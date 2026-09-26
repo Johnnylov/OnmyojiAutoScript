@@ -67,18 +67,18 @@ class SolanaExecutionState {
     'restart' => '结束异常执行器，旧运行记为中断，再按已保存的任务计划重新启动。',
     'start' => retry ? '重新启动当前配置，按已保存的任务计划执行。' : '启动当前配置，执行已启用且到期的任务。',
     'resume' => '从暂停处继续执行，保留已有进度。',
-    'pause' => '到安全位置后暂停，保留执行进程，可点击“继续运行”。',
+    'pause' => '完成当前可暂停的任务段后暂停，保留进程；需要马上接管游戏请点电源停止。',
     _ => '等待执行器确认操作，请勿重复提交。',
   };
 
   String get powerAction => retry && supportsRestart
       ? 'restart'
       : active
-      ? 'safe_stop'
+      ? 'immediate_stop'
       : 'start';
   String get powerExplanation => switch (powerAction) {
     'restart' => '重新运行：结束旧执行器后，按已保存的计划重新启动',
-    'safe_stop' => '安全停止：到安全位置后结束进程，下次需重新启动',
+    'immediate_stop' => '立即停止：结束脚本并交还游戏操作，下次点击重新启动',
     _ => '启动任务：执行当前配置中已启用且到期的任务',
   };
 }

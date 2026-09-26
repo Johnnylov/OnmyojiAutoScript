@@ -13,6 +13,7 @@ from module.exception import TaskEnd
 from module.logger import logger
 from tasks.BondlingFairyland.assets import BondlingFairylandAssets
 from tasks.BondlingFairyland.config import BondlingMode, BondlingClass, BondlingSwitchSoul, BondlingConfig, UserStatus
+from tasks.BondlingFairyland.preparation import BondlingPreparation
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 from tasks.Component.GeneralBattle.general_battle import BattleAction, BattleContext, ExitMatcher, GeneralBattle
 from tasks.Component.GeneralInvite.general_invite import GeneralInvite
@@ -29,7 +30,7 @@ class BondlingNumberMax(Exception):
     pass
 
 
-class ScriptTask(GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, BondlingFairylandAssets, RichManAssets):
+class ScriptTask(BondlingPreparation, GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, BondlingFairylandAssets, RichManAssets):
     """ 契灵 """
 
     last_plate_count: int = None  # 上一次识别到的契灵盘子数量
@@ -92,14 +93,9 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, 
         cong = self.config.bondling_fairyland
 
         if cong.bondling_config.check_enable:
-            logger.hr('第一步, 检查契忆数量', 2)
-            self.goto_page(page_mall, confirm_wait=2.5)
-            self.ui_click(self.I_MALL_SCCALES, self.I_MALL_SCCALES_CHECK)
-            self.ui_click(self.I_MALL_BONDLINGS_SURE, self.I_MALL_BONDLINGS_ON)
+            logger.hr('第一步, 兑换随机御魂并重新检查契忆', 2)
             MAX_COUNT = cong.bondling_config.limit_num
-            cu, re, total = self.O_BL_CHECK_MONEY.ocr_digit_counter(self.device.image)
-            if cu > 10000:  # 识别出现问题进行补正
-                cu = int(str(cu)[1:])
+            cu = self.prepare_bond_memory()
             if cu >= MAX_COUNT:
                 logger.info(f'契忆数量: {cu} 大于 {MAX_COUNT}')
                 self.goto_page(page_main)
@@ -124,6 +120,10 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, 
             self.goto_page(page_main)
             self.set_next_run(task='BondlingFairyland', finish=True, success=True)
             raise TaskEnd
+        # Both roles prepare their own account before either starts inviting.
+        self.prepare_bond_summons(
+            BondlingClass.get_index(cong.bondling_config.bondling_stone_class),
+            cong.bondling_config.bondling_stone_class.value)
         self.wait_local_team_ready()
         match cong.bondling_config.user_status:
             case UserStatus.handoff1:
@@ -346,9 +346,8 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, 
                 if self.ball_click(current_ball_index):
                     logger.info(f'Current ball index: {current_ball_index} ')
                 else:
-                    if self.run_stone(bondling_config.bondling_stone_enable):
-                        continue
-                    elif bondling_config.bondling_search_enable and bondling_config.user_status == UserStatus.ALONE:
+                    self.close_bondling_dialogs()
+                    if bondling_config.bondling_search_enable and bondling_config.user_status == UserStatus.ALONE:
                         if self.run_search(bondling_config, limit_cnt=random.randint(5, 20)):
                             logger.info('Bondling search finish, try to run catch')
                             continue
@@ -378,37 +377,6 @@ class ScriptTask(GameUi, GeneralInvite, GeneralRoom, GeneralBattle, SwitchSoul, 
         self.goto_page(page_main)
         self.set_next_run(task='BondlingFairyland', finish=True, success=True)
         raise TaskEnd
-
-    def run_stone(self, bondling_stone_enable: bool):
-        """
-        使用结契石 进行召唤 契灵
-        :param bondling_stone_enable:
-        :return:
-        (0) 不开启使用结契石，(探查界面)返回False
-        (1) 没有结契石了，(探查界面)返回False
-        """
-        # 没有启用使用石头购买契灵或者当前不在购买界面则直接退出
-        if not bondling_stone_enable or not self.appear(self.I_STONE_SURE):
-            self.ui_click_until_disappear(self.I_STONE_CLOSE, interval=1.2)
-            return False
-        cu, res, total = self.O_B_STONE_NUMBER.ocr(self.device.image)
-        # 如果没有石头了
-        if cu == 0 and cu + res == total:
-            self.ui_click_until_disappear(self.I_STONE_CLOSE, interval=1.2)
-            logger.warning(f'已经没有鸣契石召唤契灵了')
-            return False
-        while 1:
-            self.screenshot()
-            if not self.appear(self.I_STONE_SURE):
-                sleep(random.uniform(1.5, 2))  # 等待购买后的动画, 否则已经买了但是下次再点击还会出现该界面
-                return True
-            for i in range(3):
-                if self.appear_then_click(self.I_BUY_PLUS, interval=1):
-                    sleep(0.5)
-            if self.appear_then_click(self.I_GI_SURE, interval=1):
-                continue
-            if self.appear_then_click(self.I_STONE_SURE, interval=1):
-                continue
 
     def run_search(self, bondling_config: BondlingConfig, limit_cnt: int = None):
         """

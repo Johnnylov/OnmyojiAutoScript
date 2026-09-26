@@ -97,6 +97,32 @@ SolanaController restartController(RestartApi api) =>
 Finder get power => find.widgetWithIcon(IconButton, Icons.power_settings_new);
 
 void main() {
+  for (final state in ['running', 'waiting', 'paused', 'pausing', 'stopping']) {
+    testWidgets('$state power stops immediately without confirmation', (
+      tester,
+    ) async {
+      final api = RestartApi(state: state, executorAlive: true);
+      final c = restartController(api);
+      await mountShell(tester, c);
+      await tester.tap(power);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(api.writes, hasLength(1));
+      expect(object(api.writes.single['body'])['action'], 'immediate_stop');
+      expect(c.operationMessage, contains('脚本已停止'));
+    });
+  }
+
+  testWidgets('toolbar stop also immediately returns control', (tester) async {
+    final api = RestartApi(state: 'running', executorAlive: true);
+    final c = restartController(api);
+    await mountShell(tester, c);
+    await tester.tap(find.byTooltip('立即停止'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(object(api.writes.single['body'])['action'], 'immediate_stop');
+  });
+
   testWidgets('inactive power starts with the latest version', (tester) async {
     final api = RestartApi();
     final c = restartController(api);

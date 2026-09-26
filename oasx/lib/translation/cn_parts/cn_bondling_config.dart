@@ -9,7 +9,7 @@ mode_2策略是刷到五个契灵后一直进行结契战斗，但是选择低�
 mode_3策略是刷到五个契灵后开始结契，选择高级、中级盘来进行捕获''',
   'bondling_stone_enable': '是否使用契石召唤契灵',
   'bondling_stone_enable_help': '会优先开启契石，之后才是探查',
-  'bondling_stone_class': '使用契石时选择召唤类型',
+  'bondling_stone_class': '本轮刷取的契灵',
   'bondling_stone_class_help': '',
   'bondling_switch_soul': '契灵之境切换御魂',
   'auto_switch_soul': '是否启用',

@@ -362,7 +362,7 @@ void main() {
       await c.control('start');
       expect(c.operationFailed, isTrue);
       expect(c.operationMessage, contains('操作执行失败'));
-      expect(c.operationMessage, isNot(contains('等待安全位置')));
+      expect(c.operationMessage, isNot(contains('当前任务段结束')));
       c.dispose();
     },
   );
@@ -387,7 +387,7 @@ void main() {
           ),
         ),
       );
-      expect(c.operationMessage, contains('等待安全位置'));
+      expect(c.operationMessage, contains('当前任务段结束'));
       expect(c.profile['state'], 'running');
       c.dispose();
     },
@@ -524,7 +524,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(
-          find.byTooltip('安全停止：到安全位置后结束进程，下次需重新启动').hitTestable(),
+          find.byTooltip('立即停止：结束脚本并交还游戏操作，下次点击重新启动').hitTestable(),
           findsOneWidget,
         );
         expect(
@@ -537,7 +537,7 @@ void main() {
         expect(tester.takeException(), isNull);
         await tester.tap(find.byKey(const ValueKey('execution-primary')));
         await tester.pumpAndSettle();
-        expect(c.operationMessage, contains('等待安全位置'));
+        expect(c.operationMessage, contains('当前任务段结束'));
         expect(tester.takeException(), isNull);
         await tester.tap(find.byTooltip('运行统计'));
         await tester.pumpAndSettle();

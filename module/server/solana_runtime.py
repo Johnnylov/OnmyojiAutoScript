@@ -320,11 +320,11 @@ class RuntimeService(RecoveryMixin, ExecutionMetricsMixin):
                         self.store.checkpoints.save('runtime_runs', run['run_id'], run)
                 self.emit({'type': 'execution.cycle_finished', 'profile_id': owner['profile_id'],
                            'execution_cycle_id': owner.get('cycle_id'),
-                           'payload': {'state': 'stopped' if exit_code == 0 else 'crashed'}})
+                           'payload': {'state': 'stopped' if exit_code == 0 or owner.get('stop_requested') else 'crashed'}})
                 owner['cleanup_complete'] = True
             except Exception:
                 self.dispatch_blocked = True
-            self._set_state(owner['profile_id'], 'inactive' if exit_code == 0 else 'warning')
+            self._set_state(owner['profile_id'], 'inactive' if exit_code == 0 or owner.get('stop_requested') else 'warning')
 
     def record_preview(self, owner_id, frame):
         with self.lock:

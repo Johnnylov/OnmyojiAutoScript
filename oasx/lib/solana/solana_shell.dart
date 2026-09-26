@@ -1463,7 +1463,7 @@ class _SolanaShellState extends State<SolanaShell> {
           Icons.stop_circle_outlined,
           '立即停止',
           c.canAttemptSafetyControl && _processActive
-              ? () => _immediateStop(context)
+              ? () => c.control('immediate_stop')
               : null,
           size: 19,
         ),
@@ -1505,7 +1505,7 @@ class _SolanaShellState extends State<SolanaShell> {
   VoidCallback? _powerCallback(BuildContext context) {
     if (_startingExecution) return null;
     final action = _execution.powerAction;
-    if (action == 'safe_stop') {
+    if (action == 'immediate_stop') {
       return c.canAttemptSafetyControl ? () => c.control(action) : null;
     }
     return c.canControl && !c.controlReviewRequired
@@ -1944,27 +1944,6 @@ class _SolanaShellState extends State<SolanaShell> {
       ],
     ),
   );
-
-  Future<void> _immediateStop(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('立即停止当前运行？'),
-        content: const Text('这会强制结束执行。未完成的操作需要在下次运行前重新识别和核验。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('返回'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('立即停止'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) await c.control('immediate_stop');
-  }
 }
 
 class _ReferenceBackground extends CustomPainter {

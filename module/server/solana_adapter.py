@@ -111,6 +111,7 @@ class ManagerAdapter:
         if action == 'immediate_stop':
             if process is not None:
                 await process.stop()
+            service.finish_immediate_stop(receipt)
             return 'stopped'
         return 'waiting_safe_boundary' if action in ('pause', 'safe_stop') else 'resumed'
 

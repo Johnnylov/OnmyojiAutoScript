@@ -5705,13 +5705,6 @@
     },
     {
       "kind": "label",
-      "key": "bondling_stone_enable",
-      "contexts": [
-        "BondlingFairyland/bondling_config/bondling_stone_enable"
-      ]
-    },
-    {
-      "kind": "label",
       "key": "boss_group_team",
       "contexts": [
         "ActivityShikigami/switch_soul_config/boss_group_team"

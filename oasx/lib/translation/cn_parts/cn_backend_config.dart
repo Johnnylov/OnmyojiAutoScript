@@ -423,7 +423,7 @@ final Map<String, String> _cn_backend_config = {
   "handoff1": "轮换队长：先带队后跟队",
   "handoff2": "轮换队长：先跟队后带队",
   "bondling_search_enable": "无契灵时自动探查",
-  "check_enable": "检查契忆数量",
+  "check_enable": "兑换御魂后检查契忆",
   "limit_num": "契忆数量上限",
   "search_switch": "探查御魂配置",
   "bondling_2_1_switch": "针女御魂配置",

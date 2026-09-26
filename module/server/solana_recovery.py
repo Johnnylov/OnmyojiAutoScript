@@ -8,6 +8,40 @@ TERMINAL = {'succeeded', 'failed', 'cancelled', 'interrupted', 'crashed'}
 
 
 class RecoveryMixin:
+    def finish_immediate_stop(self, receipt):
+        """A manual stop closes this executor's unfinished work, never a win.
+
+        Called only after join: no timer, heartbeat or button state is proof
+        that the old worker has stopped sending device actions.
+        """
+        from module.server.solana_runtime import ServiceError
+        with self.lock:
+            profile_id = receipt['profile_id']
+            if self.executor_alive(profile_id):
+                raise ServiceError('executor_still_running', '执行器尚未退出，请再次停止')
+            if self.latest_control_request.get(profile_id) != receipt['request_id']:
+                raise ServiceError('control_superseded', '已有更新的控制操作，请查看当前状态')
+            for run in list(self.runs.values()):
+                if run.get('profile_id') != profile_id or run['state'] in TERMINAL:
+                    continue
+                self.emit({'type': 'run.finished',
+                    'event_id': str(uuid.uuid5(uuid.UUID(receipt['request_id']), 'stop:' + run['run_id'])),
+                    'run_id': run['run_id'], 'profile_id': profile_id, 'task_id': run.get('task_id'),
+                    'device_id': run.get('device_id'), 'request_id': receipt['request_id'],
+                    'payload': {'outcome': 'interrupted', 'reason': 'user_immediate_stop',
+                                'execution_seconds': None, 'duration_incomplete': True,
+                                'game_outcome': 'unknown', 'automatic_replay': False}})
+                current = self.runs[run['run_id']]
+                for document in self.store.checkpoints.list('runs'):
+                    checkpoint = document['data']
+                    if checkpoint.get('run_id') != run['run_id']:
+                        continue
+                    checkpoint.update(state='interrupted', terminal=True, verified=True,
+                                      in_flight=False, resolution='closed_by_manual_stop')
+                    self.store.checkpoints.save('runs', document['key'], checkpoint,
+                                                event_seq=current['last_event_seq'])
+            self._set_state(profile_id, 'inactive')
+
     def prepare_restart(self, receipt):
         """Close old work as interrupted for an explicit fresh-run request.
 

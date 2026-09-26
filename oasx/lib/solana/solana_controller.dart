@@ -805,8 +805,11 @@ class SolanaController extends ChangeNotifier {
           'stopping',
         ].contains(result['status'])) {
       return action == 'pause' || action == 'safe_stop'
-          ? '请求已接收，正在等待安全位置'
+          ? '已请求在当前任务段结束后暂停或停止；需要立即接管游戏可点电源停止'
           : '请求已接收，等待执行器确认';
+    }
+    if (action == 'immediate_stop') {
+      return '脚本已停止，可以手动操作游戏';
     }
     return '操作已执行，状态已更新';
   }
